@@ -78,9 +78,22 @@ TZ=Europe/Prague
 
 3. Add Bohemarr as the indexer and download client in each application. Use the TV category for Sonarr and the movie category for Radarr.
 4. Run one interactive search first. Confirm that the releases and downloaded file import correctly.
-5. To grab monitored media automatically, enable **RSS** and **Automatic Search** for the Bohemarr indexer. Interactive Search alone is manual only. Sonarr grabs an episode that becomes available after it aired only through RSS sync.
+5. To grab monitored media automatically, follow [Automatic downloads](#automatic-downloads).
 
-Bohemarr's TV RSS feed lists the five newest episodes of every series Sonarr has searched by TVDB ID, newest first; a series stays in the feed after that first search, also between seasons. Series on Oneplay and Prima+ appear once their program is bound (the first TVDB search binds it). An item is dated when the feed first listed it. The listing refreshes at most every ten minutes. Until Sonarr has searched any series, the feed shows the catalogue browse page instead, so Sonarr can still save the indexer. Sonarr treats Bohemarr releases as Usenet: a Delay Profile's Usenet delay holds an RSS grab that long after the item's date, so give Bohemarr series a tag whose Delay Profile has a Usenet delay of 0.
+### Automatic downloads
+
+Interactive Search alone is manual. Sonarr grabs an episode published after it aired only through RSS sync. To set this up:
+
+1. Enable **RSS** and **Automatic Search** for the Bohemarr indexer in Sonarr.
+2. Sonarr treats Bohemarr releases as Usenet, and a Delay Profile's Usenet delay holds every RSS grab for that long. Create a tag such as `bohemarr`. Give it a Delay Profile with a Usenet delay of `0`, then add the tag to every series you download from Bohemarr.
+3. Search each existing series once by running an interactive search for any one episode. Series you add later are searched automatically when you add them.
+
+How the RSS feed works:
+
+- It lists the five newest episodes of every series Sonarr has searched by TVDB ID. A series stays in the feed after that, including between seasons.
+- Oneplay and Prima+ series appear once their program is bound. The first TVDB search binds it.
+- Each item is dated when the feed first lists it. The feed refreshes at most every ten minutes.
+- Until Sonarr has searched any series, the feed shows the catalogue browse page instead. Otherwise Sonarr could not save the indexer.
 
 Radarr movie searches can include a TMDB ID. Bohemarr uses a verified local provider binding for that ID when one exists; otherwise it searches enabled providers by the title and year Radarr supplies. Matching results retain the TMDB ID.
 
@@ -117,7 +130,8 @@ Persistent state is in `/data`; completed downloads are in `/downloads/<category
 
 ## Troubleshooting
 
-- **Interactive search works but nothing grabs automatically:** enable RSS and Automatic Search for Bohemarr. A series added before Automatic Search was enabled enters the RSS feed after its next TVDB search, for example an interactive search of one episode.
+- **Interactive search works but nothing grabs automatically:** follow [Automatic downloads](#automatic-downloads). A series enters the RSS feed only after its first TVDB search.
+- **An RSS release stays in the Sonarr queue as `delay`:** the series lacks the tag whose Delay Profile sets the Usenet delay to `0`.
 - **A provider returns no results:** verify that it is enabled and that account credentials, when required, are valid. Check `docker compose logs bohemarr`.
 - **Sonarr or Radarr cannot import a completed file:** mount the same host downloads directory into both applications, or configure a Remote Path Mapping.
 - **Indexer or download-client test fails:** verify `PUBLIC_URL`, the API key, and Docker network connectivity.
