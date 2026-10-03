@@ -340,9 +340,9 @@ export async function fetchSeriesMetadata(
 
 /**
  * `Oneplay.StrategyBase.getEpisodes` + `SerialStrategy.getEpisodes`: resolves a program page URI
- * to either a single movie or the full list of episodes across every season carousel, newest
- * episode first (shows with no season carousel keep whatever flat order the upstream CMS gives,
- * since no page/season information exists there to reorder by).
+ * to either a single movie or the full list of episodes across every season carousel, ordered by
+ * season and episode number, newest first (shows with no season carousel keep whatever flat order
+ * the upstream CMS gives, since no page/season information exists there to reorder by).
  */
 export async function fetchEpisodesForProgram(
   pool: OneplayConnectionPool,
@@ -366,9 +366,7 @@ export async function fetchEpisodesForProgram(
   const itemsPerPage = EPISODE_LIST_MAX_ITEMS_PER_PAGE;
   const items: OneplayEpisode[] = [];
 
-  // `getSeasons` lists seasons oldest-first (as the season tabs are displayed); reversing here,
-  // combined with each season's own `sortOption: 'DESC'`, yields the whole series newest first.
-  for (const season of seasons.toReversed()) {
+  for (const season of seasons) {
     const paging: Record<string, unknown> = { count: itemsPerPage, position: 1 };
     const payload: Record<string, unknown> = {
       carouselId: season.carouselId,
@@ -396,6 +394,9 @@ export async function fetchEpisodesForProgram(
     } while (hasNext);
   }
 
+  // Season tabs come oldest-first for some programs and newest-first for others (Love Island), so
+  // the numbers decide; the stable sort keeps upstream order for ties and puts unnumbered items last.
+  items.sort((a, b) => (b.season ?? -1) - (a.season ?? -1) || (b.episodeNumber ?? -1) - (a.episodeNumber ?? -1));
   return { kind: 'episodes', title: programInfo.title ?? '', items };
 }
 

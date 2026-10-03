@@ -64,9 +64,8 @@ async function* catalogueProgramsOf(pool: OneplayConnectionPool, signal: AbortSi
  * `Oneplay.StrategyBase.getEpisodes`: a program page is never itself a Release, even when it
  * turns out to hold a single movie, so every Program (TV or movie) is expanded through here.
  *
- * Each season carousel already sorts newest-episode-first (`sortOption: 'DESC'`); iterating the
- * season list itself in reverse then orders the whole series newest-season-first as well, without
- * fetching every season before choosing where to start.
+ * `fetchEpisodesForProgram` lists every season, ordered newest episode first by season and
+ * episode number.
  */
 async function* catalogueReleasesOf(
   pool: OneplayConnectionPool,
