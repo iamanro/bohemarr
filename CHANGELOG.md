@@ -7,6 +7,8 @@
 - Found that Sonarr never grabbed newly available Love Island episodes automatically. Every Bohemarr grab was an interactive search, because the Bohemarr indexer had RSS and Automatic Search disabled. Bohemarr's RSS response was also unusable: it listed the first five catalogue programs alphabetically, all dated 1970, and took 22 seconds.
 - The TV RSS feed (`t=tvsearch` without a query) now lists the five newest episodes of each watched series, newest first, with the TVDB ID and canonical title of bound series. A series becomes watched when Sonarr first searches it by TVDB ID, and it stays watched. Series already searched before the upgrade are watched automatically.
 - The feed never creates a Series binding. Items are dated when first listed, and that date is stored so it does not change. One listing is shared for ten minutes, and each item's playback inspection is reused for six hours. A failed listing is not cached. While no series is watched, the previous catalogue browse response remains.
+- Order Oneplay episodes by season and episode number, newest first. Love Island and Extractors list their season tabs newest-first, so the previous tab reversal put season 1 first.
+- Deployment: enabled RSS and Automatic Search for the Bohemarr indexer in Sonarr. Added a `bohemarr` tag with a zero Usenet-delay Delay Profile to Love Island and Extractors, because the default six-hour delay held RSS grabs. The first RSS sync grabbed the missing Extractors S02E05 and S02E06 automatically.
 
 ### Radarr TMDB movie matching
 
