@@ -2,11 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { Store } from './store.ts';
-import { releaseTitle, sanitizeFilename } from './providers/common.ts';
+import { PlaybackBusy, releaseTitle, sanitizeFilename } from './providers/common.ts';
 import type { Config, DownloadMedia, Job, Provider, Release } from './types.ts';
+
+/** How long a job whose playback is busy waits before trying again. */
+const BUSY_RETRY_MS = 5 * 60 * 1000;
+/** A job whose playback stays busy this long fails, so it is not queued indefinitely. */
+const BUSY_GIVE_UP_MS = 12 * 60 * 60 * 1000;
 
 export class Queue {
   private readonly active = new Map<string, { controller: AbortController; task: Promise<void> }>();
+  private retryTimer?: NodeJS.Timeout;
   private stopping = false;
   readonly store: Store;
   private readonly config: Config;
@@ -41,17 +47,25 @@ export class Queue {
 
   wake(): void {
     if (this.stopping) return;
+    clearTimeout(this.retryTimer);
+    const now = Date.now();
+    let nextRetry = Infinity;
     for (const job of this.store.jobs()) {
       if (this.active.size >= this.config.concurrency) break;
       if (job.status !== 'Queued' || this.active.has(job.id) || (this.store.paused && job.priority !== 2)) continue;
+      if (job.retryAt !== undefined && job.retryAt > now) {
+        nextRetry = Math.min(nextRetry, job.retryAt);
+        continue;
+      }
       const controller = new AbortController();
-      this.store.updateJob(job.id, { status: 'Downloading', error: '' });
+      this.store.updateJob(job.id, { status: 'Downloading', error: '', retryAt: undefined });
       const task = this.run(job, controller.signal).finally(() => {
         this.active.delete(job.id);
         this.wake();
       });
       this.active.set(job.id, { controller, task });
     }
+    if (nextRetry !== Infinity) this.retryTimer = setTimeout(() => this.wake(), nextRetry - now).unref();
   }
 
   private async run(job: Job, signal: AbortSignal): Promise<void> {
@@ -80,9 +94,17 @@ export class Queue {
         this.store.updateJob(job.id, { status: 'Completed', progress: 100, bytes: result.size, totalBytes: result.size, error: '', finishedAt: Date.now() });
       }
     } catch (error) {
-      if (!signal.aborted && this.store.job(job.id)?.status === 'Downloading') {
+      const current = this.store.job(job.id);
+      if (!signal.aborted && current?.status === 'Downloading') {
         const message = error instanceof Error ? error.message : String(error);
-        this.store.updateJob(job.id, { status: 'Failed', error: message, finishedAt: Date.now() });
+        const now = Date.now();
+        const busySince = current.busySince ?? now;
+        if (error instanceof PlaybackBusy && now - busySince < BUSY_GIVE_UP_MS) {
+          // Still Queued for Sonarr, so it neither fails the download nor blocklists the Release.
+          this.store.updateJob(job.id, { status: 'Queued', error: message, retryAt: now + BUSY_RETRY_MS, busySince });
+        } else {
+          this.store.updateJob(job.id, { status: 'Failed', error: message, finishedAt: now });
+        }
       }
     }
   }
@@ -115,7 +137,7 @@ export class Queue {
   retry(id: string): Job {
     const job = this.requireJob(id);
     if (job.status !== 'Failed') throw new Error('Only a failed job can be retried');
-    const updated = this.store.updateJob(id, { status: 'Queued', error: '', progress: 0, finishedAt: undefined })!;
+    const updated = this.store.updateJob(id, { status: 'Queued', error: '', progress: 0, finishedAt: undefined, retryAt: undefined, busySince: undefined })!;
     this.wake();
     return updated;
   }
@@ -146,6 +168,7 @@ export class Queue {
 
   async close(): Promise<void> {
     this.stopping = true;
+    clearTimeout(this.retryTimer);
     for (const [id, active] of this.active) {
       if (this.store.job(id)?.status === 'Downloading') this.store.updateJob(id, { status: 'Queued' });
       active.controller.abort(new Error('Service stopping'));

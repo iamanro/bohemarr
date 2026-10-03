@@ -131,6 +131,7 @@ Persistent state is in `/data`; completed downloads are in `/downloads/<category
 ## Troubleshooting
 
 - **Interactive search works but nothing grabs automatically:** follow [Automatic downloads](#automatic-downloads). A series enters the RSS feed only after its first TVDB search.
+- **A download stays queued with "max. počet současných sledování":** another device is using every concurrent stream of the account (Oneplay). Bohemarr retries every five minutes and reports a failure only after twelve hours, so Sonarr does not blocklist the episode in the meantime.
 - **An RSS release stays in the Sonarr queue as `delay`:** the series lacks the tag whose Delay Profile sets the Usenet delay to `0`.
 - **A provider returns no results:** verify that it is enabled and that account credentials, when required, are valid. Check `docker compose logs bohemarr`.
 - **Sonarr or Radarr cannot import a completed file:** mount the same host downloads directory into both applications, or configure a Remote Path Mapping.

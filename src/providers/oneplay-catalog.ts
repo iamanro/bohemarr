@@ -1,7 +1,10 @@
 import type { MediaKind, MediaSource, ProgramMetadata } from '../types.ts';
-import { normalize } from './common.ts';
-import { at, playbackCapabilities, successData, EPISODE_LIST_MAX_ITEMS_PER_PAGE, PROGRAM_LIST_MAX_ITEMS_PER_PAGE } from './oneplay-protocol.ts';
+import { normalize, PlaybackBusy } from './common.ts';
+import { at, playbackCapabilities, readErrorMessage, successData, EPISODE_LIST_MAX_ITEMS_PER_PAGE, PROGRAM_LIST_MAX_ITEMS_PER_PAGE } from './oneplay-protocol.ts';
 import type { OneplayConnectionPool } from './oneplay-pool.ts';
+
+/** Oneplay's result code when every concurrent stream the account's plan allows is in use. */
+const MAX_CONCURRENT_STREAMS = 4091;
 
 /** `OneplayDRMEngine`'s fixed Widevine proxy endpoint and required Referer. */
 const DRM_LICENSE_URL = 'https://drm-proxy-widevine.cms.jyxo-tls.cz/AcquireLicense';
@@ -438,9 +441,14 @@ export async function resolveMediaSources(pool: OneplayConnectionPool, uri: stri
   }
   const payload = playPayload.payload;
 
-  const data = await pool.withConnection(signal, async (connection) =>
-    successData(await connection.request('content.play', { payload, playbackCapabilities: playbackCapabilities() }, signal)),
-  );
+  const data = await pool.withConnection(signal, async (connection) => {
+    const response = await connection.request('content.play', { payload, playbackCapabilities: playbackCapabilities() }, signal);
+    // 4091 (all concurrent streams in use) is ignored elsewhere, but here it is why no stream is returned.
+    if (response.status !== 'Ok' && Number(at(response.data, 'result.code')) === MAX_CONCURRENT_STREAMS) {
+      throw new PlaybackBusy(`Oneplay: ${readErrorMessage(response.data)}`);
+    }
+    return successData(response);
+  });
 
   const streams = at<unknown[]>(data, 'media.stream.assets') ?? [];
   const sources: MediaSource[] = [];

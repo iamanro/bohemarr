@@ -10,6 +10,7 @@ import { Indexer } from '../src/indexer.ts';
 import { Sabnzbd } from '../src/sabnzbd.ts';
 import { SeriesBindings } from '../src/series-binding.ts';
 import { createProviders } from '../src/providers/index.ts';
+import { PlaybackBusy } from '../src/providers/common.ts';
 import { fakeCatalogue } from './fake-catalogue.ts';
 import type { Config, Provider, Release } from '../src/types.ts';
 
@@ -169,4 +170,60 @@ test('Arr default priority is accepted and duplicate submissions retain their do
   assert.equal(f.store.jobs()[0]?.priority, 0);
   await assert.rejects(sab.handle({ mode: 'addfile', cat: '../escape' }, descriptor), /Unknown category/);
   assert.equal(f.store.jobs().length, 1);
+});
+
+test('busy playback keeps the job queued and retries it, failing only after twelve hours', async t => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+  const f = await fixture();
+  await using dir = f.dir;
+  using store = f.store;
+  let busy = true;
+  let attempts = 0;
+  f.providers.get('direct')!.resolve = async () => {
+    attempts++;
+    if (busy) throw new PlaybackBusy('Oneplay: Dosažen max. počet současných sledování');
+    return [{ url: release.url, type: 'file' }];
+  };
+  await using queue = new Queue(f.store, f.config, f.providers, async (_sources, directory) => {
+    const file = join(directory, 'episode.mp4');
+    await writeFile(file, 'media');
+    return file;
+  });
+  const turn = () => {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setImmediate(resolve);
+    return promise;
+  };
+  // Waits for the attempt to finish, plus one turn so the worker has also scheduled its retry.
+  const settled = async (id: string, attempt: number) => {
+    while (attempts < attempt || f.store.job(id)?.status === 'Downloading') await turn();
+    await turn();
+    return f.store.job(id)!;
+  };
+
+  const job = queue.add(release, 'tv');
+  let state = await settled(job.id, 1);
+  assert.equal(state.status, 'Queued', 'Sonarr must not see a failure it would blocklist');
+  assert.match(state.error, /současných sledování/);
+  t.mock.timers.tick(4 * 60 * 1000);
+  assert.equal(attempts, 1, 'no retry before five minutes');
+  t.mock.timers.tick(60 * 1000);
+  assert.equal((await settled(job.id, 2)).status, 'Queued');
+  busy = false;
+  t.mock.timers.tick(5 * 60 * 1000);
+  state = await settled(job.id, 3);
+  assert.equal(state.status, 'Completed');
+
+  busy = true;
+  const first = attempts + 1;
+  const stuck = queue.add({ ...release, id: 'episode-two', episode: 2 }, 'tv');
+  await settled(stuck.id, first);
+  for (let minutes = 5; minutes < 12 * 60; minutes += 5) {
+    t.mock.timers.tick(5 * 60 * 1000);
+    assert.equal((await settled(stuck.id, first + minutes / 5)).status, 'Queued');
+  }
+  t.mock.timers.tick(5 * 60 * 1000);
+  state = await settled(stuck.id, first + 12 * 12);
+  assert.equal(state.status, 'Failed');
+  assert.match(state.error, /současných sledování/);
 });

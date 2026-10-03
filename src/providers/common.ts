@@ -11,6 +11,13 @@ export async function fetchJson<T = unknown>(url: string | URL, signal: AbortSig
   return JSON.parse(await fetchText(url, signal, init)) as T;
 }
 
+/**
+ * Playback the provider refuses only for now, such as when every concurrent stream of the account
+ * is in use. A download hitting it waits and retries instead of failing, because Sonarr would
+ * blocklist the only Release of the episode.
+ */
+export class PlaybackBusy extends Error {}
+
 export function releaseId(provider: string, url: string): string {
   return hash('sha256', `${provider}\0${url}`, 'hex');
 }

@@ -171,6 +171,10 @@ export interface Job {
   createdAt: number;
   updatedAt: number;
   finishedAt?: number;
+  /** A Queued job does not start before this time (epoch ms); set while playback is busy. */
+  retryAt?: number;
+  /** When playback was first found busy (epoch ms); the job fails once it stays busy too long. */
+  busySince?: number;
 }
 
 export interface MediaSegment {
