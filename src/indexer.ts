@@ -5,10 +5,12 @@ import { releaseTitle, normalizeLanguage, sanitizeFilename } from './providers/c
 import { inspectMediaSources } from './media/metadata.ts';
 import { MovieBindings } from './movie-binding.ts';
 import type { BindingSearch, SeriesBindings } from './series-binding.ts';
+import { SeriesFeed } from './series-feed.ts';
 import type { Config, Provider, Release, SearchQuery } from './types.ts';
 
 // Every result resolves playback metadata; clients can request subsequent pages with offset.
 const MAX_PAGE_SIZE = 5;
+const FEED_INSPECTION_TTL_MS = 6 * 60 * 60 * 1000;
 
 export function xml(value: unknown): string {
   return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!);
@@ -21,6 +23,8 @@ export class Indexer {
   private readonly providers: Map<string, Provider>;
   private readonly bindings: SeriesBindings;
   private readonly movieBindings: MovieBindings;
+  private readonly feed: SeriesFeed;
+  private readonly feedInspections = new Map<string, { at: number; metadata: Pick<Release, 'height' | 'size' | 'sizeEstimated' | 'language'> }>();
 
   constructor(config: Config, store: Store, providers: Map<string, Provider>, bindings: SeriesBindings) {
     this.config = config;
@@ -28,6 +32,7 @@ export class Indexer {
     this.providers = providers;
     this.bindings = bindings;
     this.movieBindings = new MovieBindings(store.database);
+    this.feed = new SeriesFeed(store.database, bindings, providers);
   }
 
   capabilities(): string {
@@ -71,6 +76,13 @@ export class Indexer {
     const tmdbId = integer('tmdbid');
     if (tmdbId !== undefined && (tmdbId === 0 || params.t !== 'movie')) throw new Error('Invalid tmdbid');
     const identity = tvdbId === undefined ? undefined : await this.bindings.identity(tvdbId, signal);
+    if (identity) this.feed.watch(identity);
+    if (kind === 'tv' && !query.q.trim() && !identity && tmdbId === undefined
+        && query.season === undefined && query.episode === undefined && !airDate) {
+      const watched = await this.feed.releases(signal);
+      // Sonarr refuses to save an indexer whose RSS is empty, so an empty feed falls back to browsing.
+      if (watched.length) return this.respond(watched, offset, limit, signal, true);
+    }
     const results = await Promise.allSettled(enabled.map(provider => tmdbId === undefined
       ? this.bindings.search(provider, query, identity, signal)
       : this.movieBindings.search(provider, query, tmdbId, signal).then((releases): BindingSearch => ({ releases }))));
@@ -88,9 +100,29 @@ export class Indexer {
     const releases = results.flatMap(result => result.status === 'fulfilled' ? result.value.releases : []);
     const all = tmdbId === undefined ? releases : releases.map(release => ({ ...release, tmdbId }));
     all.sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || '') || a.id.localeCompare(b.id));
-    const page = all.slice(offset, offset + limit);
+    return this.respond(all, offset, limit, signal, false);
+  }
+
+  /**
+   * One Newznab page of `all`. Feed pages reuse a Release's playback inspection for six hours,
+   * because every RSS sync lists the same newest Releases again; searches always inspect anew.
+   */
+  private async respond(all: Release[], offset: number, limit: number, signal: AbortSignal, feed: boolean): Promise<string> {
+    const page = all.slice(offset, offset + limit).map(release => ({ ...release }));
+    const now = Date.now();
+    for (const [id, inspection] of this.feedInspections) if (now - inspection.at >= FEED_INSPECTION_TTL_MS) this.feedInspections.delete(id);
     // Provider pages and manifests are inspected sequentially to avoid bursts at their CDNs.
-    for (const release of page) await this.enrich(release, signal);
+    for (const release of page) {
+      const inspected = feed ? this.feedInspections.get(release.id) : undefined;
+      if (inspected) {
+        Object.assign(release, inspected.metadata);
+        continue;
+      }
+      await this.enrich(release, signal);
+      if (feed && release.height !== undefined) {
+        this.feedInspections.set(release.id, { at: now, metadata: { height: release.height, size: release.size, sizeEstimated: release.sizeEstimated, language: release.language } });
+      }
+    }
     signal.throwIfAborted();
     this.store.saveReleases(page);
     const items = page.map(release => this.item(release)).join('');

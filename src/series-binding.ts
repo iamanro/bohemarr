@@ -127,6 +127,15 @@ export class SeriesBindings {
     return { releases: identity ? releases.filter(release => release.tvdbId === undefined || release.tvdbId === identity.tvdbId) : releases };
   }
 
+  /**
+   * The newest TV Releases of `identity` on `provider`, as `search` finds them, except that a
+   * metadata-backed provider without a stored binding contributes nothing: only a TVDB search binds.
+   */
+  async recent(provider: Provider, identity: SeriesIdentity, limit: number, signal: AbortSignal): Promise<Release[]> {
+    if (provider.seriesCandidates && !this.byIdentity(provider.id, identity.tvdbId)) return [];
+    return (await this.search(provider, { q: '', kind: 'tv', limit, offset: 0 }, identity, signal)).releases;
+  }
+
   private async bind(provider: Provider, identity: SeriesIdentity, signal: AbortSignal): Promise<SeriesBinding | UnboundReason> {
     const selection = selectProgram(identity, await provider.seriesCandidates!(identity, signal));
     if ('reason' in selection) return selection.reason;

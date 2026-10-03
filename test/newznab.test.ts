@@ -137,3 +137,61 @@ test('invalid tvdbid values are rejected before any TVDB lookup', async () => {
   await assert.rejects(newznab.search({ t: 'search', q: '', tvdbid: '12345' }, new AbortController().signal), /Invalid tvdbid/);
   assert.deepEqual(lookups, []);
 });
+
+test('RSS lists the newest Releases of series Sonarr searched by TVDB ID, dated when first listed', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-10-03T18:00:00Z') });
+  const store = new Store(':memory:');
+  using dispose = store;
+  const episode = (number: number): Release => ({
+    id: `ep-${number}`, provider: 'oneplay', title: `Episode ${number}`, series: 'Provider Title', kind: 'tv',
+    season: 1, episode: number, url: `https://oneplay.test/ep-${number}`, programId: 'src',
+  });
+  let published = [episode(2), episode(1)];
+  const browsed: Release = { id: 'other', provider: 'oneplay', title: 'Other', series: 'Unrelated', kind: 'tv', season: 1, episode: 1, url: 'https://oneplay.test/other' };
+  const provider: Provider = {
+    id: 'oneplay', name: 'Oneplay', resolve: async () => [],
+    seriesCandidates: async () => [{ id: 'src', title: 'Show Name', aliases: [], year: 2020, countries: ['US'] }],
+    catalogue: fakeCatalogue(bound => bound === 'src' ? published : [browsed]),
+  };
+  const newznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database, async () => identity));
+  const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false, isArray: name => name === 'item' || name === 'newznab:attr' });
+  const rss = async (offset = 0) => (parser.parse(await newznab.search({ t: 'tvsearch', cat: '5000', extended: '1', offset: String(offset) }, new AbortController().signal)).rss.channel.item ?? [])
+    .map((item: Record<string, any>) => ({ title: item.title, pubDate: item.pubDate,
+      tvdbId: item['newznab:attr'].find((attr: Record<string, string>) => attr['@_name'] === 'tvdbid')?.['@_value'] }));
+
+  // Nothing is watched yet: the feed is the catalogue browse page, so Sonarr can still save the indexer.
+  assert.deepEqual((await rss()).map((item: { title: string }) => item.title), ['Unrelated S01E01[WEB-DL]']);
+
+  await newznab.search({ t: 'tvsearch', tvdbid: '12345', season: '1', ep: '1' }, new AbortController().signal);
+  t.mock.timers.tick(11 * 60 * 1000);
+  const first = await rss();
+  assert.deepEqual(first, [
+    { title: 'Show Name S01E02[WEB-DL]', pubDate: 'Sat, 03 Oct 2026 18:11:00 GMT', tvdbId: '12345' },
+    { title: 'Show Name S01E01[WEB-DL]', pubDate: 'Sat, 03 Oct 2026 18:11:00 GMT', tvdbId: '12345' },
+  ]);
+  // The Task descriptor of an RSS item names the stamped Release, as Sonarr's grab requires.
+  assert.equal(newznab.parseTaskDescriptor(newznab.taskDescriptor('ep-2').content).tvdbId, 12345);
+
+  // A newly available episode leads the next listing; earlier Releases keep their first-listed date.
+  published = [episode(3), ...published];
+  t.mock.timers.tick(5 * 60 * 1000);
+  assert.equal((await rss()).length, 2, 'one listing serves a whole RSS sync');
+  t.mock.timers.tick(6 * 60 * 1000);
+  assert.deepEqual((await rss()).map((item: { title: string; pubDate: string }) => [item.title, item.pubDate]), [
+    ['Show Name S01E03[WEB-DL]', 'Sat, 03 Oct 2026 18:22:00 GMT'],
+    ['Show Name S01E02[WEB-DL]', 'Sat, 03 Oct 2026 18:11:00 GMT'],
+    ['Show Name S01E01[WEB-DL]', 'Sat, 03 Oct 2026 18:11:00 GMT'],
+  ]);
+});
+
+test('series searched by TVDB ID before the RSS feed existed are watched after the upgrade', async () => {
+  const store = new Store(':memory:');
+  using dispose = store;
+  const { provider } = indexer();
+  const bindings = new SeriesBindings(store.database, async () => identity);
+  await bindings.search(provider, { q: '', kind: 'tv', season: 1, episode: 1, limit: 5, offset: 0 }, identity, new AbortController().signal);
+  const newznab = new Indexer(config, store, new Map([[provider.id, provider]]), bindings);
+  const feed = await newznab.search({ t: 'tvsearch', cat: '5000' }, new AbortController().signal);
+  assert.match(feed, /<title>Show Name S01E01\[WEB-DL\]<\/title>/);
+  assert.match(feed, /<newznab:attr name="tvdbid" value="12345"\/>/);
+});

@@ -2,6 +2,12 @@
 
 ## 2026-10-03
 
+### Sonarr RSS feed for newly available episodes
+
+- Found that Sonarr never grabbed newly available Love Island episodes automatically. Every Bohemarr grab was an interactive search, because the Bohemarr indexer had RSS and Automatic Search disabled. Bohemarr's RSS response was also unusable: it listed the first five catalogue programs alphabetically, all dated 1970, and took 22 seconds.
+- The TV RSS feed (`t=tvsearch` without a query) now lists the five newest episodes of each watched series, newest first, with the TVDB ID and canonical title of bound series. A series becomes watched when Sonarr first searches it by TVDB ID, and it stays watched. Series already searched before the upgrade are watched automatically.
+- The feed never creates a Series binding. Items are dated when first listed, and that date is stored so it does not change. One listing is shared for ten minutes, and each item's playback inspection is reused for six hours. A failed listing is not cached. While no series is watched, the previous catalogue browse response remains.
+
 ### Radarr TMDB movie matching
 
 - Accept and advertise `tmdbid` on Newznab movie searches.

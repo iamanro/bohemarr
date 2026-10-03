@@ -291,3 +291,16 @@ test('an aborted or failing exact episode expansion never populates the cache', 
     assert.deepEqual(releases.map(r => r.id), ['src-correct-ep1']);
   });
 });
+
+test('the RSS listing expands an existing binding but never creates one', async () => {
+  await withStore(async store => {
+    let lookups = 0;
+    const counted = provider(() => { lookups++; return [correct]; });
+    const bindings = new SeriesBindings(store.database);
+    assert.deepEqual(await bindings.recent(counted, identity, 5, signal), []);
+    assert.equal(lookups, 0);
+    await bindings.search(counted, query, identity, signal);
+    assert.deepEqual((await bindings.recent(counted, identity, 5, signal)).map(r => [r.id, r.tvdbId]), [['src-correct-ep1', 12345]]);
+    assert.equal(lookups, 1);
+  });
+});

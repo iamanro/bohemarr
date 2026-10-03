@@ -78,7 +78,9 @@ TZ=Europe/Prague
 
 3. Add Bohemarr as the indexer and download client in each application. Use the TV category for Sonarr and the movie category for Radarr.
 4. Run one interactive search first. Confirm that the releases and downloaded file import correctly.
-5. To grab monitored media automatically, enable **RSS** and **Automatic Search** for the Bohemarr indexer. Interactive Search alone is manual only.
+5. To grab monitored media automatically, enable **RSS** and **Automatic Search** for the Bohemarr indexer. Interactive Search alone is manual only. Sonarr grabs an episode that becomes available after it aired only through RSS sync.
+
+Bohemarr's TV RSS feed lists the five newest episodes of every series Sonarr has searched by TVDB ID, newest first; a series stays in the feed after that first search, also between seasons. Series on Oneplay and Prima+ appear once their program is bound (the first TVDB search binds it). An item is dated when the feed first listed it. The listing refreshes at most every ten minutes. Until Sonarr has searched any series, the feed shows the catalogue browse page instead, so Sonarr can still save the indexer.
 
 Radarr movie searches can include a TMDB ID. Bohemarr uses a verified local provider binding for that ID when one exists; otherwise it searches enabled providers by the title and year Radarr supplies. Matching results retain the TMDB ID.
 
@@ -115,7 +117,7 @@ Persistent state is in `/data`; completed downloads are in `/downloads/<category
 
 ## Troubleshooting
 
-- **Interactive search works but nothing grabs automatically:** enable RSS and Automatic Search for Bohemarr.
+- **Interactive search works but nothing grabs automatically:** enable RSS and Automatic Search for Bohemarr. A series added before Automatic Search was enabled enters the RSS feed after its next TVDB search, for example an interactive search of one episode.
 - **A provider returns no results:** verify that it is enabled and that account credentials, when required, are valid. Check `docker compose logs bohemarr`.
 - **Sonarr or Radarr cannot import a completed file:** mount the same host downloads directory into both applications, or configure a Remote Path Mapping.
 - **Indexer or download-client test fails:** verify `PUBLIC_URL`, the API key, and Docker network connectivity.

@@ -40,6 +40,10 @@ _Avoid_: TVDB show, series metadata
 The stored pairing of one Series identity with one Program of one provider; once stored it is never reassigned.
 _Avoid_: mapping, pairing, match
 
+**Watched series**:
+A Series identity Sonarr has searched by TVDB ID; the RSS feed lists its newest Releases from then on.
+_Avoid_: followed, subscribed, monitored (Sonarr's own term)
+
 **Unbound**:
 The state of a Series identity for which no Program of a given provider qualifies; that provider returns no Releases for it.
 _Avoid_: unmatched, not found
