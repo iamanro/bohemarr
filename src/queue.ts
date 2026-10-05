@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { Store } from './store.ts';
@@ -29,15 +28,18 @@ export class Queue {
     }
   }
 
-  add(release: Release, category: string, priority = 0): Job {
+  /**
+   * Adds the Job `id` (a Task descriptor's info hash). Adding an existing Job again returns it, and
+   * requeues it when it failed, as re-adding a known torrent to a BitTorrent client keeps that torrent.
+   */
+  add(id: string, release: Release, category: string, paused = false): Job {
+    const existing = this.store.job(id);
+    if (existing) return existing.status === 'Failed' ? this.retry(id) : existing;
     if (!this.config.categories.includes(category)) throw new Error(`Unknown category: ${category}`);
     if (!this.providers.has(release.provider)) throw new Error(`Provider is not enabled: ${release.provider}`);
-    const existing = this.store.jobs().find(job => job.release.id === release.id && job.category === category && !['Completed', 'Failed'].includes(job.status));
-    if (existing) return existing;
-    const id = randomUUID();
     const now = Date.now();
     const job: Job = {
-      id, release, category, priority, status: priority === -2 ? 'Paused' : 'Queued', bytes: 0, totalBytes: release.size || 0,
+      id, release, category, status: paused ? 'Paused' : 'Queued', bytes: 0, totalBytes: release.size || 0,
       progress: 0, storage: resolve(this.config.downloadsDir, category, id, sanitizeFilename(releaseTitle(release))), error: '', createdAt: now, updatedAt: now,
     };
     this.store.saveJob(job);
@@ -52,7 +54,7 @@ export class Queue {
     let nextRetry = Infinity;
     for (const job of this.store.jobs()) {
       if (this.active.size >= this.config.concurrency) break;
-      if (job.status !== 'Queued' || this.active.has(job.id) || (this.store.paused && job.priority !== 2)) continue;
+      if (job.status !== 'Queued' || this.active.has(job.id)) continue;
       if (job.retryAt !== undefined && job.retryAt > now) {
         nextRetry = Math.min(nextRetry, job.retryAt);
         continue;
@@ -109,28 +111,21 @@ export class Queue {
     }
   }
 
-  async pause(id?: string): Promise<void> {
-    if (!id) this.store.paused = true;
-    const jobs = id ? [this.requireJob(id)] : this.store.jobs().filter(job => job.status === 'Downloading' && job.priority !== 2);
-    const tasks: Promise<void>[] = [];
-    for (const job of jobs) {
-      if (!['Queued', 'Downloading'].includes(job.status)) continue;
-      this.store.updateJob(job.id, { status: id ? 'Paused' : 'Queued' });
-      const active = this.active.get(job.id);
-      if (active) {
-        active.controller.abort(new Error('Download paused'));
-        tasks.push(active.task);
-      }
+  async pause(id: string): Promise<void> {
+    const job = this.requireJob(id);
+    if (!['Queued', 'Downloading'].includes(job.status)) return;
+    this.store.updateJob(id, { status: 'Paused' });
+    const active = this.active.get(id);
+    if (active) {
+      active.controller.abort(new Error('Download paused'));
+      await active.task;
     }
-    await Promise.all(tasks);
   }
 
-  resume(id?: string): void {
-    if (id) {
-      const job = this.requireJob(id);
-      if (job.status !== 'Paused') throw new Error('Only a paused job can be resumed');
-      this.store.updateJob(id, { status: 'Queued' });
-    } else this.store.paused = false;
+  resume(id: string): void {
+    const job = this.requireJob(id);
+    if (job.status !== 'Paused') throw new Error('Only a paused job can be resumed');
+    this.store.updateJob(id, { status: 'Queued' });
     this.wake();
   }
 

@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-10-05
+
+### Publishing imports to Vltava
+
+- Bohemarr can upload what Sonarr and Radarr import to the Vltava tracker and seed it with a dedicated [rqbit](https://github.com/ikatson/rqbit) server. Only Bohemarr downloads from providers in `VLTAVA_PROVIDERS` are published, as single episodes or movies with a TMDB ID. Each upload carries the episode, resolution, type WEB-DL and a Markdown description with the source and TMDB/TVDB/IMDb links, and waits in Vltava's moderation queue unless the account may skip it.
+- Sonarr and Radarr report imports through a Webhook connection (`POST /hooks/arr`), which Bohemarr creates with the rest of their setup and removes when publishing is off. Bohemarr keeps the Release of each download after Sonarr or Radarr removes it, because an import can be reported after its download is gone.
+- Uploads go through Vltava's `vltava` CLI, so canonical naming, MediaInfo and the `.torrent` follow Vltava's own rules. `compose.vltava.yaml` builds the CLI into the image from `VLTAVA_SOURCE`, mounts the library at `MEDIA_DIR` and runs rqbit 9.0.1 as `vltava-seeder` (DHT, LSD and UPnP off, fast resume on). A publication counts as seeding once rqbit verified every piece; a tree that does not match its torrent fails, and rqbit lets go of it so it never downloads. Publications are stored in SQLite and survive restarts. A failed step is retried after 5 minutes, doubling up to 6 hours, and gives up after 8 attempts; a torrent Vltava already has is not retried. The API token reaches the CLI through its environment, never its arguments.
+- The bundled `vltava-seeder` runs only with `COMPOSE_PROFILES=seeder`. Otherwise `VLTAVA_SEEDER_URL` points to the rqbit Vltava's community seedbox runs, and Vltava's staff page `/seedbox` manages the publications as foreign torrents. `VLTAVA_OUT_DIR` must stay outside Vltava's `SEEDBOX_SAVE_PATH`.
+- Requires Vltava with the `vltava` CLI and `POST /naming/plan`, which production does not run yet (it runs d413155), and its torrent descriptions rendered as Markdown (local Vltava change).
+- Verified end to end against a local Vltava (separate database, Meilisearch and Redis prefix), Sonarr and the Compose stack: Sonarr grabbed an episode from Bohemarr and imported it, and the webhook queued it. The CLI in the image uploaded it into moderation. rqbit verified all of the hardlinked tree (`live`, finished), the tracker counted it as a seeder once a moderator approved it, and after a restart rqbit resumed without hashing the files again. That run showed rqbit cannot seed from a read-only mount, because it opens files read/write.
+
+### Fix: a download could crash the whole service
+
+- Bohemarr exited with `AssertionError: assert(!this.paused)` when a server closed the connection while a download was still writing earlier data to disk. The download smoke test against Python's `http.server` hit this every time; it is intermittent over real networks.
+- Cause: cheerio imports undici 7.30, and that import makes undici 7 the HTTP stack of Node's global `fetch`, in place of the undici 8.10 that Node 26 bundles. Undici 7 asserts when the connection ends while its parser is paused for backpressure, and that assertion cannot be caught ([nodejs/undici#5360](https://github.com/nodejs/undici/issues/5360)). Undici 8.11 drains the parser instead, and 7.30 is the newest 7.x release.
+- `package.json` now overrides every undici in the dependency tree to `^8.11.2`. A regression test reproduces the upstream case with the providers loaded as in the service; it failed before the override and passes with it. The same download from `http.server` that crashed now completes five times out of five.
+
+### Configuration in .env and automatic Sonarr/Radarr setup
+
+- Every single-value setting is an environment variable, set in `.env`, which `compose.yaml` passes to the container; `.env.example` documents each one. `PROVIDERS` lists exactly the enabled providers, provider settings are named `<PROVIDER>_<SETTING>` (for example `ONEPLAY_PASSWORD`, `ONEPLAY_PROFILE_PIN`, `YOUTUBE_PO_TOKEN`), and `CATEGORIES` sets the download-client categories.
+- Any variable can be read from a file named by `NAME_FILE`, for example a Docker secret, so passwords and API keys need not appear in `docker inspect`.
+- **Breaking:** `config.json` now holds only the provider settings that are lists or objects: `providers.<id>.catalog` and `providers.<id>.headers`. Bohemarr refuses to start when it contains anything else, such as credentials, `enabled`, `categories` or `concurrency`, and names the variable to use instead. Without `PROVIDERS`, every public provider is enabled, and every account provider whose credentials are set.
+- With `SONARR_URL`/`SONARR_API_KEY` or `RADARR_URL`/`RADARR_API_KEY`, Bohemarr configures the application at every start: a qBittorrent download client and a Torznab indexer named Bohemarr (the indexer sends its grabs to that client), a Delay Profile without torrent delay for the tag `bohemarr`, and the root folder from `SONARR_ROOT_FOLDER`/`RADARR_ROOT_FOLDER`. `ARR_REMOVE_COMPLETED` sets Remove Completed. An unreachable application is retried with growing intervals of up to ten minutes.
+- **Breaking:** the state directory moved from `/data` to `/config`; the Compose `config` volume keeps its contents. Containers started without Compose must mount their state volume at `/config`.
+- `DOWNLOADS_DIR` sets the downloads path inside the container, so it can match the path Sonarr and Radarr use (for example `/data/downloads`) without a Remote Path Mapping. `PUBLISH_ADDRESS` and `PUBLISH_PORT` set the published host address and port.
+- Verified with Docker Compose against Sonarr and Radarr containers. Both were configured on the first start. A restart after changing `ARR_REMOVE_COMPLETED` and the Delay Profile in Sonarr created no duplicates and restored the `.env` values. A Sonarr that was down at startup was configured once it came up.
+
+## 2026-10-04
+
+### Torznab and qBittorrent instead of Newznab and SABnzbd
+
+- **Breaking:** Bohemarr now presents itself as a Torznab indexer at `/api` and a qBittorrent download client (Web API v2) instead of Newznab at `/newznab/api` and SABnzbd. Replace both entries in Sonarr and Radarr: a Torznab indexer with API Path `/api`, and a qBittorrent client with any username and the API key as password. Jobs added through SABnzbd remain in the queue, but Sonarr and Radarr no longer track them.
+- A Task descriptor is now a signed .torrent with one placeholder byte; its info hash is the Job ID and the download ID Sonarr and Radarr track. Torznab items carry the same `infohash`. Re-adding a known task torrent returns the existing Job and requeues it only if it failed.
+- A completed Job is reported as a finished torrent whose seeding goal is reached. Sonarr and Radarr then move and remove it when Remove Completed is enabled, and copy or hardlink it and leave it in place otherwise.
+- Sonarr and Radarr never run failed-download handling for qBittorrent. A failed Job stays in their queue as a warning and is not blocklisted automatically.
+- qBittorrent has no global pause or job priorities, so both are removed. On upgrade, a global pause becomes a pause of each Job it held back; jobs that bypassed it with force priority keep running.
+- Delay Profiles now apply the Torrent delay to Bohemarr releases instead of the Usenet delay.
+- Verified against Sonarr 4.0.20: the indexer and download-client tests passed. Two grabs downloaded, and Sonarr computed the same info hash as the Torznab item. With Remove Completed enabled, Sonarr moved the episode and removed the download. With it disabled, Sonarr hardlinked the episode (one inode, two links) and left the download in place.
+
 ## 2026-10-03
 
 ### Sonarr RSS feed for newly available episodes

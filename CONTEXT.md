@@ -1,6 +1,6 @@
 # Bohemarr
 
-Headless service that presents Czech and Slovak streaming sources to Sonarr/Radarr as a Newznab indexer and a SABnzbd-compatible download client, then downloads the original media.
+Headless service that presents Czech and Slovak streaming sources to Sonarr/Radarr as a Torznab indexer and a qBittorrent-compatible download client, then downloads the original media.
 
 ## Language
 
@@ -55,5 +55,11 @@ One download of a Release into a category, with a status of queued, downloading,
 _Avoid_: task, download (as a noun)
 
 **Task descriptor**:
-The signed NZB envelope naming a Release, which only this service instance can execute.
-_Avoid_: NZB, ticket
+The signed .torrent naming a Release, which only this service instance can execute; its info hash is the Job's ID.
+_Avoid_: torrent, NZB, ticket
+
+### Publishing
+
+**Publication**:
+One imported file on its way to the Vltava tracker: uploaded with the `vltava` CLI, then seeded by a dedicated rqbit.
+_Avoid_: upload (as a noun), post, share

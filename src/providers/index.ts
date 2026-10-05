@@ -6,6 +6,7 @@ import { createPublicSiteProviders } from './public-sites.ts';
 import { createJojSledovaniProviders } from './joj-sledovani.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { releaseId } from './common.ts';
+import { PROVIDER_IDS } from './ids.ts';
 import type { Config, Provider, Release } from '../types.ts';
 
 /** `database` is the service database; providers that keep local state (the Prima+ index, the Stream.cz discovery cache) own tables in it. */
@@ -15,6 +16,7 @@ export function createProviders(config: Config, database: DatabaseSync): Map<str
     createNovaMarkizaProviders, createPublicSiteProviders, createJojSledovaniProviders]) {
     for (const provider of factory(config.providers, database)) {
       if (providers.has(provider.id)) throw new Error(`Duplicate provider ID: ${provider.id}`);
+      if (!(PROVIDER_IDS as readonly string[]).includes(provider.id)) throw new Error(`Provider ID missing from PROVIDER_IDS: ${provider.id}`);
       const entries = catalogueEntries(provider.id, config.providers[provider.id]?.catalog);
       providers.set(provider.id, entries.length ? { ...provider, entries } : provider);
     }

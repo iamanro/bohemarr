@@ -1,23 +1,14 @@
 {
-  "categories": ["tv", "movies"],
-  "concurrency": 2,
   "providers": {
-    "ceskatelevize": { "enabled": true },
-    "streamcz": { "enabled": true },
-    "iprima": { "enabled": false, "username": "", "password": "" },
-    "oneplay": { "enabled": false, "username": "", "password": "" },
-    "novaplus": { "enabled": false },
-    "tncz": { "enabled": false },
-    "markizaplus": { "enabled": false },
-    "markizavoyo": { "enabled": false, "username": "", "password": "" },
-    "jojplay": { "enabled": false, "username": "", "password": "" },
-    "sledovanitv": { "enabled": false, "username": "", "password": "" },
-    "tvprimadoma": { "enabled": false },
-    "tvbarrandov": { "enabled": false, "username": "", "password": "" },
-    "tvautosalon": { "enabled": false },
-    "stvr": { "enabled": false },
-    "html5": { "enabled": false },
-    "youtube": { "enabled": false },
-    "direct": { "enabled": false, "catalog": [] }
+    "direct": {
+      "catalog": [
+        { "title": "Example film", "kind": "movie", "year": 2024, "url": "https://example.com/film.mp4" },
+        { "title": "Pilot", "series": "Example series", "kind": "tv", "season": 1, "episode": 1, "url": "https://example.com/s01e01.mp4" }
+      ],
+      "headers": { "Referer": "https://example.com/" }
+    },
+    "html5": {
+      "headers": { "User-Agent": "Mozilla/5.0" }
+    }
   }
 }

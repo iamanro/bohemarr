@@ -1,3 +1,6 @@
+# vltava-cli-build when the image should contain the Vltava tracker's `vltava` CLI (compose.vltava.yaml sets it).
+ARG VLTAVA_CLI_STAGE=vltava-cli-none
+
 FROM debian:trixie-slim AS bento4
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git cmake make g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /bento4
@@ -29,6 +32,20 @@ RUN set -eu; \
   install -m 755 "/tmp/${asset}/bin/ffmpeg" "/tmp/${asset}/bin/ffprobe" /out/bin/; \
   cp "/tmp/${asset}/LICENSE.txt" /out/doc/LICENSE.txt; \
   echo "https://github.com/BtbN/FFmpeg-Builds/releases/tag/${FFMPEG_BUILD} ${asset}" > /out/doc/SOURCE.txt
+
+# The `vltava` CLI, built from the Vltava source passed as the `vltava` build context. Only the paths
+# named here are transferred, never the source's build output.
+FROM rust:1.99-slim-trixie AS vltava-cli-build
+RUN apt-get update && apt-get install -y --no-install-recommends cmake g++ make zlib1g-dev && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY --from=vltava Cargo.toml Cargo.lock ./
+COPY --from=vltava crates/ ./crates/
+RUN cargo build --release --locked -p cli && install -D target/release/vltava /out/vltava
+
+FROM debian:trixie-slim AS vltava-cli-none
+RUN mkdir /out
+
+FROM ${VLTAVA_CLI_STAGE} AS vltava-cli
 
 FROM node:26-trixie-slim AS build
 WORKDIR /app
@@ -62,11 +79,12 @@ COPY --from=ffmpeg /out/bin/ /usr/local/bin/
 COPY --from=ffmpeg /out/doc/ /usr/share/doc/ffmpeg/
 COPY --from=bento4 /bento4/build/mp4decrypt /usr/local/bin/mp4decrypt
 COPY --from=bento4 /bento4-source.tar.gz /usr/share/bento4-source.tar.gz
-RUN mkdir /data /downloads && chown node:node /data /downloads
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 DATA_DIR=/data DOWNLOADS_DIR=/downloads
+COPY --from=vltava-cli /out/ /usr/local/bin/
+RUN mkdir /config /downloads && chown node:node /config /downloads
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 DATA_DIR=/config DOWNLOADS_DIR=/downloads
 USER node
 EXPOSE 8787
-VOLUME ["/data", "/downloads"]
+VOLUME ["/config", "/downloads"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "dist/main.js"]

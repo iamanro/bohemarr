@@ -12,7 +12,7 @@ const config: Config = {
   host: '127.0.0.1', port: 8787, apiKey: 'a'.repeat(64), publicUrl: 'http://localhost:8787',
   dataDir: '/unused', downloadsDir: '/unused', concurrency: 1,
   ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'https://example.test/wv/',
-  categories: ['tv', 'movies'], providers: {},
+  categories: ['tv', 'movies'], providers: {}, arrs: [],
 };
 
 function indexer(lookups: number[] = []) {
@@ -30,19 +30,19 @@ function indexer(lookups: number[] = []) {
 }
 
 test('a tvdbid search is advertised and answered with the canonical title, tvdbid attribute and original source URL', async () => {
-  const { store, indexer: newznab } = indexer();
+  const { store, indexer: torznab } = indexer();
   using dispose = store;
-  assert.match(newznab.capabilities(), /supportedParams="q,season,ep,tvdbid"/);
-  const feed = await newznab.search({ t: 'tvsearch', q: '', tvdbid: '12345' }, new AbortController().signal);
-  assert.match(feed, /<newznab:attr name="tvdbid" value="12345"\/>/);
+  assert.match(torznab.capabilities(), /supportedParams="q,season,ep,tvdbid"/);
+  const feed = await torznab.search({ t: 'tvsearch', q: '', tvdbid: '12345' }, new AbortController().signal);
+  assert.match(feed, /<torznab:attr name="tvdbid" value="12345"\/>/);
   assert.match(feed, /<comments>https:\/\/oneplay\.test\/original\/stream\.mp4<\/comments>/);
   // The Task descriptor names the stamped Release.
-  const stamped = newznab.parseTaskDescriptor(newznab.taskDescriptor('ep-1').content);
+  const stamped = torznab.parseTaskDescriptor(torznab.taskDescriptor('ep-1').content).release;
   assert.equal(stamped.tvdbId, 12345);
   assert.equal(stamped.series, 'Show Name');
 });
 
-test('Newznab publishes highest available video with Czech audio and an honest AV size estimate', async t => {
+test('Torznab publishes highest available video with Czech audio and an honest AV size estimate', async t => {
   let uhdAvailable = false;
   t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
     const response = new Response(`<MPD type="static"><Period duration="PT8S">
@@ -58,23 +58,23 @@ test('Newznab publishes highest available video with Czech audio and an honest A
     Object.defineProperty(response, 'url', { value: String(input) });
     return response;
   });
-  const { store, provider, indexer: newznab } = indexer();
+  const { store, provider, indexer: torznab } = indexer();
   using dispose = store;
   provider.resolve = async () => [{ url: 'https://cdn.example.test/master.mpd?token=private-only', type: 'dash', headers: { 'X-Stream-Token': 'private-only' } }];
   const params = { t: 'tvsearch', tvdbid: '12345', season: '1', ep: '1' };
-  const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false, isArray: name => name === 'newznab:attr' });
-  const item = parser.parse(await newznab.search(params, new AbortController().signal)).rss.channel.item;
+  const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false, isArray: name => name === 'torznab:attr' });
+  const item = parser.parse(await torznab.search(params, new AbortController().signal)).rss.channel.item;
   assert.equal(item.title, 'Show Name S01E01 (CZ)[WEB-DL][1080p]');
   assert.equal(item.enclosure['@_length'], '8128000');
-  assert.equal(item['newznab:attr'].find((attr: Record<string, string>) => attr['@_name'] === 'size')['@_value'], '8128000');
+  assert.equal(item['torznab:attr'].find((attr: Record<string, string>) => attr['@_name'] === 'size')['@_value'], '8128000');
   assert.match(item.description, /estimated/i);
-  const descriptor = newznab.taskDescriptor('ep-1');
-  assert.equal(descriptor.name, 'Show Name S01E01 (CZ)[WEB-DL][1080p].nzb');
-  assert.doesNotMatch(JSON.stringify(newznab.parseTaskDescriptor(descriptor.content)), /private-only|X-Stream-Token|master\.mpd/);
+  const descriptor = torznab.taskDescriptor('ep-1');
+  assert.equal(descriptor.name, 'Show Name S01E01 (CZ)[WEB-DL][1080p].torrent');
+  assert.doesNotMatch(JSON.stringify(torznab.parseTaskDescriptor(descriptor.content)), /private-only|X-Stream-Token|master\.mpd/);
 
   // A durable episode URL can acquire a higher-quality rendition after the first search.
   uhdAvailable = true;
-  const updated = parser.parse(await newznab.search(params, new AbortController().signal)).rss.channel.item;
+  const updated = parser.parse(await torznab.search(params, new AbortController().signal)).rss.channel.item;
   assert.equal(updated.title, 'Show Name S01E01 (CZ)[WEB-DL][2160p]');
   assert.equal(updated.enclosure['@_length'], '16128000');
 });
@@ -96,15 +96,15 @@ test('movie searches advertise and return Radarr TMDB IDs', async () => {
     id: 'direct', name: 'Direct', resolve: async () => [],
     catalogue: fakeCatalogue(bound => bound === 'movie-source' ? [movie] : []),
   };
-  const newznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database));
+  const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database));
 
-  assert.match(newznab.capabilities(), /movie-search available="yes" supportedParams="q,tmdbid"/);
-  const feed = await newznab.search({ t: 'movie', q: 'Wrong title', tmdbid: '1032863' }, new AbortController().signal);
-  assert.match(feed, /<newznab:attr name="tmdbid" value="1032863"\/>/);
+  assert.match(torznab.capabilities(), /movie-search available="yes" supportedParams="q,tmdbid"/);
+  const feed = await torznab.search({ t: 'movie', q: 'Wrong title', tmdbid: '1032863' }, new AbortController().signal);
+  assert.match(feed, /<torznab:attr name="tmdbid" value="1032863"\/>/);
   for (const bad of ['0', '-5', '1.5', 'abc', '1e9999999']) {
-    await assert.rejects(newznab.search({ t: 'movie', q: 'Film', tmdbid: bad }, new AbortController().signal));
+    await assert.rejects(torznab.search({ t: 'movie', q: 'Film', tmdbid: bad }, new AbortController().signal));
   }
-  await assert.rejects(newznab.search({ t: 'tvsearch', q: 'Film', tmdbid: '1032863' }, new AbortController().signal), /Invalid tmdbid/);
+  await assert.rejects(torznab.search({ t: 'tvsearch', q: 'Film', tmdbid: '1032863' }, new AbortController().signal), /Invalid tmdbid/);
 });
 
 test('a TMDB movie binding selects a static catalogue entry', async () => {
@@ -121,20 +121,20 @@ test('a TMDB movie binding selects a static catalogue entry', async () => {
     id: 'direct', name: 'Direct', entries: [movie], resolve: async () => [],
     catalogue: fakeCatalogue(() => [movie]),
   };
-  const newznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database));
+  const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database));
 
-  const feed = await newznab.search({ t: 'movie', q: 'Wrong title', tmdbid: '1032863' }, new AbortController().signal);
+  const feed = await torznab.search({ t: 'movie', q: 'Wrong title', tmdbid: '1032863' }, new AbortController().signal);
   assert.match(feed, /Mapped Film/);
 });
 
 test('invalid tvdbid values are rejected before any TVDB lookup', async () => {
   const lookups: number[] = [];
-  const { store, indexer: newznab } = indexer(lookups);
+  const { store, indexer: torznab } = indexer(lookups);
   using dispose = store;
   for (const bad of ['0', '-5', '1.5', 'abc', '1e9999999']) {
-    await assert.rejects(newznab.search({ t: 'tvsearch', q: '', tvdbid: bad }, new AbortController().signal));
+    await assert.rejects(torznab.search({ t: 'tvsearch', q: '', tvdbid: bad }, new AbortController().signal));
   }
-  await assert.rejects(newznab.search({ t: 'search', q: '', tvdbid: '12345' }, new AbortController().signal), /Invalid tvdbid/);
+  await assert.rejects(torznab.search({ t: 'search', q: '', tvdbid: '12345' }, new AbortController().signal), /Invalid tvdbid/);
   assert.deepEqual(lookups, []);
 });
 
@@ -153,16 +153,16 @@ test('RSS lists the newest Releases of series Sonarr searched by TVDB ID, dated 
     seriesCandidates: async () => [{ id: 'src', title: 'Show Name', aliases: [], year: 2020, countries: ['US'] }],
     catalogue: fakeCatalogue(bound => bound === 'src' ? published : [browsed]),
   };
-  const newznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database, async () => identity));
-  const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false, isArray: name => name === 'item' || name === 'newznab:attr' });
-  const rss = async (offset = 0) => (parser.parse(await newznab.search({ t: 'tvsearch', cat: '5000', extended: '1', offset: String(offset) }, new AbortController().signal)).rss.channel.item ?? [])
+  const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database, async () => identity));
+  const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false, isArray: name => name === 'item' || name === 'torznab:attr' });
+  const rss = async (offset = 0) => (parser.parse(await torznab.search({ t: 'tvsearch', cat: '5000', extended: '1', offset: String(offset) }, new AbortController().signal)).rss.channel.item ?? [])
     .map((item: Record<string, any>) => ({ title: item.title, pubDate: item.pubDate,
-      tvdbId: item['newznab:attr'].find((attr: Record<string, string>) => attr['@_name'] === 'tvdbid')?.['@_value'] }));
+      tvdbId: item['torznab:attr'].find((attr: Record<string, string>) => attr['@_name'] === 'tvdbid')?.['@_value'] }));
 
   // Nothing is watched yet: the feed is the catalogue browse page, so Sonarr can still save the indexer.
   assert.deepEqual((await rss()).map((item: { title: string }) => item.title), ['Unrelated S01E01[WEB-DL]']);
 
-  await newznab.search({ t: 'tvsearch', tvdbid: '12345', season: '1', ep: '1' }, new AbortController().signal);
+  await torznab.search({ t: 'tvsearch', tvdbid: '12345', season: '1', ep: '1' }, new AbortController().signal);
   t.mock.timers.tick(11 * 60 * 1000);
   const first = await rss();
   assert.deepEqual(first, [
@@ -170,7 +170,7 @@ test('RSS lists the newest Releases of series Sonarr searched by TVDB ID, dated 
     { title: 'Show Name S01E01[WEB-DL]', pubDate: 'Sat, 03 Oct 2026 18:11:00 GMT', tvdbId: '12345' },
   ]);
   // The Task descriptor of an RSS item names the stamped Release, as Sonarr's grab requires.
-  assert.equal(newznab.parseTaskDescriptor(newznab.taskDescriptor('ep-2').content).tvdbId, 12345);
+  assert.equal(torznab.parseTaskDescriptor(torznab.taskDescriptor('ep-2').content).release.tvdbId, 12345);
 
   // A newly available episode leads the next listing; earlier Releases keep their first-listed date.
   published = [episode(3), ...published];
@@ -190,8 +190,8 @@ test('series searched by TVDB ID before the RSS feed existed are watched after t
   const { provider } = indexer();
   const bindings = new SeriesBindings(store.database, async () => identity);
   await bindings.search(provider, { q: '', kind: 'tv', season: 1, episode: 1, limit: 5, offset: 0 }, identity, new AbortController().signal);
-  const newznab = new Indexer(config, store, new Map([[provider.id, provider]]), bindings);
-  const feed = await newznab.search({ t: 'tvsearch', cat: '5000' }, new AbortController().signal);
+  const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), bindings);
+  const feed = await torznab.search({ t: 'tvsearch', cat: '5000' }, new AbortController().signal);
   assert.match(feed, /<title>Show Name S01E01\[WEB-DL\]<\/title>/);
-  assert.match(feed, /<newznab:attr name="tvdbid" value="12345"\/>/);
+  assert.match(feed, /<torznab:attr name="tvdbid" value="12345"\/>/);
 });

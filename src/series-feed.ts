@@ -6,7 +6,7 @@ import type { Provider, Release, SeriesIdentity } from './types.ts';
 const RELEASES_PER_SERIES = 5;
 /** Below Sonarr's 15-minute default RSS interval: each sync gets a fresh listing, and its page requests share it. */
 const SNAPSHOT_TTL_MS = 10 * 60 * 1000;
-/** Below the server's 120-second Newznab deadline, so a slow listing fails visibly instead of being cut off. */
+/** Below the server's 120-second Torznab deadline, so a slow listing fails visibly instead of being cut off. */
 const BUILD_TIMEOUT_MS = 110_000;
 
 /**

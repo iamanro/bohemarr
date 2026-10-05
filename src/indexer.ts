@@ -1,11 +1,10 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import { XMLParser } from 'fast-xml-parser';
 import { Store } from './store.ts';
 import { releaseTitle, normalizeLanguage, sanitizeFilename } from './providers/common.ts';
 import { inspectMediaSources } from './media/metadata.ts';
 import { MovieBindings } from './movie-binding.ts';
 import type { BindingSearch, SeriesBindings } from './series-binding.ts';
 import { SeriesFeed } from './series-feed.ts';
+import { createTaskTorrent, parseTaskTorrent, taskInfoHash } from './torrent.ts';
 import type { Config, Provider, Release, SearchQuery } from './types.ts';
 
 // Every result resolves playback metadata; clients can request subsequent pages with offset.
@@ -16,7 +15,7 @@ export function xml(value: unknown): string {
   return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!);
 }
 
-/** The Newznab interface: translates Newznab queries to provider searches and Releases to RSS items and Task descriptors. */
+/** The Torznab interface: translates Torznab queries to provider searches and Releases to RSS items and Task descriptors. */
 export class Indexer {
   private readonly config: Config;
   private readonly store: Store;
@@ -104,7 +103,7 @@ export class Indexer {
   }
 
   /**
-   * One Newznab page of `all`. Feed pages reuse a Release's playback inspection for six hours,
+   * One Torznab page of `all`. Feed pages reuse a Release's playback inspection for six hours,
    * because every RSS sync lists the same newest Releases again; searches always inspect anew.
    */
   private async respond(all: Release[], offset: number, limit: number, signal: AbortSignal, feed: boolean): Promise<string> {
@@ -126,7 +125,7 @@ export class Indexer {
     signal.throwIfAborted();
     this.store.saveReleases(page);
     const items = page.map(release => this.item(release)).join('');
-    return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/"><channel><title>Bohemarr</title><description>Source media download tasks</description><link>${xml(this.config.publicUrl)}</link><newznab:response offset="${offset}" total="${all.length}"/>${items}</channel></rss>`;
+    return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><title>Bohemarr</title><description>Source media download tasks</description><link>${xml(this.config.publicUrl)}</link><torznab:response offset="${offset}" total="${all.length}"/>${items}</channel></rss>`;
   }
 
   /** Inspects current source variants; durable release URLs can acquire better renditions later. */
@@ -149,41 +148,29 @@ export class Indexer {
   }
 
   private item(release: Release): string {
-    const url = `${this.config.publicUrl}/newznab/api?t=get&id=${encodeURIComponent(release.id)}&apikey=${encodeURIComponent(this.config.apiKey)}`;
+    const url = `${this.config.publicUrl}/api?t=get&id=${encodeURIComponent(release.id)}&apikey=${encodeURIComponent(this.config.apiKey)}`;
     const category = release.kind === 'movie' ? 2000 : 5000;
     const date = new Date(release.publishedAt || 0);
     const size = Number.isFinite(release.size) && release.size! >= 0 ? Math.floor(release.size!) : 0;
     const description = release.sizeEstimated ? `${release.title} (estimated size)` : release.title;
-    return `<item><title>${xml(releaseTitle(release))}</title><guid isPermaLink="false">${xml(release.id)}</guid><link>${xml(url)}</link><comments>${xml(release.url)}</comments><pubDate>${xml(Number.isFinite(date.getTime()) ? date.toUTCString() : new Date(0).toUTCString())}</pubDate><category>${category}</category><description>${xml(description)}</description><enclosure url="${xml(url)}" length="${size}" type="application/x-nzb"/><newznab:attr name="category" value="${category}"/><newznab:attr name="size" value="${size}"/>${release.tvdbId === undefined ? '' : `<newznab:attr name="tvdbid" value="${release.tvdbId}"/>`}${release.tmdbId === undefined ? '' : `<newznab:attr name="tmdbid" value="${release.tmdbId}"/>`}${release.season === undefined ? '' : `<newznab:attr name="season" value="${release.season}"/>`}${release.episode === undefined ? '' : `<newznab:attr name="episode" value="${release.episode}"/>`}</item>`;
+    const attr = (name: string, value: unknown) => value === undefined ? '' : `<torznab:attr name="${name}" value="${xml(value)}"/>`;
+    const infoHash = taskInfoHash(release.id, sanitizeFilename(releaseTitle(release)));
+    return `<item><title>${xml(releaseTitle(release))}</title><guid isPermaLink="false">${xml(release.id)}</guid><link>${xml(url)}</link><comments>${xml(release.url)}</comments><pubDate>${xml(Number.isFinite(date.getTime()) ? date.toUTCString() : new Date(0).toUTCString())}</pubDate><category>${category}</category><description>${xml(description)}</description><enclosure url="${xml(url)}" length="${size}" type="application/x-bittorrent"/>${attr('category', category)}${attr('size', size)}${attr('infohash', infoHash)}${attr('tvdbid', release.tvdbId)}${attr('tmdbid', release.tmdbId)}${attr('season', release.season)}${attr('episode', release.episode)}</item>`;
   }
 
-  /** The signed Task descriptor (an NZB envelope) for a Release found by an earlier search. */
-  taskDescriptor(id: string): { name: string; content: string } {
+  /** The signed Task descriptor (a .torrent) for a Release found by an earlier search. */
+  taskDescriptor(id: string): { name: string; content: Buffer; infoHash: string } {
     const release = this.store.release(id);
     if (!release) throw new Error('Unknown release ID; search the indexer first');
-    const signature = createHmac('sha256', this.config.apiKey).update(id).digest('hex');
-    const name = releaseTitle(release);
-    return {
-      name: `${sanitizeFilename(name)}.nzb`,
-      content: `<?xml version="1.0" encoding="UTF-8"?><nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"><head><meta type="bohemarr-id">${xml(id)}</meta><meta type="bohemarr-signature">${signature}</meta></head><file poster="bohemarr" date="0" subject="${xml(name)}"><groups><group>bohemarr</group></groups><segments><segment bytes="0" number="1">${xml(id)}@bohemarr</segment></segments></file></nzb>`,
-    };
+    const name = sanitizeFilename(releaseTitle(release));
+    return { name: `${name}.torrent`, ...createTaskTorrent(id, name, this.config.apiKey) };
   }
 
-  /** The Release a Task descriptor from this instance names; rejects foreign or altered descriptors. */
-  parseTaskDescriptor(content: string): Release {
-    if (content.length > 1024 * 1024 || /<!DOCTYPE|<!ENTITY/i.test(content)) throw new Error('Invalid task descriptor');
-    const parsed = new XMLParser({ ignoreAttributes: false, parseTagValue: false, trimValues: true }).parse(content);
-    const raw = parsed?.nzb?.head?.meta;
-    const metas: Array<Record<string, string>> = Array.isArray(raw) ? raw : raw ? [raw] : [];
-    const id = metas.find(meta => meta['@_type'] === 'bohemarr-id')?.['#text'];
-    const signature = metas.find(meta => meta['@_type'] === 'bohemarr-signature')?.['#text'];
-    if (typeof id !== 'string' || typeof signature !== 'string' || !/^[a-f0-9]{64}$/.test(signature)) {
-      throw new Error('Only task descriptors from this Bohemarr instance are supported; this is not a Usenet client');
-    }
-    const expected = createHmac('sha256', this.config.apiKey).update(id).digest();
-    if (!timingSafeEqual(Buffer.from(signature, 'hex'), expected)) throw new Error('Invalid task descriptor signature');
-    const release = this.store.release(id);
+  /** The Release a Task descriptor from this instance names, with its info hash; rejects foreign or altered torrents. */
+  parseTaskDescriptor(content: Buffer): { release: Release; infoHash: string } {
+    const { releaseId, infoHash } = parseTaskTorrent(content, this.config.apiKey);
+    const release = this.store.release(releaseId);
     if (!release) throw new Error('Release no longer exists');
-    return release;
+    return { release, infoHash };
   }
 }

@@ -1,18 +1,23 @@
+# Every setting lives in .env; see .env.example.
 services:
   bohemarr:
     build: .
     image: bohemarr:local
     init: false
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     ports:
-      - "127.0.0.1:8787:8787"
+      - "${PUBLISH_ADDRESS:-127.0.0.1}:${PUBLISH_PORT:-8787}:8787"
     environment:
       PUBLIC_URL: ${PUBLIC_URL:-http://bohemarr:8787}
-      API_KEY: ${API_KEY:-}
       TZ: ${TZ:-Europe/Prague}
+      DOWNLOADS_DIR: ${DOWNLOADS_DIR:-/downloads}
     volumes:
-      - config:/data
-      - ${DOWNLOADS_PATH:-./downloads}:/downloads
+      - config:/config
+      # Sonarr and Radarr must see the downloads at the same path, DOWNLOADS_DIR, for imports and hardlinks.
+      - ${DOWNLOADS_PATH:-./downloads}:${DOWNLOADS_DIR:-/downloads}
     networks:
       - media
     stop_grace_period: 30s

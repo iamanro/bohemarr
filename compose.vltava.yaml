@@ -1,0 +1,48 @@
+# Publishing to Vltava; enabled by COMPOSE_FILE=compose.yaml:compose.vltava.yaml in .env.
+# Bohemarr gets the `vltava` CLI and the media library, and a dedicated rqbit seeds what it publishes.
+services:
+  bohemarr:
+    build:
+      additional_contexts:
+        # The Vltava source; the image builds its `vltava` CLI from it.
+        vltava: ${VLTAVA_SOURCE:?set VLTAVA_SOURCE to the Vltava source directory}
+      args:
+        VLTAVA_CLI_STAGE: vltava-cli-build
+    volumes:
+      # The library at the path Sonarr and Radarr report imported files under. VLTAVA_OUT_DIR lies in it,
+      # so the CLI can hardlink each file into its canonical tree.
+      - ${MEDIA_PATH:?set MEDIA_PATH to the host media library}:${MEDIA_DIR:?set MEDIA_DIR to the library path inside Sonarr and Radarr}
+
+  vltava-seeder:
+    # rqbit: a small seeding server with an HTTP API; private torrents never use DHT, PEX or LSD.
+    # Only with COMPOSE_PROFILES=seeder; without it, VLTAVA_SEEDER_URL points to a shared rqbit, such as
+    # the one Vltava's community seedbox runs.
+    profiles: [seeder]
+    image: ikatson/rqbit:9.0.1
+    restart: unless-stopped
+    environment:
+      RQBIT_HTTP_API_LISTEN_ADDR: 0.0.0.0:3030
+      RQBIT_HTTP_BASIC_AUTH_USERPASS: ${VLTAVA_SEEDER_USERPASS:-}
+      RQBIT_LISTEN_PORT: ${VLTAVA_TORRENTING_PORT:-6881}
+      RQBIT_DHT_DISABLE: "true"
+      RQBIT_LSD_DISABLE: "true"
+      RQBIT_UPNP_PORT_FORWARD_DISABLE: "true"
+      # Restarts resume without hashing every file again.
+      RQBIT_FASTRESUME: "true"
+      TZ: ${TZ:-Europe/Prague}
+    ports:
+      - "${PUBLISH_ADDRESS:-127.0.0.1}:${VLTAVA_SEEDER_PUBLISH_PORT:-3030}:3030"
+      # Peers must reach this port for the torrents to be seeded.
+      - "${VLTAVA_TORRENTING_PORT:-6881}:${VLTAVA_TORRENTING_PORT:-6881}"
+      - "${VLTAVA_TORRENTING_PORT:-6881}:${VLTAVA_TORRENTING_PORT:-6881}/udp"
+    volumes:
+      # Which torrents it seeds, and their fast-resume state.
+      - vltava-seeder:/home/rqbit/db
+      # The same library mount as Bohemarr, so the trees exist at the paths Bohemarr sends. rqbit opens
+      # every file read/write even to seed, so this cannot be read-only.
+      - ${MEDIA_PATH}:${MEDIA_DIR}
+    networks:
+      - media
+
+volumes:
+  vltava-seeder:
