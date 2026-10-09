@@ -21,6 +21,7 @@ import { empty, fetchJson, fetchText, mediaType, normalize, releaseId } from './
 import { isYouTubeUrl, maybeTransformYouTubeUrl, resolveYouTube } from './public-sites-youtube.ts';
 import { resolveOnNetworkEmbed } from './public-sites-onnetwork.ts';
 import { authenticateBarrandov, fetchBarrandovDocument, parseBarrandovLocalSources } from './public-sites-barrandov.ts';
+import { AccountSession, SessionRejected } from './account-session.ts';
 
 // ---------------------------------------------------------------------------
 // Generic helpers shared across providers in this file
@@ -320,54 +321,11 @@ async function findBarrandovYouTubeFallback(originalUrl: string, signal: AbortSi
 }
 
 async function searchBarrandovYouTubeChannel(query: string, programNameLower: string, dateString: string, signal: AbortSignal): Promise<string | undefined> {
-  const timeout = () => AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
   const searchUrl = `https://www.youtube.com/c/TelevizeBarrandovOfficial/search?query=${encodeURIComponent(query)}`;
-  let response = await fetch(searchUrl, { signal: timeout() });
-  let body = await response.text();
-
-  if (new URL(response.url).hostname === 'consent.youtube.com') {
-    const $consent = cheerio.load(body);
-    const metaContent = $consent('noscript > meta').first().attr('content') ?? '';
-    const consentUrlMatch = /url=([^;]+)/.exec(decodeURIComponent(metaContent));
-
-    if (consentUrlMatch) {
-      const consentUrl = decodeURIComponent(consentUrlMatch[1]!);
-      const consentHtml = await fetchText(consentUrl, signal);
-      const $consentPage = cheerio.load(consentHtml);
-      const args: Record<string, string> = {};
-
-      for (const form of $consentPage('.saveButtonContainer form').toArray()) {
-        const $form = $consentPage(form);
-        const localArgs: Record<string, string> = {};
-        let eom = false;
-        let valid = true;
-
-        for (const input of $form.find('input[type="hidden"]').toArray()) {
-          const name = $consentPage(input).attr('name') ?? '';
-          const value = $consentPage(input).attr('value') ?? '';
-          if (name === 'set_eom') {
-            if (value !== 'true') { valid = false; break; }
-            eom = true;
-          }
-          localArgs[name] = value;
-        }
-
-        if (valid && eom) { Object.assign(args, localArgs); break; }
-      }
-
-      await fetch('https://consent.youtube.com/save', {
-        method: 'POST',
-        headers: { Referer: consentUrl, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams(args).toString(),
-        signal: timeout(),
-      });
-
-      response = await fetch(searchUrl, { signal: timeout() });
-      body = await response.text();
-    }
-
-    if (new URL(response.url).hostname === 'consent.youtube.com') return undefined; // still blocked by consent wall
-  }
+  // SOCS=CAI is YouTube's own answer to its EU consent page (as yt-dlp sends it); fetch keeps no cookies.
+  const response = await fetch(searchUrl, { headers: { Cookie: 'SOCS=CAI' }, signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) });
+  const body = await response.text();
+  if (new URL(response.url).hostname === 'consent.youtube.com') return undefined; // still blocked by consent wall
 
   const marker = /var ytInitialData\s*=\s*\{/.exec(body);
   if (!marker) return undefined;
@@ -399,18 +357,43 @@ async function searchBarrandovYouTubeChannel(query: string, programNameLower: st
   return undefined;
 }
 
-async function resolveTvBarrandov(release: Release, config: ProviderConfig, youtubeConfig: ProviderConfig, signal: AbortSignal): Promise<MediaSource[]> {
-  let cookie: string | undefined;
-  if (config.username && config.password) {
-    cookie = await authenticateBarrandov(String(config.username), String(config.password), signal);
-    if (!cookie) throw new Error('TVBarrandov: authentication failed (incorrect credentials)');
-  }
+/** The login cookie for the premium archive, kept until the archive stops accepting it; none without credentials. */
+function barrandovSession(config: ProviderConfig): AccountSession<string> | undefined {
+  if (!config.username || !config.password) return undefined;
+  const username = String(config.username);
+  const password = String(config.password);
+  return new AccountSession({
+    label: 'tvbarrandov',
+    async login(signal) {
+      const cookie = await authenticateBarrandov(username, password, signal);
+      if (!cookie) throw new Error('TVBarrandov: authentication failed (incorrect credentials)');
+      return { session: cookie };
+    },
+  });
+}
 
-  const { finalUrl, body } = await fetchBarrandovDocument(release.url, cookie, signal);
+const isPremiumArchive = (url: string): boolean => new URL(url).pathname.startsWith('/premiovy-archiv');
+
+async function resolveTvBarrandov(
+  release: Release, session: AccountSession<string> | undefined, youtubeConfig: ProviderConfig, signal: AbortSignal,
+): Promise<MediaSource[]> {
+  let page = session ? undefined : await fetchBarrandovDocument(release.url, undefined, signal);
+  if (session) {
+    try {
+      await session.run(async (cookie, runSignal) => {
+        page = await fetchBarrandovDocument(release.url, cookie, runSignal);
+        // A login that is sent to the premium archive's sales page has expired; it is renewed once.
+        if (isPremiumArchive(page.finalUrl)) throw new SessionRejected('TVBarrandov: the login does not open the premium archive');
+      }, signal);
+    } catch (error) {
+      if (!(error instanceof SessionRejected)) throw error;
+    }
+  }
+  const { finalUrl, body } = page!;
   const $ = cheerio.load(body);
 
   let uriToProcess: string | undefined;
-  if (new URL(finalUrl).pathname.startsWith('/premiovy-archiv')) {
+  if (isPremiumArchive(finalUrl)) {
     uriToProcess = await findBarrandovYouTubeFallback(release.url, signal);
   }
 
@@ -714,6 +697,7 @@ export function createPublicSiteProviders(configs: Record<string, ProviderConfig
 
   const barrandov = configs.tvbarrandov ?? {};
   if (barrandov.enabled !== false) {
+    const session = barrandovSession(barrandov);
     const catalogue: Catalogue<ScrapedProgram> = {
       async *programs(_query, signal) {
         for (const program of await fetchBarrandovPrograms(signal)) yield program;
@@ -726,7 +710,7 @@ export function createPublicSiteProviders(configs: Record<string, ProviderConfig
       id: 'tvbarrandov',
       name: 'TV Barrandov',
       catalogue,
-      resolve: (release, signal) => resolveTvBarrandov(release, barrandov, configs.youtube ?? {}, signal),
+      resolve: (release, signal) => resolveTvBarrandov(release, session, configs.youtube ?? {}, signal),
     });
   }
 

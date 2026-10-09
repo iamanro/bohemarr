@@ -136,13 +136,9 @@ export class OneplayConnection {
   }
 
   private handleResponseMessage(json: unknown): void {
-    const command = at<string>(json, 'command') ?? '';
-    const response = at(json, 'response');
-    const status = at<string>(response, 'result.status');
-    const requestId = at<string>(response, 'context.requestId');
-    if (!requestId) return;
-    const data = status === 'Ok' ? at(response, 'data') : at(response, 'result');
-    const resolved: OneplayResponse = { command, status, data, kind: 'async' };
+    const reply = pushedReply(json);
+    if (!reply) return;
+    const { requestId, response: resolved } = reply;
 
     const waiter = this.waiters.get(requestId);
     if (waiter) {
@@ -223,19 +219,19 @@ export class OneplayConnection {
     });
     if (response.status === 401) {
       await response.body?.cancel();
-      return { command: path, status: 'Unauthorized', data: { statusCode: 401 }, kind: 'sync' };
+      return { command: path, status: 'Unauthorized', data: { statusCode: 401 } };
     }
     if (response.status !== 200) throw new Error(`HTTP ${response.status} from Oneplay API (${path})`);
 
     const json: unknown = await response.json();
     const status = at<string>(json, 'result.status');
-    if (status === 'Ok') return { command: path, status, data: at(json, 'data'), kind: 'sync' };
+    if (status === 'Ok') return { command: path, status, data: at(json, 'data') };
     if (status === 'OkAsync') {
       const asyncRequestId = at<string>(json, 'context.requestId');
       if (!asyncRequestId) throw new Error('Oneplay response is missing a request ID');
       return this.awaitAsyncResponse(asyncRequestId, signal);
     }
-    return { command: path, status, data: json, kind: 'sync' };
+    return { command: path, status, data: json };
   }
 
   /** `Connection.command`: wraps args + schema into a `{ payload: { command: {...} } }` envelope. */
@@ -247,4 +243,16 @@ export class OneplayConnection {
   ): Promise<OneplayResponse> {
     return this.request(path, { payload: { command: { ...args, schema } } }, signal);
   }
+}
+
+/**
+ * The reply a WebSocket push carries for an "OkAsync" request. A failed reply keeps the whole
+ * response as its data, as a failed sync reply does, so its `result.code` is read the same way.
+ */
+export function pushedReply(json: unknown): { requestId: string; response: OneplayResponse } | undefined {
+  const response = at(json, 'response');
+  const requestId = at<string>(response, 'context.requestId');
+  if (!requestId) return undefined;
+  const status = at<string>(response, 'result.status');
+  return { requestId, response: { command: at<string>(json, 'command') ?? '', status, data: status === 'Ok' ? at(response, 'data') : response } };
 }

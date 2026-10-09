@@ -75,7 +75,7 @@ async function* catalogueReleasesOf(
 ): AsyncGenerator<Release> {
   let result = program.listing;
   if (!result) {
-    await session.ensureAuthenticated(true, signal);
+    await session.ensureAuthenticated(signal);
     result = await fetchEpisodesForProgram(pool, program.uri, signal);
   }
   if (result.kind === 'movie') {
@@ -96,7 +96,7 @@ async function lookupBoundProgram(
   id: string,
   signal: AbortSignal,
 ): Promise<OneplayCatalogueProgram | undefined> {
-  await session.ensureAuthenticated(true, signal);
+  await session.ensureAuthenticated(signal);
   const result = await fetchEpisodesForProgram(pool, id, signal);
   if (result.kind === 'movie') return undefined;
   return { id, uri: id, title: result.title, kind: 'tv', listing: result };
@@ -125,7 +125,7 @@ async function seriesCandidates(
     .filter(program => program.kind === 'tv' && isSeriesCandidate(program.title, identity));
   if (!programs.length) return [];
 
-  await session.ensureAuthenticated(true, signal);
+  await session.ensureAuthenticated(signal);
   const candidates: ProgramMetadata[] = [];
   for (const program of programs) {
     signal.throwIfAborted();
@@ -142,7 +142,7 @@ async function resolve(
   release: Release,
   signal: AbortSignal,
 ): Promise<MediaSource[]> {
-  await session.ensureAuthenticated(true, signal);
+  await session.ensureAuthenticated(signal);
   return resolveMediaSources(pool, release.url, signal);
 }
 
@@ -177,7 +177,7 @@ export function createOneplayProviders(configs: Record<string, ProviderConfig>):
   };
 
   const pool = new OneplayConnectionPool(CONNECTION_POOL_CAPACITY, webDevice());
-  const session = new OneplaySession(pool, credentials, credentials.accountId ?? null);
+  const session = new OneplaySession(pool, credentials);
 
   const provider: Provider = {
     id: PROVIDER_ID,

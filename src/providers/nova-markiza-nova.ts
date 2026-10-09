@@ -204,7 +204,8 @@ async function* extractEpisodesForPath(
     return;
   }
 
-  yield* parseEpisodeItems($, items, program, 0, site).releases;
+  // Episodes here are numbered in their titles; one without a number gets none, not its position.
+  yield* parseEpisodeItems($, items, program, 0, site, false).releases;
   if (!hasLoadMore) return;
 
   const contentId = contentIdFromLoadMore($, loadMoreEl.get(0) as CheerioElement, uri, !!site.contentParamFallback);
@@ -215,7 +216,7 @@ async function* extractEpisodesForPath(
   // internally, so paginating forward and yielding per page stays globally newest-first.
   for (let offset = 0; ; offset += pageSize) {
     const $page = loadHtml(await fetchTextRetry(site.episodeListUrl(contentId, offset), signal, 5));
-    const { releases: pageReleases, count } = parseEpisodeItems($page, select($page, site.selEpisodes).toArray(), program, 0, site);
+    const { releases: pageReleases, count } = parseEpisodeItems($page, select($page, site.selEpisodes).toArray(), program, 0, site, false);
     yield* pageReleases;
     if (count === 0) break;
   }

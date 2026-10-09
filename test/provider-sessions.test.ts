@@ -59,6 +59,30 @@ test('VOYO: a configured votoken refused with player_not_logged_in logs in exact
   assert.deepEqual(embedCookies, ['votoken=old-token', 'votoken=new-token'], 'the retry uses the newly issued votoken');
 });
 
+test('VOYO: a title outside the subscription fails alone and keeps the configured votoken', async (t: TestContext) => {
+  const embedCookies: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    const page = /^https:\/\/voyo\.markiza\.sk\/program\/(\w+)$/.exec(url);
+    if (page) return new Response(`<div class="js-detail-player"><div class="iframe-wrap"><iframe src="https://media.cms.markiza.sk/embed/${page[1]}"></iframe></div></div>`);
+    if (url === 'https://media.cms.markiza.sk/embed/premium') {
+      embedCookies.push(((init?.headers ?? {}) as Record<string, string>).Cookie ?? '');
+      return new Response('<body class="error"><script>klebetnica({event:"e",data:{type:"player_logged_in_no_access"}});</script></body>');
+    }
+    if (url === 'https://media.cms.markiza.sk/embed/free') {
+      embedCookies.push(((init?.headers ?? {}) as Record<string, string>).Cookie ?? '');
+      return new Response('<script>player:{lib:{source:{sources:[{type:"video/mp4",src:"https://cdn.example/free.mp4"}]}}}</script>');
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+
+  const provider = createMarkizaVoyoProvider({ cookies: 'votoken=my-token' });
+  const release = (name: string): Release => ({ id: name, provider: 'markizavoyo', title: name, url: `https://voyo.markiza.sk/program/${name}`, kind: 'tv' });
+  await assert.rejects(provider.resolve(release('premium'), signal), /player_logged_in_no_access/);
+  assert.deepEqual(await provider.resolve(release('free'), signal), [{ url: 'https://cdn.example/free.mp4', type: 'file' }]);
+  assert.deepEqual(embedCookies, ['votoken=my-token', 'votoken=my-token']);
+});
+
 // ------------------------------------------------------------------------- SLEDOVANITV
 
 test('SledovaniTV: two concurrent resolutions with credentials create exactly one device pairing', async (t: TestContext) => {

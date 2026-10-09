@@ -112,9 +112,9 @@ async function fetchEmbedDocument(embedUri: string, session: AccountSession<stri
     const error = checkForError($);
     if (error.success) return $;
 
-    if (error.type === 'player_not_logged_in' || error.type === 'player_logged_in_no_access') {
-      throw new SessionRejected(`markizavoyo: playback denied (${error.type})`);
-    }
+    if (error.type === 'player_not_logged_in') throw new SessionRejected(`markizavoyo: playback denied (${error.type})`);
+    // Logged in, but the subscription does not cover this title: the session itself is fine.
+    if (error.type === 'player_logged_in_no_access') throw new Error(`markizavoyo: playback denied (${error.type})`);
 
     if (error.type === 'player_parental_profile_age_required') {
       if (await bypassAgeRestriction(token, signal)) {

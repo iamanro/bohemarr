@@ -362,9 +362,7 @@ async function* cnnEpisodes(program: PrimaProgram, signal: AbortSignal): AsyncGe
   };
 
   // Upstream uses HEAD + Content-Length for this probe; a plain GET is used here for
-  // portability, trading a little bandwidth for not depending on HEAD support. Finding the
-  // last page is unavoidably eager, but each page after it is fetched lazily, newest first,
-  // so the caller can stop after the first matching episode without paging through the rest.
+  // portability, trading a little bandwidth for not depending on HEAD support.
   let lo = 0;
   let hi = limit;
   while ((await contentLengthAt(hi)) > 0) { lo = hi; hi *= 2; }
@@ -373,14 +371,16 @@ async function* cnnEpisodes(program: PrimaProgram, signal: AbortSignal): AsyncGe
     if ((await contentLengthAt(mid)) <= 0) hi = mid; else lo = mid;
   }
 
+  // Offset 0 is the newest page. Untitled episodes are numbered from the oldest one, so every page
+  // is read oldest first, and the episodes are handed out newest first once all are numbered.
   const indexes = new Map<number, number>();
-
+  const episodes: PrimaEpisode[] = [];
   for (let offset = lo; offset >= 0; offset -= limit) {
     const html = await fetchText(snippetUrl(offset), signal);
     const $ = cheerio.load(html);
-    const items = $('article.molecule-video').toArray().reverse();
-    for (const el of items) yield parseCnnEpisodeItem($, el, program, indexes);
+    for (const el of $('article.molecule-video').toArray().reverse()) episodes.push(parseCnnEpisodeItem($, el, program, indexes));
   }
+  yield* episodes.reverse();
 }
 
 function parseCnnEpisodeItem(

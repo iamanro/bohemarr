@@ -57,13 +57,10 @@ export interface OneplayRequestOptions {
   authorization?: Array<Record<string, unknown>>;
 }
 
-export type OneplayResponseKind = 'sync' | 'async';
-
 export interface OneplayResponse {
   readonly command: string;
   readonly status: string | undefined;
   readonly data: unknown;
-  readonly kind: OneplayResponseKind;
 }
 
 /** `Connection.createRequest`. */

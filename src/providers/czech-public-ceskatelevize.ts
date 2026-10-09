@@ -140,7 +140,7 @@ function buildEpisodeRelease(
   const url = episodeUrl(pUrl, item.id);
   return {
     id: releaseId('ceskatelevize', url), provider: 'ceskatelevize', title: item.title,
-    url, kind, series: show.title, season, episode, year: kind === 'movie' ? meta.year : undefined, data: { idec: meta.idec },
+    url, kind, series: show.title, season, episode, year: kind === 'movie' ? meta.year : undefined, data: { idec: item.id },
   };
 }
 
@@ -158,7 +158,8 @@ async function* pagesNewestFirst(
   const lastOffset = Math.floor((total - 1) / MAX_ITEMS_PER_PAGE) * MAX_ITEMS_PER_PAGE;
   for (let offset = lastOffset; offset >= 0; offset -= MAX_ITEMS_PER_PAGE) {
     const page = await getEpisodes(idec, offset, MAX_ITEMS_PER_PAGE, seasonId, signal);
-    for (let i = page.items.length - 1; i >= 0; i--) yield { item: page.items[i]!, index: offset + i + 1, total };
+    // An episode whose rights expired stays listed upstream; it keeps its number but is never offered.
+    for (let i = page.items.length - 1; i >= 0; i--) if (page.items[i]!.playable) yield { item: page.items[i]!, index: offset + i + 1, total };
   }
 }
 
@@ -175,7 +176,7 @@ async function* iterateShowEpisodes(show: CtShow, query: CatalogueQuery, signal:
     if (query.episode !== undefined) {
       const page = await getEpisodes(meta.idec, query.episode - 1, 1, seasonId, signal);
       const item = page.items[0];
-      if (item) yield buildEpisodeRelease(show, meta, pUrl, item, query.season, query.episode, 'tv');
+      if (item?.playable) yield buildEpisodeRelease(show, meta, pUrl, item, query.season, query.episode, 'tv');
       return;
     }
     for await (const { item, index } of pagesNewestFirst(meta.idec, seasonId, signal)) {
@@ -187,7 +188,7 @@ async function* iterateShowEpisodes(show: CtShow, query: CatalogueQuery, signal:
   if (query.episode !== undefined) {
     const page = await getEpisodes(meta.idec, query.episode - 1, 1, null, signal);
     const item = page.items[0];
-    if (item) yield buildEpisodeRelease(show, meta, pUrl, item, undefined, query.episode, hasSeasons ? 'tv' : 'movie');
+    if (item?.playable) yield buildEpisodeRelease(show, meta, pUrl, item, undefined, query.episode, hasSeasons ? 'tv' : 'movie');
     return;
   }
 
