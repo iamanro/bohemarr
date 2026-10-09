@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-09
+
+### Fixes from the repository audit
+
+- **Downloads:** a video segment the CDN answers with 403 or 404 fails the download at once. It used to be retried for about 59 hours and kept a download slot busy all that time. Server errors and timeouts are still retried, for about two minutes.
+- **ČT:** every episode of a series plays its own video. Each one used to request the show's IDEC, so every episode got the same file or none. Episodes ČT can no longer play are not listed.
+- **DASH:** manifests whose SegmentTimeline repeats until the end of the period (`r="-1"`), whose periods give only a start, whose durations carry a date part, or whose segment template sits at the Period or AdaptationSet level are read completely. Such a manifest used to give a few seconds of video that Sonarr then imported.
+- **RSS:** a feed listing that runs out of time keeps the series it reached, and the next listing starts with the rest. Before, once Sonarr had searched enough series, every RSS sync failed.
+- **Search:**
+  - A provider still searching after 60 seconds counts as failed, and the other providers' results are returned. Before, one slow provider failed the whole search.
+  - Nova, Markiza, TN.cz and TV Barrandov answer season searches at once. Their Releases carry no season, and such a search used to walk their whole archive.
+  - A foreign title such as "Grey's Anatomy" no longer expands 40 unrelated programmes: the any-word fallback now needs a whole word of three letters or more.
+- **Voyo:** a title the subscription does not cover fails alone. It used to discard the session, so with only a cookie configured, Voyo stopped working until a restart.
+- **CNN Prima:** programmes list their newest episodes first. Search and RSS used to return the oldest ones.
+- **Oneplay:**
+  - "Every concurrent stream is in use" is retried also when Oneplay reports it over the WebSocket; it used to fail the download.
+  - `ONEPLAY_ACCOUNT_ID` no longer causes a full login on every request.
+- **Nova and Markiza:** items without an episode number in their title get none. They used to be numbered by their position on the page.
+- **TV Barrandov:** keeps its login across resolutions, and logs in again only when the premium archive stops accepting it; it used to log in for every search result. The YouTube fallback passes the EU consent page with the `SOCS` cookie.
+- **Speed:** Oneplay, Voyo and JOJ Play reuse their full programme list for ten minutes instead of listing their whole catalogue on every text search.
+- **Code:**
+  - Shared helpers replace five bracket matchers. The two that broke on a bracket inside a string are gone with them.
+  - One helper replaces five JSON path getters, and the clear and protected DASH downloads share one mux step.
+  - New tests cover the HTTP authentication of every endpoint, the DASH parser and the Oneplay WebSocket replies.
+
 ## 2026-10-05
 
 ### Publishing imports to Vltava
