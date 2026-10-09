@@ -17,6 +17,8 @@ const CLIENT_VERSION = '0.37.1';
 const LICENSE_URL = 'https://ivys-wvproxy.o2tv.cz/license?access_token=c3RlcGFuLWEtb25kcmEtanNvdS1wcm9zdGUtbmVqbGVwc2k=';
 const WIDEVINE_SCHEME_URN = 'urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed';
 const MAX_ITEMS_PER_PAGE = 40; // The API returns "400 Bad request" for limit above 40.
+/** Search results read for a text query; the API ranks them by relevance. */
+const SEARCH_RESULT_LIMIT = 40;
 
 // The 13 top-level category IDs the upstream engine walks to enumerate all shows.
 const CATEGORIES = [3947, 3976, 4003, 4124, 4029, 4068, 4106, 4079, 4055, 4093, 4118, 4142, 4191];
@@ -206,14 +208,14 @@ async function* iterateShowEpisodes(show: CtShow, query: CatalogueQuery, signal:
 async function* iterateShows(query: CatalogueQuery, signal: AbortSignal): AsyncGenerator<CtShow> {
   const q = query.q.trim();
   if (q) {
+    // ČT ranks search results by relevance, and a text search expands at most 40 programmes,
+    // so the first 40 results are enough; "Vyprávěj" alone has over 1,600.
     const pageSize = 20;
-    let offset = 0, total = -1;
-    do {
+    for (let offset = 0; offset < SEARCH_RESULT_LIMIT; offset += pageSize) {
       const page = await searchShows(q, offset, pageSize, signal);
-      if (total < 0) total = page.totalCount;
       for (const show of page.items) yield show;
-      offset += pageSize;
-    } while (offset < total);
+      if (offset + pageSize >= page.totalCount) return;
+    }
     return;
   }
   for (const categoryId of CATEGORIES) {
