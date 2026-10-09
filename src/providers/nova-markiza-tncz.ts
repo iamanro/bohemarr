@@ -1,6 +1,6 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Catalogue, CatalogueQuery, Provider, Release } from '../types.ts';
-import { fetchText, releaseId } from './common.ts';
+import { empty, fetchText, releaseId } from './common.ts';
 import { absUrl, fetchDocument, loadHtml, playerTracks, queryParams, readInlineObject } from './nova-markiza-utils.ts';
 import { tracksToSources } from './nova-markiza-media.ts';
 
@@ -168,7 +168,9 @@ export function createTNCZProvider(): Provider {
       if (query.kind === 'movie') return;
       yield* await cachedPrograms(signal);
     },
-    releases: (program: Program, _query: CatalogueQuery, signal: AbortSignal) => listEpisodes(program, signal),
+    // These Releases never carry a season, so a season search would walk the whole archive for nothing.
+    releases: (program: Program, query: CatalogueQuery, signal: AbortSignal) =>
+      query.season !== undefined && query.season < 1900 ? empty() : listEpisodes(program, signal),
   };
 
   return {

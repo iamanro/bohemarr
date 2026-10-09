@@ -1,7 +1,7 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Element as CheerioElement } from 'domhandler';
 import type { Catalogue, CatalogueQuery, Provider, Release } from '../types.ts';
-import { fetchText, releaseId } from './common.ts';
+import { empty, fetchText, releaseId } from './common.ts';
 import {
   absUrl, fetchDocument, fetchTextOrEmpty, fetchTextRetry, joinUrl, loadHtml,
   playerTracks, queryParams, readInlineObject, select,
@@ -258,7 +258,9 @@ export function createNovaArchiveProvider(site: NovaArchiveSite): Provider {
       if (query.kind === 'movie') return; // Archive is TV-only upstream, no invented movie catalog
       yield* await cachedPrograms(signal);
     },
-    releases: (program: Program, _query: CatalogueQuery, signal: AbortSignal) => programReleases(site, program, signal),
+    // These Releases never carry a season, so a season search would walk the whole archive for nothing.
+    releases: (program: Program, query: CatalogueQuery, signal: AbortSignal) =>
+      query.season !== undefined && query.season < 1900 ? empty() : programReleases(site, program, signal),
   };
 
   return {

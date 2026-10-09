@@ -10,6 +10,8 @@ import type { Config, Provider, Release, SearchQuery } from './types.ts';
 // Every result resolves playback metadata; clients can request subsequent pages with offset.
 const MAX_PAGE_SIZE = 5;
 const FEED_INSPECTION_TTL_MS = 6 * 60 * 60 * 1000;
+/** A provider still searching after this long counts as failed, so the others' results and their inspection fit the server's 120 seconds. */
+const PROVIDER_TIMEOUT_MS = 60_000;
 
 export function xml(value: unknown): string {
   return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!);
@@ -24,9 +26,11 @@ export class Indexer {
   private readonly movieBindings: MovieBindings;
   private readonly feed: SeriesFeed;
   private readonly feedInspections = new Map<string, { at: number; metadata: Pick<Release, 'height' | 'size' | 'sizeEstimated' | 'language'> }>();
+  private readonly providerTimeoutMs: number;
 
-  constructor(config: Config, store: Store, providers: Map<string, Provider>, bindings: SeriesBindings) {
+  constructor(config: Config, store: Store, providers: Map<string, Provider>, bindings: SeriesBindings, providerTimeoutMs = PROVIDER_TIMEOUT_MS) {
     this.config = config;
+    this.providerTimeoutMs = providerTimeoutMs;
     this.store = store;
     this.providers = providers;
     this.bindings = bindings;
@@ -82,9 +86,12 @@ export class Indexer {
       // Sonarr refuses to save an indexer whose RSS is empty, so an empty feed falls back to browsing.
       if (watched.length) return this.respond(watched, offset, limit, signal, true);
     }
-    const results = await Promise.allSettled(enabled.map(provider => tmdbId === undefined
-      ? this.bindings.search(provider, query, identity, signal)
-      : this.movieBindings.search(provider, query, tmdbId, signal).then((releases): BindingSearch => ({ releases }))));
+    const results = await Promise.allSettled(enabled.map(provider => {
+      const providerSignal = AbortSignal.any([signal, AbortSignal.timeout(this.providerTimeoutMs)]);
+      return tmdbId === undefined
+        ? this.bindings.search(provider, query, identity, providerSignal)
+        : this.movieBindings.search(provider, query, tmdbId, providerSignal).then((releases): BindingSearch => ({ releases }));
+    }));
     signal.throwIfAborted();
     const failed = results.flatMap((result, index) => result.status === 'rejected' ? [`${enabled[index]!.id}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`] : []);
     if (failed.length === enabled.length) throw new Error(`All providers failed: ${failed.join('; ')}`);

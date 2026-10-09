@@ -83,6 +83,12 @@ test('text search expands only Programs with every query word, else any word', a
   assert.deepEqual(expanded, ['Autosalon', 'Autosalon Extra']);
 });
 
+test('the any-word fallback ignores short words, so a foreign title expands no unrelated Program', async () => {
+  const { value, expanded } = catalogue({ 'Ulice': [episode('Ulice', 1)], 'Specialisté': [episode('Specialisté', 1)], 'Most!': [episode('Most!', 1)] });
+  assert.deepEqual(ids(await search(value, query({ q: "Grey's Anatomy" }))), []);
+  assert.deepEqual(expanded, []);
+});
+
 test('text search expands at most 40 Programs', async () => {
   const listing = Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`Show ${i}`, [] as Release[]]));
   const { value, expanded } = catalogue(listing);

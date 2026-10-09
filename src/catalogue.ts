@@ -14,7 +14,8 @@ type CatalogueProvider = Pick<Provider, 'id' | 'catalogue' | 'entries'>;
  * - http(s) URL `q`: only the Release the provider resolves for that URL (kind/season/episode still apply).
  * - otherwise static entries come first, then Programs:
  *   - text `q`: every listed Program whose title has all query words (or, if none does, any
- *     word), exact title matches first, at most 40, each contributing all its matching Releases;
+ *     whole word of three letters or more), exact title matches first, at most 40, each
+ *     contributing all its matching Releases;
  *   - empty `q`: Programs lazily in catalogue order, each contributing its newest matching Release.
  *
  * Releases are deduplicated by id before counting, and no Program is expanded once the page is
@@ -126,7 +127,9 @@ class Page {
 async function textCandidates<P extends Program>(programs: AsyncIterable<P>, query: CatalogueQuery, words: string[]): Promise<P[]> {
   const listed = await Array.fromAsync(kindFiltered(programs, query), program => ({ program, title: normalize(program.title) }));
   const strong = listed.filter(({ title }) => words.every(word => title.includes(word)));
-  const pool = strong.length ? strong : listed.filter(({ title }) => words.some(word => title.includes(word)));
+  // The fallback needs a whole word of three letters or more: "Grey's Anatomy" has the word "s".
+  const weak = words.filter(word => word.length > 2);
+  const pool = strong.length ? strong : listed.filter(({ title }) => title.split(' ').some(word => weak.includes(word)));
   const exact = words.join(' ');
   return [...pool.filter(({ title }) => title === exact), ...pool.filter(({ title }) => title !== exact)]
     .slice(0, TEXT_SEARCH_PROGRAM_CAP).map(({ program }) => program);

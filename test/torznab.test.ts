@@ -4,6 +4,7 @@ import { XMLParser } from 'fast-xml-parser';
 import { Store } from '../src/store.ts';
 import { Indexer } from '../src/indexer.ts';
 import { SeriesBindings } from '../src/series-binding.ts';
+import { SeriesFeed } from '../src/series-feed.ts';
 import type { Config, Provider, Release, SeriesIdentity } from '../src/types.ts';
 import { fakeCatalogue } from './fake-catalogue.ts';
 
@@ -194,4 +195,51 @@ test('series searched by TVDB ID before the RSS feed existed are watched after t
   const feed = await torznab.search({ t: 'tvsearch', cat: '5000' }, new AbortController().signal);
   assert.match(feed, /<title>Show Name S01E01\[WEB-DL\]<\/title>/);
   assert.match(feed, /<torznab:attr name="tvdbid" value="12345"\/>/);
+});
+
+test('an RSS listing that runs out of time keeps what it found, and the next one continues with the rest', async () => {
+  const store = new Store(':memory:');
+  using dispose = store;
+  const series = (tvdbId: number, title: string): SeriesIdentity => ({ tvdbId, title, aliases: [], year: 2020, country: 'CZ' });
+  let slow = 'Beta';
+  const provider: Provider = {
+    id: 'ceskatelevize', name: 'ČT', resolve: async () => [],
+    catalogue: {
+      async *programs() { yield { id: 'Alpha', title: 'Alpha' }; yield { id: 'Beta', title: 'Beta' }; },
+      async *releases(program, _query, signal) {
+        if (program.id === slow) await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+        yield { id: program.id, provider: 'ceskatelevize', title: 'Díl', series: program.title, kind: 'tv', season: 1, episode: 1, url: `https://ct.test/${program.id}` };
+      },
+    },
+  };
+  let now = Date.parse('2026-10-09T18:00:00Z');
+  const feed = new SeriesFeed(store.database, new SeriesBindings(store.database), new Map([[provider.id, provider]]), () => now, 50);
+  feed.watch(series(1, 'Alpha'));
+  feed.watch(series(2, 'Beta'));
+  const listing = async () => (await feed.releases(new AbortController().signal)).map(release => release.id);
+
+  assert.deepEqual(await listing(), ['Alpha'], 'Beta ran out of time, Alpha is still listed');
+  now += 11 * 60 * 1000;
+  slow = 'Alpha';
+  assert.deepEqual(await listing(), ['Beta'], 'the next listing starts with Beta');
+});
+
+test('a provider that runs out of time fails alone, and the others still answer', async t => {
+  t.mock.method(console, 'error', () => {});
+  const store = new Store(':memory:');
+  using dispose = store;
+  const hanging: Provider = {
+    id: 'novaplus', name: 'Nova', resolve: async () => [],
+    catalogue: {
+      async *programs(_query, signal) { await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); },
+      async *releases() {},
+    },
+  };
+  const answering: Provider = {
+    id: 'ceskatelevize', name: 'ČT', resolve: async () => [],
+    catalogue: fakeCatalogue(() => [{ id: 'ct-1', provider: 'ceskatelevize', title: 'Díl 1', series: 'Show Name', kind: 'tv', season: 1, episode: 1, url: 'https://ct.test/1' }]),
+  };
+  const torznab = new Indexer(config, store, new Map([[hanging.id, hanging], [answering.id, answering]]), new SeriesBindings(store.database), 50);
+  const feed = await torznab.search({ t: 'tvsearch', q: 'Show Name', season: '1', ep: '1' }, AbortSignal.timeout(5000));
+  assert.match(feed, /<title>Show Name S01E01\[WEB-DL\]<\/title>/);
 });

@@ -17,7 +17,7 @@ import * as cheerio from 'cheerio';
 import type { Cheerio, CheerioAPI } from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { Catalogue, CatalogueQuery, MediaKind, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { fetchJson, fetchText, mediaType, normalize, releaseId } from './common.ts';
+import { empty, fetchJson, fetchText, mediaType, normalize, releaseId } from './common.ts';
 import { isYouTubeUrl, maybeTransformYouTubeUrl, resolveYouTube } from './public-sites-youtube.ts';
 import { resolveOnNetworkEmbed } from './public-sites-onnetwork.ts';
 import { authenticateBarrandov, fetchBarrandovDocument, parseBarrandovLocalSources } from './public-sites-barrandov.ts';
@@ -718,7 +718,9 @@ export function createPublicSiteProviders(configs: Record<string, ProviderConfig
       async *programs(_query, signal) {
         for (const program of await fetchBarrandovPrograms(signal)) yield program;
       },
-      releases: (program, _query, signal) => barrandovReleases(program, signal),
+      // These Releases carry neither season nor episode, so such a search would walk the whole archive for nothing.
+      releases: (program, query, signal) => query.episode !== undefined || (query.season !== undefined && query.season < 1900)
+        ? empty() : barrandovReleases(program, signal),
     };
     providers.push({
       id: 'tvbarrandov',

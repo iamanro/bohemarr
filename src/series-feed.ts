@@ -6,7 +6,7 @@ import type { Provider, Release, SeriesIdentity } from './types.ts';
 const RELEASES_PER_SERIES = 5;
 /** Below Sonarr's 15-minute default RSS interval: each sync gets a fresh listing, and its page requests share it. */
 const SNAPSHOT_TTL_MS = 10 * 60 * 1000;
-/** Below the server's 120-second Torznab deadline, so a slow listing fails visibly instead of being cut off. */
+/** Below the server's 120-second Torznab deadline, so a slow listing returns what it has instead of being cut off. */
 const BUILD_TIMEOUT_MS = 110_000;
 
 /**
@@ -19,26 +19,34 @@ const BUILD_TIMEOUT_MS = 110_000;
  *
  * A Release's `publishedAt` is the moment the feed first listed it, persisted so it never moves:
  * providers publish no reliable release dates, and Sonarr pages RSS until it reaches a date it
- * has already seen. One listing is shared for ten minutes; a failed listing is never cached.
+ * has already seen. One listing is shared for ten minutes; a failed listing is never cached. A
+ * listing that runs out of time keeps the series it reached, and the next listing starts with the
+ * series it did not reach, so every Watched series is listed in turn however many there are.
  */
 export class SeriesFeed {
   private readonly db: DatabaseSync;
   private readonly bindings: SeriesBindings;
   private readonly providers: Map<string, Provider>;
   private readonly now: () => number;
+  private readonly timeoutMs: number;
   private readonly upsertWatched: StatementSync;
   private readonly selectWatched: StatementSync;
   private readonly insertFirstSeen: StatementSync;
   private readonly selectFirstSeen: StatementSync;
   private snapshot?: { at: number; releases: Release[] };
   private building?: Promise<Release[]>;
+  /** Where in the Watched series the next listing starts. */
+  private cursor = 0;
 
   /** `bindings` must already have created its tables; series searched before this table existed become watched. */
-  constructor(db: DatabaseSync, bindings: SeriesBindings, providers: Map<string, Provider>, now: () => number = Date.now) {
+  constructor(
+    db: DatabaseSync, bindings: SeriesBindings, providers: Map<string, Provider>, now: () => number = Date.now, timeoutMs = BUILD_TIMEOUT_MS,
+  ) {
     this.db = db;
     this.bindings = bindings;
     this.providers = providers;
     this.now = now;
+    this.timeoutMs = timeoutMs;
     const created = !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='series_watch'").get();
     db.exec(`CREATE TABLE IF NOT EXISTS series_watch (tvdb_id INTEGER PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS release_first_seen (release_id TEXT PRIMARY KEY, first_seen_at INTEGER NOT NULL);`);
@@ -64,7 +72,7 @@ export class SeriesFeed {
     signal.throwIfAborted();
     if (this.snapshot && this.now() - this.snapshot.at < SNAPSHOT_TTL_MS) return this.snapshot.releases;
     // The build outlives an impatient client, so its successor can use the finished listing.
-    this.building ??= this.build(AbortSignal.timeout(BUILD_TIMEOUT_MS))
+    this.building ??= this.build(AbortSignal.timeout(this.timeoutMs))
       .then(releases => {
         this.snapshot = { at: this.now(), releases };
         return releases;
@@ -81,14 +89,18 @@ export class SeriesFeed {
   }
 
   private async build(signal: AbortSignal): Promise<Release[]> {
-    const identities = this.selectWatched.all().map(row => JSON.parse(String(row.payload)) as SeriesIdentity);
+    const watched = this.selectWatched.all().map(row => JSON.parse(String(row.payload)) as SeriesIdentity);
+    const start = watched.length ? this.cursor % watched.length : 0;
+    const identities = [...watched.slice(start), ...watched.slice(0, start)];
     const providers = [...this.providers.values()];
     const listed = new Map<string, { release: Release; rank: number }>();
     const errors: unknown[] = [];
+    let reached = 0;
     // Series are listed one at a time to avoid bursts at the providers' CDNs.
     for (const identity of identities) {
       const results = await Promise.allSettled(providers.map(provider => this.bindings.recent(provider, identity, RELEASES_PER_SERIES, signal)));
-      signal.throwIfAborted();
+      if (signal.aborted) break;
+      reached++;
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           errors.push(result.reason);
@@ -98,7 +110,13 @@ export class SeriesFeed {
         result.value.forEach((release, rank) => { if (!listed.has(release.id)) listed.set(release.id, { release, rank }); });
       });
     }
-    if (errors.length && errors.length === identities.length * providers.length) {
+    if (reached < identities.length) {
+      // The series cut off leads the next listing, unless it alone used up all the time.
+      this.cursor = start + Math.max(reached, 1);
+      console.error(`RSS feed: listed ${reached} of ${identities.length} series before the deadline; the next listing continues from there`);
+      if (!listed.size) throw new Error('RSS feed: no series could be listed before the deadline');
+    }
+    if (errors.length && errors.length === reached * providers.length) {
       throw new AggregateError(errors, 'Every RSS feed listing failed');
     }
     const now = this.now();

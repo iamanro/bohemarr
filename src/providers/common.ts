@@ -18,6 +18,9 @@ export async function fetchJson<T = unknown>(url: string | URL, signal: AbortSig
  */
 export class PlaybackBusy extends Error {}
 
+/** No Releases: for a Catalogue that knows a query cannot match without asking upstream. */
+export async function* empty(): AsyncGenerator<never> {}
+
 export function releaseId(provider: string, url: string): string {
   return hash('sha256', `${provider}\0${url}`, 'hex');
 }
