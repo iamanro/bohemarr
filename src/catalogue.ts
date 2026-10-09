@@ -21,8 +21,13 @@ type CatalogueProvider = Pick<Provider, 'id' | 'catalogue' | 'entries'>;
  * Releases are deduplicated by id before counting, and no Program is expanded once the page is
  * full. A failing Program is logged and skipped; the search fails only when it found nothing and
  * at least one Program failed. Aborting `signal` always rejects.
+ *
+ * `isCandidate` replaces the word match for a text search by a known series: only Programs whose
+ * title it accepts are expanded, with no any-word fallback.
  */
-export async function searchCatalogue(provider: CatalogueProvider, query: SearchQuery, signal: AbortSignal): Promise<Release[]> {
+export async function searchCatalogue(
+  provider: CatalogueProvider, query: SearchQuery, signal: AbortSignal, isCandidate?: (title: string) => boolean,
+): Promise<Release[]> {
   signal.throwIfAborted();
   const page = new Page(provider.id, query.offset + query.limit);
   const { catalogue } = provider;
@@ -64,7 +69,7 @@ export async function searchCatalogue(provider: CatalogueProvider, query: Search
   const browsing = words.length === 0;
   const programs = browsing
     ? kindFiltered(catalogue.programs(hint, signal), hint)
-    : fromArray(await textCandidates(catalogue.programs(hint, signal), hint, words));
+    : fromArray(await textCandidates(catalogue.programs(hint, signal), hint, words, isCandidate));
   // Browsing expands at most this many Programs, so a sparse catalogue cannot be crawled whole.
   const maxPrograms = browsing ? Math.max(page.needed, 20) * 2 : Infinity;
 
@@ -124,12 +129,19 @@ class Page {
   }
 }
 
-async function textCandidates<P extends Program>(programs: AsyncIterable<P>, query: CatalogueQuery, words: string[]): Promise<P[]> {
+async function textCandidates<P extends Program>(
+  programs: AsyncIterable<P>, query: CatalogueQuery, words: string[], isCandidate?: (title: string) => boolean,
+): Promise<P[]> {
   const listed = await Array.fromAsync(kindFiltered(programs, query), program => ({ program, title: normalize(program.title) }));
+  if (isCandidate) return rankExact(listed.filter(({ program }) => isCandidate(program.title)), words);
   const strong = listed.filter(({ title }) => words.every(word => title.includes(word)));
   // The fallback needs a whole word of three letters or more: "Grey's Anatomy" has the word "s".
   const weak = words.filter(word => word.length > 2);
-  const pool = strong.length ? strong : listed.filter(({ title }) => title.split(' ').some(word => weak.includes(word)));
+  return rankExact(strong.length ? strong : listed.filter(({ title }) => title.split(' ').some(word => weak.includes(word))), words);
+}
+
+/** Exact title matches first, at most 40. */
+function rankExact<P extends Program>(pool: Array<{ program: P; title: string }>, words: string[]): P[] {
   const exact = words.join(' ');
   return [...pool.filter(({ title }) => title === exact), ...pool.filter(({ title }) => title !== exact)]
     .slice(0, TEXT_SEARCH_PROGRAM_CAP).map(({ program }) => program);

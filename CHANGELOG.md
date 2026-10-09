@@ -11,7 +11,10 @@
 - **Search:**
   - A provider still searching after 60 seconds counts as failed, and the other providers' results are returned. Before, one slow provider failed the whole search.
   - Nova, Markiza, TN.cz and TV Barrandov answer season searches at once. Their Releases carry no season, and such a search used to walk their whole archive.
+  - A search by TVDB ID on a provider without series metadata expands only programmes named as the series, not every title containing its words: MOST! S01E07 on ČT now takes 18 requests instead of 96, and no longer returns episodes of other programmes.
+  - A ČT text search reads only the first 40 search results, which ČT ranks by relevance; it used to page through all of them, over 1,600 for "Vyprávěj".
   - A foreign title such as "Grey's Anatomy" no longer expands 40 unrelated programmes: the any-word fallback now needs a whole word of three letters or more.
+- **ČT seasons:** a show ČT lists without seasons answers Sonarr's season 1 searches as its only season, so `S01E07` finds its seventh episode instead of nothing.
 - **Voyo:** a title the subscription does not cover fails alone. It used to discard the session, so with only a cookie configured, Voyo stopped working until a restart.
 - **CNN Prima:** programmes list their newest episodes first. Search and RSS used to return the oldest ones.
 - **Oneplay:**
@@ -19,6 +22,7 @@
   - `ONEPLAY_ACCOUNT_ID` no longer causes a full login on every request.
 - **Nova and Markiza:** items without an episode number in their title get none. They used to be numbered by their position on the page.
 - **TV Barrandov:** keeps its login across resolutions, and logs in again only when the premium archive stops accepting it; it used to log in for every search result. The YouTube fallback passes the EU consent page with the `SOCS` cookie.
+- **Memory:** segment downloads no longer leave one listener per segment on the output file, which grew to thousands over a long film.
 - **Speed:** Oneplay, Voyo and JOJ Play reuse their full programme list for ten minutes instead of listing their whole catalogue on every text search.
 - **Code:**
   - Shared helpers replace five bracket matchers. The two that broke on a bracket inside a string are gone with them.

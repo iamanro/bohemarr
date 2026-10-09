@@ -84,3 +84,26 @@ test('a missing segment fails at once instead of being retried, while a server e
     server.closeAllConnections();
   }
 });
+
+test('many segments leave no listener behind on the output stream', async () => {
+  await using directory = await mkdtempDisposable(join(tmpdir(), 'md-many-'));
+  const warnings: string[] = [];
+  const onWarning = (warning: Error): void => { warnings.push(warning.name); };
+  process.on('warning', onWarning);
+  await using server = createServer((_request, response) => response.end(Buffer.alloc(1000, 7)));
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const segments = Array.from({ length: 50 }, (_, i) => ({ url: `http://127.0.0.1:${address.port}/${i}` }));
+  const output = join(directory.path, 'track.mp4');
+  try {
+    await downloadSegmentsConcat(segments, undefined, output, AbortSignal.timeout(5000));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal((await readFile(output)).length, 50_000);
+    assert.deepEqual(warnings, []);
+  } finally {
+    process.off('warning', onWarning);
+    server.closeAllConnections();
+  }
+});
