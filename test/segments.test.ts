@@ -61,3 +61,26 @@ test('byte-range segments must return precisely the requested bytes', async () =
     server.closeAllConnections();
   }
 });
+
+test('a missing segment fails at once instead of being retried, while a server error is retried', async () => {
+  await using directory = await mkdtempDisposable(join(tmpdir(), 'md-missing-'));
+  const requests: string[] = [];
+  await using server = createServer((request, response) => {
+    requests.push(request.url ?? '');
+    const flaky = request.url === '/flaky' && requests.filter(url => url === '/flaky').length === 1;
+    response.writeHead(request.url === '/gone' ? 404 : flaky ? 503 : 200).end(request.url === '/flaky' ? 'ok' : '');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const base = `http://127.0.0.1:${address.port}`;
+  try {
+    await downloadSegmentsConcat([{ url: `${base}/flaky` }], undefined, join(directory.path, 'flaky.mp4'), AbortSignal.timeout(5000));
+    assert.equal((await readFile(join(directory.path, 'flaky.mp4'))).toString(), 'ok');
+    await assert.rejects(downloadSegmentsConcat([{ url: `${base}/gone` }], undefined, join(directory.path, 'gone.mp4'), AbortSignal.timeout(5000)), /HTTP 404/);
+    assert.deepEqual(requests, ['/flaky', '/flaky', '/gone']);
+  } finally {
+    server.closeAllConnections();
+  }
+});

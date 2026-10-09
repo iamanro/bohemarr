@@ -1,16 +1,11 @@
 import { createWriteStream, existsSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import { readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { readFile, rename, stat, unlink } from 'node:fs/promises';
 import type { Config, DownloadProgress, MediaSource } from '../types.ts';
 import { validateMediaFile } from './ffprobe.ts';
+import { writeJsonAtomic } from './segment-download.ts';
 
 interface ResumeMeta { url: string; etag?: string; lastModified?: string; }
-
-async function writeMetaAtomic(metaPath: string, meta: ResumeMeta): Promise<void> {
-  const tmpPath = `${metaPath}.tmp`;
-  await writeFile(tmpPath, JSON.stringify(meta));
-  await rename(tmpPath, metaPath);
-}
 
 /** Parses a `Content-Range: bytes start-end/total` (or `.../*`) response header. */
 function parseContentRange(headerValue: string | null): { start: number; end: number; total?: number } | undefined {
@@ -126,7 +121,7 @@ export async function downloadDirectFile(
     etag: response.headers.get('etag') ?? undefined,
     lastModified: response.headers.get('last-modified') ?? undefined,
   };
-  await writeMetaAtomic(metaPath, meta);
+  await writeJsonAtomic(metaPath, meta);
 
   const writeStream = createWriteStream(partPath, { flags: resumed ? 'r+' : 'w', start: writeOffset });
   // pipeline() below surfaces write errors directly; this no-op listener only prevents an

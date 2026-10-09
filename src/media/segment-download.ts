@@ -5,30 +5,36 @@ import { hash } from 'node:crypto';
 import type { MediaSegment } from '../types.ts';
 import { sleep } from './process.ts';
 
-/** Matches `WMSDownloaderPlugin`'s `DEFAULT_MAX_RETRY_ATTEMPTS`/`DEFAULT_WAIT_ON_RETRY_MS` (500 / 250ms). */
-const SEGMENT_MAX_RETRY_ATTEMPTS = 500;
+/** Transient failures are retried for about two minutes of growing waits (250ms * attempt^(4/3)). */
+const SEGMENT_MAX_RETRY_ATTEMPTS = 20;
 const SEGMENT_RETRY_BASE_MS = 250;
 
 interface ResumeState { completed: number; bytes: number; segmentsHash: string; }
 
-async function writeResumeStateAtomic(resumeStatePath: string, state: ResumeState): Promise<void> {
-  const tmpPath = `${resumeStatePath}.tmp`;
-  await writeFile(tmpPath, JSON.stringify(state));
-  await rename(tmpPath, resumeStatePath);
+/** Writes `value` as JSON through a temporary file, so a crash never leaves a half-written file. */
+export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+  const tmpPath = `${path}.tmp`;
+  await writeFile(tmpPath, JSON.stringify(value));
+  await rename(tmpPath, path);
 }
 
 async function fetchSegmentWithRetry(url: string, headers: Record<string, string> | undefined, signal: AbortSignal): Promise<Response> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= SEGMENT_MAX_RETRY_ATTEMPTS; attempt++) {
     signal.throwIfAborted();
+    let response: Response | undefined;
     try {
-      const response = await fetch(url, { headers, signal });
-      if (response.ok) return response;
-      lastError = new Error(`HTTP ${response.status} downloading segment`);
-      await response.body?.cancel().catch(() => {});
+      response = await fetch(url, { headers, signal });
     } catch (error) {
       if (signal.aborted) throw error;
       lastError = error;
+    }
+    if (response?.ok) return response;
+    if (response) {
+      await response.body?.cancel().catch(() => {});
+      lastError = new Error(`HTTP ${response.status} downloading segment`);
+      // An expired link or a missing segment stays that way; only timeouts and rate limits pass.
+      if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) throw lastError;
     }
     if (attempt < SEGMENT_MAX_RETRY_ATTEMPTS) await sleep(SEGMENT_RETRY_BASE_MS * Math.pow(attempt + 1, 4 / 3), signal);
   }
@@ -171,7 +177,7 @@ export async function downloadSegmentsConcat(
         );
       }
       if (resumeStatePath) {
-        await writeResumeStateAtomic(resumeStatePath, { completed: index + 1, bytes: bytesWritten, segmentsHash });
+        await writeJsonAtomic(resumeStatePath, { completed: index + 1, bytes: bytesWritten, segmentsHash } satisfies ResumeState);
       }
     }
   } catch (error) {
