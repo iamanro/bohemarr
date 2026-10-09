@@ -67,4 +67,11 @@ test('each ČT episode plays its own IDEC, and episodes that cannot be played ar
   assert.deepEqual(releases.map(release => [release.title, release.episode]), [['Díl 3', 3], ['Díl 1', 1]]);
   for (const release of releases) await provider.resolve(release, new AbortController().signal);
   assert.deepEqual(playlists, ['21056214003', '21056214001']);
+
+  // Without seasons upstream the show is one season: Sonarr's S01E03 is its third episode.
+  const exact = await searchCatalogue(provider, { q: 'Most', kind: 'tv', season: 1, episode: 3, limit: 10, offset: 0 }, new AbortController().signal);
+  assert.deepEqual(exact.map(release => [release.title, release.season, release.episode]), [['Díl 3', 1, 3]]);
+  const whole = await searchCatalogue(provider, { q: 'Most', kind: 'tv', season: 1, limit: 10, offset: 0 }, new AbortController().signal);
+  assert.deepEqual(whole.map(release => [release.title, release.season, release.episode]), [['Díl 3', 1, 3], ['Díl 1', 1, 1]]);
+  assert.deepEqual(await searchCatalogue(provider, { q: 'Most', kind: 'tv', season: 2, episode: 1, limit: 10, offset: 0 }, new AbortController().signal), []);
 });

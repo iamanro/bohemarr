@@ -159,9 +159,9 @@ async function* iterateShowEpisodes(show: CtShow, query: CatalogueQuery, signal:
   const hasSeasons = meta.seasons.length > 0;
 
   if (query.season !== undefined) {
-    if (!hasSeasons) return;
-    const seasonId = meta.seasons[query.season - 1];
-    if (!seasonId) return;
+    // A show without seasons upstream is a single season, so Sonarr's S01E07 is its seventh episode.
+    const seasonId = hasSeasons ? meta.seasons[query.season - 1] : query.season === 1 ? null : undefined;
+    if (seasonId === undefined) return;
     if (query.episode !== undefined) {
       const page = await getEpisodes(meta.idec, query.episode - 1, 1, seasonId, signal);
       const item = page.items[0];
