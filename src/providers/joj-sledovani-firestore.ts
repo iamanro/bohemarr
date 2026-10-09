@@ -14,7 +14,7 @@
  * calls, only over the supported REST transport instead of the undocumented channel framing.
  */
 import type { CatalogueQuery, MediaSource, Program, Provider, Release } from '../types.ts';
-import { fetchJson, mediaType, releaseId } from './common.ts';
+import { cached, each, fetchJson, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { AccountSession, SessionRejected, type SessionSource } from './account-session.ts';
 
 const APP_KEY = 'AIzaSyB02udgMkNLADkLJ_w5YNBMR2VR1WHfusI';
@@ -410,11 +410,13 @@ async function jojResolve(session: AccountSession<string>, release: Release, sig
  */
 export function createJojPlayProvider(username: string, password: string): Provider {
   const session = new AccountSession(jojSessionSource(username, password));
+  // A text search lists every program anyway, so it reuses one full listing for ten minutes.
+  const allPrograms = cached(PROGRAM_LIST_TTL_MS, signal => Array.fromAsync(jojPrograms(session, { q: '' }, signal)));
   return {
     id: 'jojplay',
     name: 'JOJ Play',
     catalogue: {
-      programs: (query, signal) => jojPrograms(session, query, signal),
+      programs: (query, signal) => query.q.trim() ? each(allPrograms(signal)) : jojPrograms(session, query, signal),
       releases: (program, query, signal) => jojReleases(session, program as JojProgram, query, signal),
     },
     resolve: (release, signal) => jojResolve(session, release, signal),

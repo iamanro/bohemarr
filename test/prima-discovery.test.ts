@@ -187,3 +187,25 @@ test('Prima binds a TVDB series by programme year and Czech origin, then expands
     { url: `${czechUri}/season-1/episode-1`, program: czechUri, season: 1, episode: 1, tvdbId: identity.tvdbId },
   ]);
 });
+
+test('CNN Prima lists a programme newest first, although offset 0 is read last', async t => {
+  const page = (dates: string[]) => dates.map(date =>
+    `<article class="molecule-video"><h3><a href="/videa/${date.replaceAll('. ', '-')}">Byznys</a></h3><div><span>${date}</span></div></article>`).join('');
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url === `${root}/sitemap-series.xml` || url === `${root}/sitemap-movie.xml`) return new Response(sitemap([]));
+    if (url.startsWith('https://zoom.iprima.cz/snippet/')) return new Response('');
+    if (url === 'https://cnn.iprima.cz/porady') return new Response('<div class="programmes-list"><div class="molecule-programme-title"><a href="/porady/byznys">Byznys</a></div></div>');
+    if (url === 'https://cnn.iprima.cz/porady/byznys') return new Response(`<script>new InfiniteCarousel(el, '/snippet/episode/limit/offset/77', {})</script>`);
+    // Offset 0 holds the newest episodes, each page newest first.
+    if (url === 'https://cnn.iprima.cz/snippet/episode/64/0/77') return new Response(page(['19. 12. 2024', '12. 12. 2024']));
+    if (url === 'https://cnn.iprima.cz/snippet/episode/64/64/77') return new Response(page(['15. 3. 2023', '8. 3. 2023']));
+    if (url.startsWith('https://cnn.iprima.cz/snippet/episode/64/')) return new Response('');
+    throw new Error(`Unexpected request ${url}`);
+  });
+  const database = new DatabaseSync(':memory:');
+  const provider = createPrimaProviders({ iprima: { enabled: true } }, database)[0]!;
+  t.after(async () => { await provider.close?.(); database.close(); });
+  const releases = await searchCatalogue(provider, { q: 'Byznys', kind: 'tv', limit: 2, offset: 0 }, new AbortController().signal);
+  assert.deepEqual(releases.map(release => release.url), ['https://cnn.iprima.cz/videa/19-12-2024', 'https://cnn.iprima.cz/videa/12-12-2024']);
+});

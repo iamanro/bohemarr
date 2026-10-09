@@ -1,7 +1,7 @@
 import JSON5 from 'json5';
 import * as cheerio from 'cheerio';
 import type { Element as CheerioElement } from 'domhandler';
-import { fetchText } from './common.ts';
+import { bracketSubstring, fetchText } from './common.ts';
 
 /**
  * `CheerioAPI`'s call signature only resolves to `Cheerio<Element>` when the
@@ -34,39 +34,6 @@ export function loadHtml(html: string): cheerio.CheerioAPI {
 
 export async function fetchDocument(url: string | URL, signal: AbortSignal, init: RequestInit = {}): Promise<cheerio.CheerioAPI> {
   return loadHtml(await fetchText(url, signal, init));
-}
-
-/**
- * Extracts a brace-balanced substring starting at the first occurrence of
- * `open` at or after `fromIndex`, honoring JS/​JSON string literals so that
- * braces inside strings are not counted. Mirrors `Utils.bracketSubstring`.
- */
-export function bracketSubstring(text: string, fromIndex: number, open = '{', close = '}'): string {
-  const start = text.indexOf(open, fromIndex);
-  if (start < 0) return '';
-
-  let depth = 0;
-  let quote: string | null = null;
-
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
-
-    if (quote) {
-      if (ch === '\\') { i++; continue; }
-      if (ch === quote) quote = null;
-      continue;
-    }
-
-    if (ch === '"' || ch === '\'' || ch === '`') { quote = ch; continue; }
-
-    if (ch === open) depth++;
-    else if (ch === close) {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-
-  return '';
 }
 
 /** Parse source data as literals only; never execute scripts supplied by a media site. */

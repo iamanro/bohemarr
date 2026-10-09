@@ -33,6 +33,15 @@ const MIGRATIONS: readonly string[] = [
      WHERE json_type(payload, '$.sourceSeriesId') IS NOT NULL;
    UPDATE jobs SET payload = json_remove(json_set(payload, '$.release.programId', payload -> '$.release.sourceSeriesId'), '$.release.sourceSeriesId')
      WHERE json_type(payload, '$.release.sourceSeriesId') IS NOT NULL;`,
+  // The SABnzbd interface gave way to qBittorrent's, which has neither a global pause nor job priorities:
+  // a global pause becomes a pause of each job it held back, and priorities are dropped.
+  `UPDATE jobs SET payload = json_set(payload, '$.status', 'Paused')
+     WHERE (SELECT value FROM settings WHERE key = 'paused') = 'true'
+       AND payload ->> '$.status' IN ('Queued', 'Downloading') AND coalesce(payload ->> '$.priority', 0) <> 2;
+   UPDATE jobs SET payload = json_remove(payload, '$.priority');
+   DELETE FROM settings WHERE key = 'paused';`,
+  // Imports can outlive their Job (Sonarr and Radarr remove completed downloads), so each Job's Release is kept.
+  `INSERT OR IGNORE INTO job_releases SELECT id, payload -> '$.release' FROM jobs;`,
 ];
 
 export class Store {
@@ -43,15 +52,16 @@ export class Store {
   private readonly selectJob: StatementSync;
   private readonly insertJob: StatementSync;
   private readonly deleteJob: StatementSync;
-  private readonly selectPaused: StatementSync;
-  private readonly upsertPaused: StatementSync;
+  private readonly insertJobRelease: StatementSync;
+  private readonly selectJobRelease: StatementSync;
 
   constructor(path: string) {
     this.db = new DatabaseSync(path);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS releases (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS job_releases (job_id TEXT PRIMARY KEY, release TEXT NOT NULL);`);
     this.migrate();
     this.insertRelease = this.db.prepare('INSERT INTO releases VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload');
     this.selectRelease = this.db.prepare('SELECT payload FROM releases WHERE id=?');
@@ -59,8 +69,8 @@ export class Store {
     this.selectJob = this.db.prepare('SELECT payload FROM jobs WHERE id=?');
     this.insertJob = this.db.prepare('INSERT INTO jobs VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload');
     this.deleteJob = this.db.prepare('DELETE FROM jobs WHERE id=?');
-    this.selectPaused = this.db.prepare("SELECT value FROM settings WHERE key='paused'");
-    this.upsertPaused = this.db.prepare("INSERT INTO settings VALUES ('paused', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+    this.insertJobRelease = this.db.prepare('INSERT OR IGNORE INTO job_releases VALUES (?, ?)');
+    this.selectJobRelease = this.db.prepare('SELECT release FROM job_releases WHERE job_id=?');
   }
 
   /** The shared connection, for modules that own their own tables (e.g. Series bindings). */
@@ -103,7 +113,7 @@ export class Store {
 
   jobs(): Job[] {
     return this.selectJobs.all().map(row => JSON.parse(String(row.payload)) as Job)
-      .sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   }
 
   job(id: string): Job | undefined {
@@ -113,6 +123,13 @@ export class Store {
 
   saveJob(job: Job): void {
     this.insertJob.run(job.id, JSON.stringify(job));
+    this.insertJobRelease.run(job.id, JSON.stringify(job.release));
+  }
+
+  /** The Release a Job downloaded, also after the Job itself was removed. */
+  jobRelease(id: string): Release | undefined {
+    const row = this.selectJobRelease.get(id);
+    return row ? JSON.parse(String(row.release)) as Release : undefined;
   }
 
   updateJob(id: string, update: Partial<Job>): Job | undefined {
@@ -125,14 +142,6 @@ export class Store {
 
   removeJob(id: string): void {
     this.deleteJob.run(id);
-  }
-
-  get paused(): boolean {
-    return this.selectPaused.get()?.value === 'true';
-  }
-
-  set paused(value: boolean) {
-    this.upsertPaused.run(String(value));
   }
 
   close(): void {

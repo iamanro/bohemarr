@@ -18,6 +18,92 @@ export async function fetchJson<T = unknown>(url: string | URL, signal: AbortSig
  */
 export class PlaybackBusy extends Error {}
 
+/**
+ * Dotted-path getter over untrusted/unvalidated upstream JSON (`a.b.0.c`), mirroring the Java
+ * `JSONCollection.getString`/`getCollection` accessors used throughout the ported clients.
+ * Every call site names the expected type explicitly; the single cast here is the
+ * boundary where we deliberately step from `unknown` into a caller-declared shape.
+ */
+export function at<T = unknown>(source: unknown, path: string): T | undefined {
+  let current: unknown = source;
+  for (const key of path.split('.')) {
+    if (current === null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current as T | undefined;
+}
+
+/** How long a provider's full Program list is reused; below Sonarr's 15-minute RSS interval. */
+export const PROGRAM_LIST_TTL_MS = 10 * 60_000;
+/** A shared load must not hang forever for every later caller. */
+const SHARED_LOAD_TIMEOUT_MS = 110_000;
+
+/**
+ * Shares one `load` among all callers for `ttlMs`; a failed load is forgotten. The load runs on
+ * its own deadline, so a caller that gives up neither cancels it for the others nor waits for it.
+ */
+export function cached<T>(ttlMs: number, load: (signal: AbortSignal) => Promise<T>): (signal: AbortSignal) => Promise<T> {
+  let entry: { at: number; value: Promise<T> } | undefined;
+  return async signal => {
+    signal.throwIfAborted();
+    if (!entry || Date.now() - entry.at >= ttlMs) {
+      const current = { at: Date.now(), value: load(AbortSignal.timeout(SHARED_LOAD_TIMEOUT_MS)) };
+      entry = current;
+      current.value.catch(() => { if (entry === current) entry = undefined; });
+    }
+    const { promise: aborted, reject } = Promise.withResolvers<never>();
+    const onAbort = (): void => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    try {
+      return await Promise.race([entry.value, aborted]);
+    } finally {
+      signal.removeEventListener('abort', onAbort);
+    }
+  };
+}
+
+/** The items of a list still being loaded, as the async iterable a Catalogue hands out. */
+export async function* each<T>(items: Promise<readonly T[]>): AsyncGenerator<T> {
+  yield* await items;
+}
+
+/** No Releases: for a Catalogue that knows a query cannot match without asking upstream. */
+export async function* empty(): AsyncGenerator<never> {}
+
+/**
+ * Extracts a brace-balanced substring starting at the first occurrence of
+ * `open` at or after `fromIndex`, honoring JS/​JSON string literals so that
+ * braces inside strings are not counted. Mirrors `Utils.bracketSubstring`; `''` when the
+ * opening bracket or its match is missing.
+ */
+export function bracketSubstring(text: string, fromIndex: number, open = '{', close = '}'): string {
+  const start = text.indexOf(open, fromIndex);
+  if (start < 0) return '';
+
+  let depth = 0;
+  let quote: string | null = null;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (quote) {
+      if (ch === '\\') { i++; continue; }
+      if (ch === quote) quote = null;
+      continue;
+    }
+
+    if (ch === '"' || ch === '\'' || ch === '`') { quote = ch; continue; }
+
+    if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+
+  return '';
+}
+
 export function releaseId(provider: string, url: string): string {
   return hash('sha256', `${provider}\0${url}`, 'hex');
 }

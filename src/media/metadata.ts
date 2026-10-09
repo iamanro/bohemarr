@@ -54,7 +54,7 @@ function trackBytes(track: DashRepresentation): { bytes: number; estimated: bool
 /** Highest-bitrate stream in `streams`, preferring `codec_type === kind` and (for audio) a
  * language match (compared via `normalizeLanguage`, so ffprobe's `ces`/`cs-CZ`/... all count as a
  * match) against `preferredLanguage` when more than one candidate exists. */
-function bestStream(streams: ProbedStream[], kind: string, preferredLanguage?: string): ProbedStream | undefined {
+export function bestStream(streams: ProbedStream[], kind: string, preferredLanguage?: string): ProbedStream | undefined {
   const candidates = streams.filter(stream => stream.codec_type === kind);
   const preferredNormalized = preferredLanguage ? normalizeLanguage(preferredLanguage) : undefined;
   const matching = preferredNormalized ? candidates.filter(stream => normalizeLanguage(stream.tags?.language) === preferredNormalized) : [];

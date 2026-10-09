@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { load as loadHtml } from 'cheerio';
 import { XMLParser } from 'fast-xml-parser';
 import type { Catalogue, CatalogueQuery, MediaKind, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { fetchJson, fetchText, mediaType, releaseId } from './common.ts';
+import { at, fetchJson, fetchText, mediaType, releaseId } from './common.ts';
 
 // Ported from sune.app.mediadown.media_engine.ceskatelevize.CeskaTelevizeEngine and
 // sune.app.mediadown.drm_engine.ceskatelevize.CeskaTelevizeDRMEngine (Media Downloader).
@@ -50,17 +50,6 @@ const QUERY_SEARCH_SHOWS = `query SearchShows($limit: PaginationAmount!, $offset
 interface CtShow { id: string; slug: string; title: string; code?: string }
 interface CtSearchedShow { id: string; code: string; title: string }
 interface CtEpisodeItem { id: string; playable: boolean; title: string }
-
-// Boundary helper for navigating loosely-typed JSON (NEXT_DATA blobs, GraphQL payloads) without
-// scattering inline `as` shape assumptions through the traversal call sites.
-function getPath(source: unknown, path: string): unknown {
-  let current = source;
-  for (const key of path.split('.')) {
-    if (!current || typeof current !== 'object' || !(key in current)) return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current;
-}
 
 async function graphql<T>(operationName: string, query: string, variables: Record<string, unknown>, signal: AbortSignal): Promise<T> {
   return fetchJson<T>(GRAPHQL_URL, signal, {
@@ -116,13 +105,13 @@ async function fetchShowMetadata(programUri: string, signal: AbortSignal): Promi
   let year: number | undefined;
   try {
     const parsed: unknown = JSON.parse(script);
-    const productionYear = Number(getPath(parsed, 'props.pageProps.data.show.year'));
+    const productionYear = Number(at(parsed, 'props.pageProps.data.show.year'));
     if (Number.isSafeInteger(productionYear) && productionYear > 0) year = productionYear;
-    const seasonList = getPath(parsed, 'props.pageProps.data.show.seasons');
+    const seasonList = at(parsed, 'props.pageProps.data.show.seasons');
     if (Array.isArray(seasonList)) {
       seasons = seasonList
         .map(entry => {
-          const id = getPath(entry, 'id');
+          const id = at(entry, 'id');
           return typeof id === 'string' ? id : '';
         })
         .filter(Boolean);
@@ -140,7 +129,7 @@ function buildEpisodeRelease(
   const url = episodeUrl(pUrl, item.id);
   return {
     id: releaseId('ceskatelevize', url), provider: 'ceskatelevize', title: item.title,
-    url, kind, series: show.title, season, episode, year: kind === 'movie' ? meta.year : undefined, data: { idec: meta.idec },
+    url, kind, series: show.title, season, episode, year: kind === 'movie' ? meta.year : undefined, data: { idec: item.id },
   };
 }
 
@@ -158,7 +147,8 @@ async function* pagesNewestFirst(
   const lastOffset = Math.floor((total - 1) / MAX_ITEMS_PER_PAGE) * MAX_ITEMS_PER_PAGE;
   for (let offset = lastOffset; offset >= 0; offset -= MAX_ITEMS_PER_PAGE) {
     const page = await getEpisodes(idec, offset, MAX_ITEMS_PER_PAGE, seasonId, signal);
-    for (let i = page.items.length - 1; i >= 0; i--) yield { item: page.items[i]!, index: offset + i + 1, total };
+    // An episode whose rights expired stays listed upstream; it keeps its number but is never offered.
+    for (let i = page.items.length - 1; i >= 0; i--) if (page.items[i]!.playable) yield { item: page.items[i]!, index: offset + i + 1, total };
   }
 }
 
@@ -175,7 +165,7 @@ async function* iterateShowEpisodes(show: CtShow, query: CatalogueQuery, signal:
     if (query.episode !== undefined) {
       const page = await getEpisodes(meta.idec, query.episode - 1, 1, seasonId, signal);
       const item = page.items[0];
-      if (item) yield buildEpisodeRelease(show, meta, pUrl, item, query.season, query.episode, 'tv');
+      if (item?.playable) yield buildEpisodeRelease(show, meta, pUrl, item, query.season, query.episode, 'tv');
       return;
     }
     for await (const { item, index } of pagesNewestFirst(meta.idec, seasonId, signal)) {
@@ -187,7 +177,7 @@ async function* iterateShowEpisodes(show: CtShow, query: CatalogueQuery, signal:
   if (query.episode !== undefined) {
     const page = await getEpisodes(meta.idec, query.episode - 1, 1, null, signal);
     const item = page.items[0];
-    if (item) yield buildEpisodeRelease(show, meta, pUrl, item, undefined, query.episode, hasSeasons ? 'tv' : 'movie');
+    if (item?.playable) yield buildEpisodeRelease(show, meta, pUrl, item, undefined, query.episode, hasSeasons ? 'tv' : 'movie');
     return;
   }
 
@@ -341,12 +331,12 @@ async function fetchPlaylist(info: SourceInfo, signal: AbortSignal): Promise<Med
     const subtitles = new Map<string, string[]>();
     if (Array.isArray(item.subtitles)) {
       for (const sub of item.subtitles) {
-        const language = getPath(sub, 'language');
-        const files = getPath(sub, 'files');
+        const language = at(sub, 'language');
+        const files = at(sub, 'files');
         const urls: string[] = [];
         if (Array.isArray(files)) {
           for (const file of files) {
-            const fileUrl = getPath(file, 'url');
+            const fileUrl = at(file, 'url');
             if (typeof fileUrl === 'string') urls.push(new URL(fileUrl, url).toString());
           }
         }
@@ -374,7 +364,7 @@ async function discoverSourceInfos(pageUrl: string, signal: AbortSignal): Promis
     const deviceId = randomUUID();
     const infos: SourceInfo[] = [];
     for (const candidatePath of ['props.pageProps.data.mediaMeta', 'props.pageProps.data.show']) {
-      const idec = getPath(parsedJson, `${candidatePath}.idec`);
+      const idec = at(parsedJson, `${candidatePath}.idec`);
       if (typeof idec === 'string') infos.push({ kind: 'external', idec, deviceId, origin: 'ivysilani', client: 'iVysilaniWeb' });
     }
     return infos;
@@ -385,7 +375,7 @@ async function discoverSourceInfos(pageUrl: string, signal: AbortSignal): Promis
     if (!script) return [];
     let parsedJson: unknown;
     try { parsedJson = JSON.parse(script); } catch { return []; }
-    const versionId = getPath(parsedJson, 'props.pageProps.videoModel.origin.versionId');
+    const versionId = at(parsedJson, 'props.pageProps.videoModel.origin.versionId');
     if (typeof versionId !== 'string') return [];
     const origin = sub === 'ct24' ? 'ct24' : 'sport';
     const client = sub === 'ct24' ? 'CT24Web' : 'SportWeb';

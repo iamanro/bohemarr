@@ -5,7 +5,7 @@ import { normalizeLanguage } from '../providers/common.ts';
 export interface HlsTrack extends ProtectedTrack { kind: 'video' | 'audio'; height?: number; bandwidth?: number; averageBandwidth?: number; language?: string; }
 export interface HlsSelection { live: boolean; video: HlsTrack; audio?: HlsTrack; videoPlaylistUrl: string; audioPlaylistUrl?: string; }
 
-interface Variant { bandwidth: number; averageBandwidth?: number; width?: number; height?: number; audioGroupId?: string; url: string; }
+interface Variant { bandwidth: number; averageBandwidth?: number; height?: number; audioGroupId?: string; url: string; }
 interface AudioGroupEntry { groupId: string; uri?: string; language?: string; }
 
 interface ParsedPlaylist {
@@ -43,7 +43,6 @@ function parseVariant(attrs: Record<string, string>, url: string): Variant {
   return {
     bandwidth: Number(attrs.BANDWIDTH ?? 0),
     averageBandwidth: Number.isFinite(averageBandwidth) && averageBandwidth > 0 ? averageBandwidth : undefined,
-    width: parts?.[0] !== undefined ? Number(parts[0]) : undefined,
     height: parts?.[1] !== undefined ? Number(parts[1]) : undefined,
     audioGroupId: attrs.AUDIO,
     url,
@@ -214,14 +213,4 @@ export async function resolveHlsTracks(
     video: toTrack(videoPlaylist, 'video', { height: selectedHeight, bandwidth: selectedBandwidth, averageBandwidth: selectedAverageBandwidth }),
     audio, videoPlaylistUrl, audioPlaylistUrl,
   };
-}
-
-/** Lightweight VOD/live check for the clear (non-DRM) ffmpeg remux path: fetches at most the master + first variant playlist. */
-export async function isHlsLive(masterUrl: string, headers: Record<string, string> | undefined, signal: AbortSignal): Promise<boolean> {
-  const master = await fetchPlaylist(masterUrl, headers, signal);
-  if (!master.isMaster) return master.live;
-  const first = master.variants[0];
-  if (!first) return master.live;
-  const variant = await fetchPlaylist(first.url, headers, signal);
-  return variant.live;
 }

@@ -10,8 +10,8 @@
 import { createHmac } from 'node:crypto';
 import JSON5 from 'json5';
 import type { ProviderConfig } from '../types.ts';
-import { fetchText } from './common.ts';
-import { base64url, bracketSubstring, get, Nuxt, PrimaAuthError, findByKey } from './prima-common.ts';
+import { bracketSubstring, fetchText } from './common.ts';
+import { base64url, get, Nuxt, PrimaAuthError, findByKey } from './prima-common.ts';
 import { AccountSession, type SessionGrant, type SessionSource } from './account-session.ts';
 
 const URL_SESSION_CREATE = 'https://ucet.iprima.cz/api/session/create';
@@ -185,7 +185,8 @@ export class PrimaAuthenticator {
     if (marker < 0) throw new PrimaAuthError('Unable to obtain Prima+ NUXT config (profileTokenSecret)');
 
     const braceStart = body.indexOf('{', marker);
-    const objectText = bracketSubstring(body, '{', '}', braceStart);
+    const objectText = bracketSubstring(body, braceStart);
+    if (!objectText) throw new PrimaAuthError('Unable to read the Prima+ NUXT config');
     // The config is a JS object literal (unquoted keys, single-quoted strings), not strict JSON.
     const config = JSON5.parse<Record<string, unknown>>(objectText);
     const secret = get<string>(config, 'public.profileTokenSecret', '');

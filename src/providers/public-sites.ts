@@ -17,10 +17,11 @@ import * as cheerio from 'cheerio';
 import type { Cheerio, CheerioAPI } from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { Catalogue, CatalogueQuery, MediaKind, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { fetchJson, fetchText, mediaType, normalize, releaseId } from './common.ts';
+import { at, bracketSubstring, empty, fetchJson, fetchText, mediaType, normalize, releaseId } from './common.ts';
 import { isYouTubeUrl, maybeTransformYouTubeUrl, resolveYouTube } from './public-sites-youtube.ts';
 import { resolveOnNetworkEmbed } from './public-sites-onnetwork.ts';
 import { authenticateBarrandov, fetchBarrandovDocument, parseBarrandovLocalSources } from './public-sites-barrandov.ts';
+import { AccountSession, SessionRejected } from './account-session.ts';
 
 // ---------------------------------------------------------------------------
 // Generic helpers shared across providers in this file
@@ -264,21 +265,6 @@ async function* barrandovReleases(program: ScrapedProgram, signal: AbortSignal):
   }
 }
 
-// Finds the enclosing balanced-brace object starting at the '{' at or after fromIndex.
-function bracketForward(text: string, open: string, close: string, fromIndex: number): string {
-  const start = text.indexOf(open, fromIndex);
-  if (start < 0) throw new Error(`Barrandov: unable to find opening '${open}'`);
-  let depth = 0;
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === open) depth++;
-    else if (text[i] === close) {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  throw new Error(`Barrandov: unmatched '${open}${close}' block`);
-}
-
 function firstNestedObject(value: unknown): unknown {
   if (value && typeof value === 'object') {
     for (const nested of Object.values(value as Record<string, unknown>)) {
@@ -286,13 +272,6 @@ function firstNestedObject(value: unknown): unknown {
     }
   }
   return undefined;
-}
-
-function getPathValue(obj: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc == null) return undefined;
-    return Array.isArray(acc) ? acc[Number(key)] : (acc as Record<string, unknown>)[key];
-  }, obj);
 }
 
 /**
@@ -320,74 +299,32 @@ async function findBarrandovYouTubeFallback(originalUrl: string, signal: AbortSi
 }
 
 async function searchBarrandovYouTubeChannel(query: string, programNameLower: string, dateString: string, signal: AbortSignal): Promise<string | undefined> {
-  const timeout = () => AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
   const searchUrl = `https://www.youtube.com/c/TelevizeBarrandovOfficial/search?query=${encodeURIComponent(query)}`;
-  let response = await fetch(searchUrl, { signal: timeout() });
-  let body = await response.text();
-
-  if (new URL(response.url).hostname === 'consent.youtube.com') {
-    const $consent = cheerio.load(body);
-    const metaContent = $consent('noscript > meta').first().attr('content') ?? '';
-    const consentUrlMatch = /url=([^;]+)/.exec(decodeURIComponent(metaContent));
-
-    if (consentUrlMatch) {
-      const consentUrl = decodeURIComponent(consentUrlMatch[1]!);
-      const consentHtml = await fetchText(consentUrl, signal);
-      const $consentPage = cheerio.load(consentHtml);
-      const args: Record<string, string> = {};
-
-      for (const form of $consentPage('.saveButtonContainer form').toArray()) {
-        const $form = $consentPage(form);
-        const localArgs: Record<string, string> = {};
-        let eom = false;
-        let valid = true;
-
-        for (const input of $form.find('input[type="hidden"]').toArray()) {
-          const name = $consentPage(input).attr('name') ?? '';
-          const value = $consentPage(input).attr('value') ?? '';
-          if (name === 'set_eom') {
-            if (value !== 'true') { valid = false; break; }
-            eom = true;
-          }
-          localArgs[name] = value;
-        }
-
-        if (valid && eom) { Object.assign(args, localArgs); break; }
-      }
-
-      await fetch('https://consent.youtube.com/save', {
-        method: 'POST',
-        headers: { Referer: consentUrl, 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams(args).toString(),
-        signal: timeout(),
-      });
-
-      response = await fetch(searchUrl, { signal: timeout() });
-      body = await response.text();
-    }
-
-    if (new URL(response.url).hostname === 'consent.youtube.com') return undefined; // still blocked by consent wall
-  }
+  // SOCS=CAI is YouTube's own answer to its EU consent page (as yt-dlp sends it); fetch keeps no cookies.
+  const response = await fetch(searchUrl, { headers: { Cookie: 'SOCS=CAI' }, signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) });
+  const body = await response.text();
+  if (new URL(response.url).hostname === 'consent.youtube.com') return undefined; // still blocked by consent wall
 
   const marker = /var ytInitialData\s*=\s*\{/.exec(body);
   if (!marker) return undefined;
 
-  const objectText = bracketForward(body, '{', '}', marker.index + marker[0].length - 1);
+  const objectText = bracketSubstring(body, marker.index + marker[0].length - 1);
+  if (!objectText) throw new Error('Barrandov: ytInitialData is not a complete object');
   const json = JSON5.parse<Record<string, unknown>>(objectText);
 
-  const tabs = getPathValue(json, 'contents.twoColumnBrowseResultsRenderer.tabs');
+  const tabs = at(json, 'contents.twoColumnBrowseResultsRenderer.tabs');
   if (!Array.isArray(tabs) || tabs.length === 0) return undefined;
 
-  const searchTabContent = getPathValue(firstNestedObject(tabs[tabs.length - 1]), 'content');
-  const searchContent = getPathValue(firstNestedObject(searchTabContent), 'contents');
+  const searchTabContent = at(firstNestedObject(tabs[tabs.length - 1]), 'content');
+  const searchContent = at(firstNestedObject(searchTabContent), 'contents');
   if (!Array.isArray(searchContent)) return undefined;
 
   for (const searchItem of searchContent) {
-    const itemData = getPathValue(firstNestedObject(searchItem), 'contents.0.videoRenderer') as Record<string, unknown> | undefined;
+    const itemData = at(firstNestedObject(searchItem), 'contents.0.videoRenderer') as Record<string, unknown> | undefined;
     if (!itemData) continue;
 
     const videoId = itemData.videoId;
-    const title = getPathValue(itemData, 'title.runs.0.text');
+    const title = at(itemData, 'title.runs.0.text');
     if (typeof videoId !== 'string' || typeof title !== 'string') continue;
 
     const titleLower = title.toLowerCase();
@@ -399,18 +336,43 @@ async function searchBarrandovYouTubeChannel(query: string, programNameLower: st
   return undefined;
 }
 
-async function resolveTvBarrandov(release: Release, config: ProviderConfig, youtubeConfig: ProviderConfig, signal: AbortSignal): Promise<MediaSource[]> {
-  let cookie: string | undefined;
-  if (config.username && config.password) {
-    cookie = await authenticateBarrandov(String(config.username), String(config.password), signal);
-    if (!cookie) throw new Error('TVBarrandov: authentication failed (incorrect credentials)');
-  }
+/** The login cookie for the premium archive, kept until the archive stops accepting it; none without credentials. */
+function barrandovSession(config: ProviderConfig): AccountSession<string> | undefined {
+  if (!config.username || !config.password) return undefined;
+  const username = String(config.username);
+  const password = String(config.password);
+  return new AccountSession({
+    label: 'tvbarrandov',
+    async login(signal) {
+      const cookie = await authenticateBarrandov(username, password, signal);
+      if (!cookie) throw new Error('TVBarrandov: authentication failed (incorrect credentials)');
+      return { session: cookie };
+    },
+  });
+}
 
-  const { finalUrl, body } = await fetchBarrandovDocument(release.url, cookie, signal);
+const isPremiumArchive = (url: string): boolean => new URL(url).pathname.startsWith('/premiovy-archiv');
+
+async function resolveTvBarrandov(
+  release: Release, session: AccountSession<string> | undefined, youtubeConfig: ProviderConfig, signal: AbortSignal,
+): Promise<MediaSource[]> {
+  let page = session ? undefined : await fetchBarrandovDocument(release.url, undefined, signal);
+  if (session) {
+    try {
+      await session.run(async (cookie, runSignal) => {
+        page = await fetchBarrandovDocument(release.url, cookie, runSignal);
+        // A login that is sent to the premium archive's sales page has expired; it is renewed once.
+        if (isPremiumArchive(page.finalUrl)) throw new SessionRejected('TVBarrandov: the login does not open the premium archive');
+      }, signal);
+    } catch (error) {
+      if (!(error instanceof SessionRejected)) throw error;
+    }
+  }
+  const { finalUrl, body } = page!;
   const $ = cheerio.load(body);
 
   let uriToProcess: string | undefined;
-  if (new URL(finalUrl).pathname.startsWith('/premiovy-archiv')) {
+  if (isPremiumArchive(finalUrl)) {
     uriToProcess = await findBarrandovYouTubeFallback(release.url, signal);
   }
 
@@ -714,17 +676,20 @@ export function createPublicSiteProviders(configs: Record<string, ProviderConfig
 
   const barrandov = configs.tvbarrandov ?? {};
   if (barrandov.enabled !== false) {
+    const session = barrandovSession(barrandov);
     const catalogue: Catalogue<ScrapedProgram> = {
       async *programs(_query, signal) {
         for (const program of await fetchBarrandovPrograms(signal)) yield program;
       },
-      releases: (program, _query, signal) => barrandovReleases(program, signal),
+      // These Releases carry neither season nor episode, so such a search would walk the whole archive for nothing.
+      releases: (program, query, signal) => query.episode !== undefined || (query.season !== undefined && query.season < 1900)
+        ? empty() : barrandovReleases(program, signal),
     };
     providers.push({
       id: 'tvbarrandov',
       name: 'TV Barrandov',
       catalogue,
-      resolve: (release, signal) => resolveTvBarrandov(release, barrandov, configs.youtube ?? {}, signal),
+      resolve: (release, signal) => resolveTvBarrandov(release, session, configs.youtube ?? {}, signal),
     });
   }
 

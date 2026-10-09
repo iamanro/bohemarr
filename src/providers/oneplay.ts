@@ -1,7 +1,7 @@
 import type {
   Catalogue, CatalogueQuery, MediaSource, Program, Provider, ProviderConfig, Release, SeriesIdentity, ProgramMetadata,
 } from '../types.ts';
-import { releaseId } from './common.ts';
+import { cached, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { isSeriesCandidate } from '../series-identity.ts';
 import { type OneplayCredentials, OneplaySession } from './oneplay-auth.ts';
 import {
@@ -56,9 +56,12 @@ function toEpisodeRelease(program: OneplayProgram, episode: OneplayEpisode): Rel
  * browsable "oneplay" catalogue carousel (title-asc), so `q` is ignored and `searchCatalogue`
  * applies the title pre-filter itself once every Program below has been listed.
  */
-async function* catalogueProgramsOf(pool: OneplayConnectionPool, signal: AbortSignal): AsyncGenerator<OneplayCatalogueProgram> {
-  for (const program of await fetchAllPrograms(pool, signal)) yield { ...program, id: program.uri };
+async function* catalogueProgramsOf(allPrograms: ProgramList, signal: AbortSignal): AsyncGenerator<OneplayCatalogueProgram> {
+  for (const program of await allPrograms(signal)) yield { ...program, id: program.uri };
 }
+
+/** The full catalogue, shared for ten minutes: it takes one request per 24 programs. */
+type ProgramList = (signal: AbortSignal) => Promise<OneplayProgram[]>;
 
 /**
  * `Oneplay.StrategyBase.getEpisodes`: a program page is never itself a Release, even when it
@@ -75,7 +78,7 @@ async function* catalogueReleasesOf(
 ): AsyncGenerator<Release> {
   let result = program.listing;
   if (!result) {
-    await session.ensureAuthenticated(true, signal);
+    await session.ensureAuthenticated(signal);
     result = await fetchEpisodesForProgram(pool, program.uri, signal);
   }
   if (result.kind === 'movie') {
@@ -96,15 +99,15 @@ async function lookupBoundProgram(
   id: string,
   signal: AbortSignal,
 ): Promise<OneplayCatalogueProgram | undefined> {
-  await session.ensureAuthenticated(true, signal);
+  await session.ensureAuthenticated(signal);
   const result = await fetchEpisodesForProgram(pool, id, signal);
   if (result.kind === 'movie') return undefined;
   return { id, uri: id, title: result.title, kind: 'tv', listing: result };
 }
 
-function createOneplayCatalogue(pool: OneplayConnectionPool, session: OneplaySession): Catalogue<OneplayCatalogueProgram> {
+function createOneplayCatalogue(pool: OneplayConnectionPool, session: OneplaySession, allPrograms: ProgramList): Catalogue<OneplayCatalogueProgram> {
   return {
-    programs: (_query: CatalogueQuery, signal: AbortSignal) => catalogueProgramsOf(pool, signal),
+    programs: (_query: CatalogueQuery, signal: AbortSignal) => catalogueProgramsOf(allPrograms, signal),
     program: (id, signal) => lookupBoundProgram(pool, session, id, signal),
     releases: (program, _query: CatalogueQuery, signal: AbortSignal) => catalogueReleasesOf(pool, session, program, signal),
   };
@@ -118,14 +121,15 @@ function createOneplayCatalogue(pool: OneplayConnectionPool, session: OneplaySes
 async function seriesCandidates(
   pool: OneplayConnectionPool,
   session: OneplaySession,
+  allPrograms: ProgramList,
   identity: SeriesIdentity,
   signal: AbortSignal,
 ): Promise<ProgramMetadata[]> {
-  const programs = (await fetchAllPrograms(pool, signal))
+  const programs = (await allPrograms(signal))
     .filter(program => program.kind === 'tv' && isSeriesCandidate(program.title, identity));
   if (!programs.length) return [];
 
-  await session.ensureAuthenticated(true, signal);
+  await session.ensureAuthenticated(signal);
   const candidates: ProgramMetadata[] = [];
   for (const program of programs) {
     signal.throwIfAborted();
@@ -142,7 +146,7 @@ async function resolve(
   release: Release,
   signal: AbortSignal,
 ): Promise<MediaSource[]> {
-  await session.ensureAuthenticated(true, signal);
+  await session.ensureAuthenticated(signal);
   return resolveMediaSources(pool, release.url, signal);
 }
 
@@ -177,13 +181,14 @@ export function createOneplayProviders(configs: Record<string, ProviderConfig>):
   };
 
   const pool = new OneplayConnectionPool(CONNECTION_POOL_CAPACITY, webDevice());
-  const session = new OneplaySession(pool, credentials, credentials.accountId ?? null);
+  const session = new OneplaySession(pool, credentials);
+  const allPrograms = cached(PROGRAM_LIST_TTL_MS, signal => fetchAllPrograms(pool, signal));
 
   const provider: Provider = {
     id: PROVIDER_ID,
     name: PROVIDER_NAME,
-    catalogue: createOneplayCatalogue(pool, session),
-    seriesCandidates: (identity, signal) => seriesCandidates(pool, session, identity, signal),
+    catalogue: createOneplayCatalogue(pool, session, allPrograms),
+    seriesCandidates: (identity, signal) => seriesCandidates(pool, session, allPrograms, identity, signal),
     resolve: (release, signal) => resolve(pool, session, release, signal),
     close: () => pool.close(),
   };

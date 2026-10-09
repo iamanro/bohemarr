@@ -5,26 +5,12 @@
 // selector and the request Referer differ between the two sites.
 import JSON5 from 'json5';
 import type { MediaSource } from '../types.ts';
-import { fetchText, mediaType } from './common.ts';
+import { bracketSubstring, fetchText, mediaType } from './common.ts';
 
 interface OnNetworkVideo {
   url: string;
   name?: string;
   urls?: { url: string; name?: string }[];
-}
-
-function bracketSubstring(text: string, open: string, close: string, fromIndex: number): string {
-  const start = text.indexOf(open, fromIndex);
-  if (start < 0) throw new Error(`OnNetwork: unable to find opening '${open}'`);
-  let depth = 0;
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === open) depth++;
-    else if (text[i] === close) {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  throw new Error(`OnNetwork: unmatched '${open}${close}' block`);
 }
 
 /**
@@ -37,7 +23,8 @@ export async function resolveOnNetworkEmbed(scriptSrc: string, referer: string, 
 
   const configIdx = script.indexOf('{"');
   if (configIdx < 0) throw new Error('OnNetwork: unable to find player configuration');
-  const configText = bracketSubstring(script, '{', '}', configIdx);
+  const configText = bracketSubstring(script, configIdx);
+  if (!configText) throw new Error('OnNetwork: player configuration is not a complete object');
   const config = JSON5.parse<{ iid: string; mid: string }>(configText);
 
   const baseIdIdx = script.indexOf('var _ONNPBaseId');
@@ -51,7 +38,8 @@ export async function resolveOnNetworkEmbed(scriptSrc: string, referer: string, 
 
   const playerVideosIdx = frameContent.indexOf('var playerVideos');
   if (playerVideosIdx < 0) throw new Error('OnNetwork: unable to find playerVideos data');
-  const playerVideosText = bracketSubstring(frameContent, '[', ']', playerVideosIdx);
+  const playerVideosText = bracketSubstring(frameContent, playerVideosIdx, '[', ']');
+  if (!playerVideosText) throw new Error('OnNetwork: playerVideos is not a complete array');
   const playerVideos = JSON5.parse<OnNetworkVideo[]>(playerVideosText);
 
   const sources: MediaSource[] = [];

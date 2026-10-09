@@ -6,6 +6,7 @@
  * command replies) and to a parallel HTTPS JSON-RPC-ish endpoint for actual requests;
  * every HTTP request carries a `context` block built from the WebSocket handshake.
  */
+import { at } from './common.ts';
 
 export const HTTP_BASE = 'https://http.cms.jyxo.cz/api/v1.12/';
 export const WS_BASE = 'wss://ws.cms.jyxo.cz/websocket/';
@@ -57,13 +58,10 @@ export interface OneplayRequestOptions {
   authorization?: Array<Record<string, unknown>>;
 }
 
-export type OneplayResponseKind = 'sync' | 'async';
-
 export interface OneplayResponse {
   readonly command: string;
   readonly status: string | undefined;
   readonly data: unknown;
-  readonly kind: OneplayResponseKind;
 }
 
 /** `Connection.createRequest`. */
@@ -115,21 +113,6 @@ export function playbackCapabilities(): Record<string, unknown> {
       multipleAudio: false,
     },
   };
-}
-
-/**
- * Dotted-path getter over untrusted/unvalidated upstream JSON, mirroring the Java
- * `JSONCollection.getString`/`getCollection` accessors used throughout the ported client.
- * Every call site names the expected type explicitly; the single cast here is the
- * boundary where we deliberately step from `unknown` into a caller-declared shape.
- */
-export function at<T = unknown>(source: unknown, path: string): T | undefined {
-  let current: unknown = source;
-  for (const key of path.split('.')) {
-    if (current === null || typeof current !== 'object') return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current as T | undefined;
 }
 
 /**

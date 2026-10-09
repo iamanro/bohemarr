@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseJsObject } from '../src/providers/nova-markiza-utils.ts';
+import { bracketSubstring } from '../src/providers/common.ts';
 import { evaluatePlayerScript } from '../src/providers/javascript.ts';
 import { tracksToSources } from '../src/providers/nova-markiza-media.ts';
 
@@ -24,4 +25,10 @@ test('player transforms cannot access Node and have a bounded execution time', a
   assert.equal(await evaluatePlayerScript("typeof process + ':' + typeof require + ':' + typeof fetch"), 'undefined:undefined:undefined');
   assert.equal(await evaluatePlayerScript("'abc'.split('').reverse().join('')"), 'cba');
   await assert.rejects(evaluatePlayerScript('while (true) {}'));
+});
+
+test('a bracketed block is cut out whole, even with brackets inside its strings', () => {
+  assert.equal(bracketSubstring('var data = {"text":"Soud :-}","n":{"a":1}}; more', 0), '{"text":"Soud :-}","n":{"a":1}}');
+  assert.equal(bracketSubstring('var playerVideos = [{"name":"HD ]"}];', 0, '[', ']'), '[{"name":"HD ]"}]');
+  assert.equal(bracketSubstring('cut {"a": 1', 0), '');
 });

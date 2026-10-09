@@ -1,7 +1,7 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Element as CheerioElement } from 'domhandler';
 import type { Catalogue, CatalogueQuery, Provider, Release } from '../types.ts';
-import { fetchText, releaseId } from './common.ts';
+import { cached, empty, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import {
   absUrl, fetchDocument, fetchTextOrEmpty, fetchTextRetry, joinUrl, loadHtml,
   playerTracks, queryParams, readInlineObject, select,
@@ -37,8 +37,6 @@ export interface NovaArchiveSite {
 
 /** The provider's stable program URL doubles as `Program.id`; this archive is TV-only. */
 interface Program { id: string; uri: string; title: string; kind: 'tv' }
-
-const PROGRAMS_TTL_MS = 10 * 60_000;
 
 function contentIdFromLoadMore($: CheerioAPI, el: CheerioElement, base: string, fallbackToIndex0: boolean): string | undefined {
   const href = $(el).attr('data-href');
@@ -204,7 +202,8 @@ async function* extractEpisodesForPath(
     return;
   }
 
-  yield* parseEpisodeItems($, items, program, 0, site).releases;
+  // Episodes here are numbered in their titles; one without a number gets none, not its position.
+  yield* parseEpisodeItems($, items, program, 0, site, false).releases;
   if (!hasLoadMore) return;
 
   const contentId = contentIdFromLoadMore($, loadMoreEl.get(0) as CheerioElement, uri, !!site.contentParamFallback);
@@ -215,7 +214,7 @@ async function* extractEpisodesForPath(
   // internally, so paginating forward and yielding per page stays globally newest-first.
   for (let offset = 0; ; offset += pageSize) {
     const $page = loadHtml(await fetchTextRetry(site.episodeListUrl(contentId, offset), signal, 5));
-    const { releases: pageReleases, count } = parseEpisodeItems($page, select($page, site.selEpisodes).toArray(), program, 0, site);
+    const { releases: pageReleases, count } = parseEpisodeItems($page, select($page, site.selEpisodes).toArray(), program, 0, site, false);
     yield* pageReleases;
     if (count === 0) break;
   }
@@ -244,21 +243,16 @@ async function resolveMedia(site: NovaArchiveSite, release: Release, signal: Abo
 }
 
 export function createNovaArchiveProvider(site: NovaArchiveSite): Provider {
-  let cache: { programs: Program[]; at: number } | null = null;
-
-  async function cachedPrograms(signal: AbortSignal): Promise<Program[]> {
-    if (cache && Date.now() - cache.at < PROGRAMS_TTL_MS) return cache.programs;
-    const programs = await listPrograms(site, signal);
-    cache = { programs, at: Date.now() };
-    return programs;
-  }
+  const cachedPrograms = cached(PROGRAM_LIST_TTL_MS, signal => listPrograms(site, signal));
 
   const catalogue: Catalogue<Program> = {
     async *programs(query: CatalogueQuery, signal: AbortSignal) {
       if (query.kind === 'movie') return; // Archive is TV-only upstream, no invented movie catalog
       yield* await cachedPrograms(signal);
     },
-    releases: (program: Program, _query: CatalogueQuery, signal: AbortSignal) => programReleases(site, program, signal),
+    // These Releases never carry a season, so a season search would walk the whole archive for nothing.
+    releases: (program: Program, query: CatalogueQuery, signal: AbortSignal) =>
+      query.season !== undefined && query.season < 1900 ? empty() : programReleases(site, program, signal),
   };
 
   return {

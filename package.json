@@ -2,7 +2,7 @@
   "name": "bohemarr",
   "version": "1.0.0",
   "private": true,
-  "description": "Czech and Slovak TV archives for Sonarr and Radarr: a Newznab indexer and SABnzbd-compatible download client",
+  "description": "Czech and Slovak TV archives for Sonarr and Radarr: a Torznab indexer and qBittorrent-compatible download client",
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
@@ -29,6 +29,9 @@
     "quickjs-emscripten": "^0.32.0",
     "ws": "^8.22.0",
     "youtubei.js": "^18.1.0"
+  },
+  "overrides": {
+    "undici": "^8.11.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",

@@ -17,7 +17,7 @@ function baseConfig(directory: string): Config {
   return {
     host: '127.0.0.1', port: 0, apiKey: 'test', publicUrl: 'http://127.0.0.1', dataDir: directory, downloadsDir: directory,
     concurrency: 1, ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'http://unused.invalid',
-    categories: [], providers: {},
+    categories: [], providers: {}, arrs: [],
   };
 }
 

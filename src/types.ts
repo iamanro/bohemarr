@@ -154,6 +154,38 @@ export interface Config {
   wvApiUrl: string;
   categories: string[];
   providers: Record<string, ProviderConfig>;
+  /** Sonarr and Radarr instances Bohemarr configures at startup. */
+  arrs: ArrConfig[];
+  /** Publishing imported Releases to the Vltava tracker; undefined when disabled. */
+  vltava?: VltavaConfig;
+}
+
+export interface VltavaConfig {
+  url: string;
+  token: string;
+  /** Only Releases of these providers are published. */
+  providers: string[];
+  /** Where the `vltava` CLI builds each canonical tree and its .torrent; seeded from there. */
+  outDir: string;
+  link: 'hardlink' | 'symlink' | 'copy';
+  /** The release group in canonical names. */
+  group?: string;
+  anonymous: boolean;
+  /** The `vltava` executable. */
+  cli: string;
+  /** The rqbit server that seeds published torrents; `userpass` is its HTTP basic auth as `username:password`. */
+  seeder: { url: string; userpass?: string };
+}
+
+export interface ArrConfig {
+  app: 'sonarr' | 'radarr';
+  url: string;
+  apiKey: string;
+  /** The download-client category, one of `Config.categories`. */
+  category: string;
+  rootFolder?: string;
+  /** Sonarr's and Radarr's "Remove Completed": move and remove completed downloads, instead of copying or hardlinking them. */
+  removeCompleted: boolean;
 }
 
 export type JobStatus = 'Queued' | 'Downloading' | 'Paused' | 'Completed' | 'Failed';
@@ -162,7 +194,6 @@ export interface Job {
   release: Release;
   category: string;
   status: JobStatus;
-  priority: number;
   bytes: number;
   totalBytes: number;
   progress: number;

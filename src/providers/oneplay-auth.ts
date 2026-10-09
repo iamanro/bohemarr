@@ -1,4 +1,5 @@
-import { at, readErrorMessage, type AuthenticationToken } from './oneplay-protocol.ts';
+import { at } from './common.ts';
+import { readErrorMessage, type AuthenticationToken } from './oneplay-protocol.ts';
 import type { OneplayConnection } from './oneplay-connection.ts';
 import type { OneplayConnectionPool } from './oneplay-pool.ts';
 
@@ -121,7 +122,6 @@ interface LoginStepResult {
 async function loginWithCredentials(
   connection: OneplayConnection,
   credentials: OneplayCredentials,
-  requiredAccountId: string | null,
   signal: AbortSignal,
 ): Promise<LoginStepResult> {
   const response = await connection.command(
@@ -139,8 +139,7 @@ async function loginWithCredentials(
     const groups = at<unknown[]>(response.data, 'step.groups') ?? [];
     const rawAccounts = groups.flatMap((group) => at<unknown[]>(group, 'accounts') ?? []);
     const accounts = parseAccounts(rawAccounts);
-    const selectedAccountId = requiredAccountId ?? credentials.accountId;
-    const account = selectAccount(accounts, selectedAccountId);
+    const account = selectAccount(accounts, credentials.accountId);
     const authCode = at<string>(response.data, 'step.authToken');
     const selected = await selectAccountStep(connection, account, authCode, signal);
     return { accountId: selected.accountId, authTokenValue: selected.authTokenValue, accounts };
@@ -208,27 +207,14 @@ async function fetchCurrentDeviceId(connection: OneplayConnection, signal: Abort
 export async function login(
   connection: OneplayConnection,
   credentials: OneplayCredentials,
-  requiredAccountId: string | null,
-  doProfileSelect: boolean,
   signal: AbortSignal,
 ): Promise<AuthenticationData> {
-  const loginResult = await loginWithCredentials(connection, credentials, requiredAccountId, signal);
+  const loginResult = await loginWithCredentials(connection, credentials, signal);
   const accountId = loginResult.accountId;
   connection.authenticate({ accountId, type: 'NO_PROFILE', value: loginResult.authTokenValue });
 
   const profiles = await fetchProfiles(connection, signal);
   const profile = selectProfile(profiles, credentials.profileId);
-
-  if (!doProfileSelect) {
-    return {
-      accountId,
-      profileId: profile.id,
-      authToken: { accountId, type: 'NO_PROFILE', value: loginResult.authTokenValue },
-      deviceId: '',
-      accounts: loginResult.accounts,
-    };
-  }
-
   const profileAuthValue = await selectProfileStep(connection, profile, credentials.profilePin, signal);
   const deviceId = await fetchCurrentDeviceId(connection, signal);
   const authToken: AuthenticationToken = { accountId, type: 'FULL', value: profileAuthValue };
@@ -238,33 +224,21 @@ export async function login(
 }
 
 /**
- * `Oneplay.ensureAuthenticated` / `ensureUnauthenticated`: single-flight gate around `login`,
- * tracking whether the pool already holds a token for the required account at the required
- * authentication level (plain login vs. full profile-selected login).
+ * `Oneplay.ensureAuthenticated`: single-flight gate around `login`. A token the pool already holds
+ * is reused while Oneplay still accepts it; the account and profile come from the credentials,
+ * which never change while the process runs.
  */
 export class OneplaySession {
   private readonly pool: OneplayConnectionPool;
   private readonly credentials: OneplayCredentials;
-  private readonly requiredAccountId: string | null;
-  private lastAccountId: string | null = null;
-  private wasProfileSelect = false;
   private lock: Promise<void> = Promise.resolve();
 
-  constructor(pool: OneplayConnectionPool, credentials: OneplayCredentials, requiredAccountId: string | null) {
+  constructor(pool: OneplayConnectionPool, credentials: OneplayCredentials) {
     this.pool = pool;
     this.credentials = credentials;
-    this.requiredAccountId = requiredAccountId;
   }
 
-  private isSatisfied(doProfileSelect: boolean): boolean {
-    return (
-      this.pool.isAuthenticated() &&
-      (this.requiredAccountId === null || this.requiredAccountId === this.lastAccountId) &&
-      (this.wasProfileSelect || !doProfileSelect)
-    );
-  }
-
-  async ensureAuthenticated(doProfileSelect: boolean, signal: AbortSignal): Promise<void> {
+  async ensureAuthenticated(signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
     const previous = this.lock;
     let release!: () => void;
@@ -274,23 +248,16 @@ export class OneplaySession {
     await previous;
     try {
       signal.throwIfAborted();
-      if (this.isSatisfied(doProfileSelect)) {
+      if (this.pool.isAuthenticated()) {
         const probe = await this.pool.withConnection(signal, connection =>
           connection.request('setting.display', { payload: { screen: 'account' } }, signal));
         if (probe.status === 'Ok') return;
         this.pool.authenticate(null);
-        this.lastAccountId = null;
-        this.wasProfileSelect = false;
       }
-      const authData = await this.pool.withConnection(signal, (connection) =>
-        login(connection, this.credentials, this.requiredAccountId, doProfileSelect, signal),
-      );
+      const authData = await this.pool.withConnection(signal, (connection) => login(connection, this.credentials, signal));
       this.pool.authenticate(authData.authToken);
-      this.lastAccountId = authData.accountId;
-      this.wasProfileSelect = doProfileSelect;
     } finally {
       release();
     }
   }
 }
-

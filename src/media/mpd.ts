@@ -14,7 +14,6 @@ export interface DashRepresentation extends ProtectedTrack {
   id: string;
   kind: 'video' | 'audio';
   bandwidth: number;
-  width?: number;
   height?: number;
   language?: string;
 }
@@ -58,14 +57,14 @@ function resolveBaseUrl(parent: URL, node: Record<string, unknown>): URL {
   return candidates.length ? new URL(candidates[0]!, parent) : parent;
 }
 
+/** An xs:duration in seconds; years and months have no fixed length, so only zero ones are accepted. */
 function parseIsoDuration(value: string | undefined): number | undefined {
   if (!value) return undefined;
-  const match = /^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(value);
-  if (!match) return undefined;
-  const hours = Number(match[1] ?? 0);
-  const minutes = Number(match[2] ?? 0);
-  const seconds = Number(match[3] ?? 0);
-  return hours * 3600 + minutes * 60 + seconds;
+  const number = '(\\d+(?:\\.\\d+)?)';
+  const match = new RegExp(`^P(?:${number}Y)?(?:${number}M)?(?:${number}D)?(?:T(?:${number}H)?(?:${number}M)?(?:${number}S)?)?$`).exec(value);
+  if (!match || Number(match[1] ?? 0) || Number(match[2] ?? 0)) return undefined;
+  const [days, hours, minutes, seconds] = match.slice(3).map(part => Number(part ?? 0)) as [number, number, number, number];
+  return days * 86400 + hours * 3600 + minutes * 60 + seconds;
 }
 
 /** Reference: ISO-IEC 23009-1, section 5.3.9.4.4 (`$Identifier$` / `$Identifier%0Nd$` substitution). */
@@ -115,11 +114,21 @@ function buildFromSegmentTemplate(
 
   if (timelineNode) {
     const segments: Array<{ time: number; duration: number }> = [];
+    const entries = asArray(timelineNode.S as Record<string, unknown>[] | undefined);
     let time = 0;
-    for (const s of asArray(timelineNode.S as Record<string, unknown>[] | undefined)) {
+    for (const [index, s] of entries.entries()) {
       if (s['@_t'] !== undefined) time = Number(s['@_t']);
       const duration = Number(s['@_d']);
-      const repeat = 1 + Math.max(0, Number(s['@_r'] ?? 0));
+      let repeat = 1 + Number(s['@_r'] ?? 0);
+      if (repeat < 1) {
+        // A negative @r repeats until the next S@t, or else until the end of the Period.
+        const nextTime = entries[index + 1]?.['@_t'];
+        const presentationTimeOffset = Number(template['@_presentationTimeOffset'] ?? 0);
+        const end = nextTime !== undefined ? Number(nextTime)
+          : periodDurationSeconds ? presentationTimeOffset + periodDurationSeconds * timescale : undefined;
+        if (end === undefined) throw new Error('SegmentTimeline repeats until the Period ends, but the manifest has no period duration');
+        repeat = Math.ceil((end - time) / duration);
+      }
       for (let i = 0; i < repeat; i++) {
         segments.push({ time, duration });
         time += duration;
@@ -203,11 +212,22 @@ export function parseManifest(xml: string, manifestUrl: string): DashManifest {
   const rawPeriods = asArray(mpd.Period as Record<string, unknown>[] | undefined);
   if (!rawPeriods.length) throw new Error('Invalid DASH manifest: no Period elements');
   const periods: DashPeriod[] = [];
+  // SegmentTemplate and SegmentList attributes are inherited from Period to AdaptationSet to Representation.
+  const inherited = (name: string, ...levels: Record<string, unknown>[]): Record<string, unknown> | undefined => {
+    const nodes = levels.map(level => level[name]).filter(node => node && typeof node === 'object');
+    return nodes.length ? Object.assign({}, ...nodes) as Record<string, unknown> : undefined;
+  };
 
-  for (const period of rawPeriods) {
+  let periodStart = 0;
+  for (const [index, period] of rawPeriods.entries()) {
     const representations: DashRepresentation[] = [];
     const periodBase = resolveBaseUrl(mpdBase, period);
-    const periodDuration = parseIsoDuration(period['@_duration'] as string | undefined) ?? presentationDuration;
+    periodStart = parseIsoDuration(period['@_start'] as string | undefined) ?? periodStart;
+    // A Period lasts until the next one starts, or else until the presentation ends.
+    const nextStart = parseIsoDuration(rawPeriods[index + 1]?.['@_start'] as string | undefined);
+    const periodDuration = parseIsoDuration(period['@_duration'] as string | undefined)
+      ?? (nextStart !== undefined ? nextStart - periodStart : presentationDuration !== undefined ? presentationDuration - periodStart : undefined);
+    if (periodDuration !== undefined) periodStart += periodDuration;
 
     for (const adaptationSet of asArray(period.AdaptationSet as Record<string, unknown>[] | undefined)) {
       const setRepresentations = asArray(adaptationSet.Representation as Record<string, unknown>[] | undefined);
@@ -215,18 +235,15 @@ export function parseManifest(xml: string, manifestUrl: string): DashManifest {
       if (!kind) continue;
       const adaptationBase = resolveBaseUrl(periodBase, adaptationSet);
       const protection = extractProtection(adaptationSet);
-      const setTemplate = adaptationSet.SegmentTemplate as Record<string, unknown> | undefined;
-      const setSegmentList = adaptationSet.SegmentList as Record<string, unknown> | undefined;
       const language = adaptationSet['@_lang'] as string | undefined;
 
       for (const representation of setRepresentations) {
         const representationBase = resolveBaseUrl(adaptationBase, representation);
         const id = String(representation['@_id']);
         const bandwidth = Number(representation['@_bandwidth'] ?? 0);
-        const width = representation['@_width'] !== undefined ? Number(representation['@_width']) : undefined;
         const height = representation['@_height'] !== undefined ? Number(representation['@_height']) : undefined;
-        const template = (representation.SegmentTemplate as Record<string, unknown> | undefined) ?? setTemplate;
-        const segmentList = (representation.SegmentList as Record<string, unknown> | undefined) ?? setSegmentList;
+        const template = inherited('SegmentTemplate', period, adaptationSet, representation);
+        const segmentList = inherited('SegmentList', period, adaptationSet, representation);
 
         let built: TrackBuild;
         if (template) built = buildFromSegmentTemplate(template, id, bandwidth, representationBase, periodDuration);
@@ -234,7 +251,7 @@ export function parseManifest(xml: string, manifestUrl: string): DashManifest {
         else built = { mediaSegments: [{ url: representationBase.toString() }], durationSeconds: periodDuration ?? 0 };
 
         representations.push({
-          id, kind, bandwidth, width, height, language,
+          id, kind, bandwidth, height, language,
           initSegment: built.initSegment, mediaSegments: built.mediaSegments, durationSeconds: built.durationSeconds,
           pssh: protection.pssh, keyId: protection.keyId,
         });
