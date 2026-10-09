@@ -11,6 +11,7 @@
 - **Search:**
   - A provider still searching after 60 seconds counts as failed, and the other providers' results are returned. Before, one slow provider failed the whole search.
   - Nova, Markiza, TN.cz and TV Barrandov answer season searches at once. Their Releases carry no season, and such a search used to walk their whole archive.
+  - A search by TVDB ID on a provider without series metadata expands only programmes named as the series, not every title containing its words: MOST! S01E07 on ČT took 42 requests instead of 96, and no longer returns episodes of other programmes.
   - A foreign title such as "Grey's Anatomy" no longer expands 40 unrelated programmes: the any-word fallback now needs a whole word of three letters or more.
 - **ČT seasons:** a show ČT lists without seasons answers Sonarr's season 1 searches as its only season, so `S01E07` finds its seventh episode instead of nothing.
 - **Voyo:** a title the subscription does not cover fails alone. It used to discard the session, so with only a cookie configured, Voyo stopped working until a restart.
