@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { searchCatalogue } from '../src/catalogue.ts';
+import { cached } from '../src/providers/common.ts';
 import type { Catalogue, Program, Release, SearchQuery } from '../src/types.ts';
 
 const signal = new AbortController().signal;
@@ -184,4 +185,28 @@ test('a bound Program expands only that Program', async () => {
 test('a Release owned by another provider is rejected', async () => {
   const { value } = catalogue({ A: [episode('A', 1, { provider: 'other' })] });
   await assert.rejects(search(value, query()), /owned by other/);
+});
+
+test('a cached program list is shared, a failed load is retried, and a caller giving up cancels nothing', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  const loads: Array<PromiseWithResolvers<string[]>> = [];
+  const programs = cached(1000, async () => { const load = Promise.withResolvers<string[]>(); loads.push(load); return load.promise; });
+
+  const impatient = new AbortController();
+  const first = programs(impatient.signal);
+  const second = programs(signal);
+  impatient.abort(new Error('gave up'));
+  await assert.rejects(first, /gave up/);
+  loads[0]!.resolve(['Ulice']);
+  assert.deepEqual(await second, ['Ulice'], 'the other caller still gets the shared load');
+  assert.deepEqual(await programs(signal), ['Ulice']);
+  assert.equal(loads.length, 1);
+
+  t.mock.timers.tick(1000);
+  const failing = programs(signal);
+  loads[1]!.reject(new Error('HTTP 503'));
+  await assert.rejects(failing, /HTTP 503/);
+  const retried = programs(signal);
+  loads[2]!.resolve(['Most!']);
+  assert.deepEqual(await retried, ['Most!'], 'a failed load is not kept');
 });

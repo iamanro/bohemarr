@@ -1,4 +1,5 @@
-import { at, readErrorMessage, type AuthenticationToken } from './oneplay-protocol.ts';
+import { at } from './common.ts';
+import { readErrorMessage, type AuthenticationToken } from './oneplay-protocol.ts';
 import type { OneplayConnection } from './oneplay-connection.ts';
 import type { OneplayConnectionPool } from './oneplay-pool.ts';
 

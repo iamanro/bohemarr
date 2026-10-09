@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { WebSocket, type RawData } from 'ws';
+import { at } from './common.ts';
 import {
   ASYNC_RESPONSE_TIMEOUT_MS,
   HTTP_BASE,
   WS_BASE,
-  at,
   createRequestBody,
   type AuthenticationToken,
   type ConnectionContext,
@@ -46,10 +46,6 @@ export class OneplayConnection {
 
   authenticate(token: AuthenticationToken | null): void {
     this.authToken = token;
-  }
-
-  isAuthenticated(): boolean {
-    return this.authToken !== null;
   }
 
   isOpen(): boolean {

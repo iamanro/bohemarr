@@ -1,7 +1,7 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Catalogue, CatalogueQuery, MediaKind, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { fetchText, releaseId } from './common.ts';
-import { absUrl, bracketSubstring, parseJsObject, fetchDocument, loadHtml, playerTracks, readInlineObject } from './nova-markiza-utils.ts';
+import { bracketSubstring, cached, each, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import { absUrl, parseJsObject, fetchDocument, loadHtml, playerTracks, readInlineObject } from './nova-markiza-utils.ts';
 import { tracksToSources } from './nova-markiza-media.ts';
 import { AccountSession, SessionRejected, type SessionSource } from './account-session.ts';
 
@@ -299,12 +299,15 @@ export function markizaVoyoCredentialsPresent(config: ProviderConfig): boolean {
 
 export function createMarkizaVoyoProvider(config: ProviderConfig): Provider {
   const session = new AccountSession(voyoSessionSource(config));
+  // A text search lists every program anyway, so it reuses one full listing for ten minutes.
+  const allPrograms = cached(PROGRAM_LIST_TTL_MS, signal => Array.fromAsync(iteratePrograms(CATEGORIES, signal)));
 
   const catalogue: Catalogue<VoyoProgram> = {
     // A category's `kind` is fixed, so a requested kind skips whole categories upstream instead
     // of fetching every category page just to discard the wrong-kind programs afterwards.
-    programs: (query: CatalogueQuery, signal: AbortSignal) =>
-      iteratePrograms(query.kind ? CATEGORIES.filter(c => c.kind === query.kind) : CATEGORIES, signal),
+    programs: (query: CatalogueQuery, signal: AbortSignal) => query.q.trim()
+      ? each(allPrograms(signal))
+      : iteratePrograms(query.kind ? CATEGORIES.filter(c => c.kind === query.kind) : CATEGORIES, signal),
     releases: (program: VoyoProgram, _query: CatalogueQuery, signal: AbortSignal) => listEpisodesForProgram(program, signal),
   };
 

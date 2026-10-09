@@ -1,7 +1,7 @@
 import { load as loadHtml } from 'cheerio';
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { Catalogue, CatalogueQuery, MediaKind, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { fetchJson, fetchText, normalize, releaseId } from './common.ts';
+import { at, bracketSubstring, fetchJson, fetchText, normalize, releaseId } from './common.ts';
 
 // Ported from sune.app.mediadown.media_engine.streamcz.StreamCZEngine (Media Downloader).
 
@@ -14,17 +14,6 @@ const REGEX_EPISODE = /^S(\d+):E(\d+)$/i;
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 /** Bound catalogue freshness tightly for newly published episodes. */
 const EPISODE_CACHE_TTL_MS = 5 * 60 * 1000;
-
-// Boundary helper for navigating the loosely-typed APP_SERVER_STATE / GraphQL JSON blobs without
-// scattering inline `as` shape assumptions through the traversal call sites.
-function getPath(source: unknown, path: string): unknown {
-  let current = source;
-  for (const key of path.split('.')) {
-    if (!current || typeof current !== 'object' || !(key in current)) return undefined;
-    current = (current as Record<string, unknown>)[key];
-  }
-  return current;
-}
 
 interface CatalogNode { id: string; name: string; namePrefix: string | null; urlName: string; kind?: MediaKind }
 
@@ -122,11 +111,11 @@ class StreamCzCache {
 }
 
 function nodeFrom(source: unknown): CatalogNode | null {
-  const id = getPath(source, 'id');
-  const name = getPath(source, 'name');
-  const urlName = getPath(source, 'urlName');
+  const id = at(source, 'id');
+  const name = at(source, 'name');
+  const urlName = at(source, 'urlName');
   if (typeof id !== 'string' || typeof name !== 'string' || typeof urlName !== 'string') return null;
-  const namePrefix = getPath(source, 'namePrefix');
+  const namePrefix = at(source, 'namePrefix');
   return { id, name, urlName, namePrefix: typeof namePrefix === 'string' ? namePrefix : null };
 }
 
@@ -168,19 +157,19 @@ async function* paginateConnection(
   let cursor = '';
   for (;;) {
     const data = await run(cursor);
-    const connection = getPath(data, connectionPath);
-    const edges = getPath(connection, 'edges');
-    const hasNextPage = getPath(connection, 'pageInfo.hasNextPage');
+    const connection = at(data, connectionPath);
+    const edges = at(connection, 'edges');
+    const hasNextPage = at(connection, 'pageInfo.hasNextPage');
     if (!Array.isArray(edges) || typeof hasNextPage !== 'boolean') {
       throw new Error('Stream.cz returned an incomplete programme connection');
     }
     for (const edge of edges) {
-      const node = nodeFrom(getPath(edge, 'node'));
+      const node = nodeFrom(at(edge, 'node'));
       if (!node) throw new Error('Stream.cz returned an incomplete programme');
       yield node;
     }
     if (!hasNextPage) return;
-    const endCursor = getPath(connection, 'pageInfo.endCursor');
+    const endCursor = at(connection, 'pageInfo.endCursor');
     if (typeof endCursor !== 'string' || !endCursor || endCursor === cursor) {
       throw new Error('Stream.cz returned an invalid programme cursor');
     }
@@ -195,21 +184,21 @@ async function* paginateConnectionBackward(
   let cursor: string | null = null;
   for (;;) {
     const data = await run(cursor);
-    const connection = getPath(data, connectionPath);
-    const edges = getPath(connection, 'edges');
-    const hasPreviousPage = getPath(connection, 'pageInfo.hasPreviousPage');
+    const connection = at(data, connectionPath);
+    const edges = at(connection, 'edges');
+    const hasPreviousPage = at(connection, 'pageInfo.hasPreviousPage');
     if (!Array.isArray(edges) || typeof hasPreviousPage !== 'boolean') {
       throw new Error('Stream.cz returned an incomplete episode connection');
     }
     const nodes: CatalogNode[] = [];
     for (const edge of edges) {
-      const node = nodeFrom(getPath(edge, 'node'));
+      const node = nodeFrom(at(edge, 'node'));
       if (!node) throw new Error('Stream.cz returned an incomplete episode');
       nodes.push(node);
     }
     for (let i = nodes.length - 1; i >= 0; i--) yield nodes[i]!;
     if (!hasPreviousPage) return;
-    const startCursor = getPath(connection, 'pageInfo.startCursor');
+    const startCursor = at(connection, 'pageInfo.startCursor');
     if (typeof startCursor !== 'string' || !startCursor || startCursor === cursor) {
       throw new Error('Stream.cz returned an invalid episode cursor');
     }
@@ -227,25 +216,6 @@ function episodesOf(programId: string, signal: AbortSignal): AsyncGenerator<Cata
     graphqlRequest(QUERY_EPISODES, { id: programId, last: 20, before: cursor }, signal));
 }
 
-function extractBalancedObject(text: string, openIndex: number): string | null {
-  let depth = 0;
-  let quote: '"' | "'" | null = null;
-  let escaped = false;
-  for (let i = openIndex; i < text.length; i++) {
-    const ch = text[i];
-    if (quote) {
-      if (escaped) { escaped = false; continue; }
-      if (ch === '\\') { escaped = true; continue; }
-      if (ch === quote) quote = null;
-      continue;
-    }
-    if (ch === '"' || ch === "'") { quote = ch; continue; }
-    if (ch === '{') depth++;
-    else if (ch === '}') { depth--; if (depth === 0) return text.slice(openIndex, i + 1); }
-  }
-  return null;
-}
-
 function appServerState(html: string): unknown {
   const $ = loadHtml(html);
   let result: unknown = null;
@@ -259,7 +229,7 @@ function appServerState(html: string): unknown {
     if (dataIndex < 0) return;
     const braceIndex = content.indexOf('{', dataIndex);
     if (braceIndex < 0) return;
-    const objectText = extractBalancedObject(content, braceIndex);
+    const objectText = bracketSubstring(content, braceIndex);
     if (!objectText) return;
     try { result = JSON.parse(objectText); } catch { /* try the next inline script tag, if any */ }
   });
@@ -271,14 +241,14 @@ async function categories(signal: AbortSignal): Promise<CatalogNode[]> {
   const state = appServerState(html);
   if (!state) throw new Error('Stream.cz returned no catalogue state');
   const nodes: CatalogNode[] = [];
-  const navCategories = getPath(state, 'page.navigationCategories.data');
+  const navCategories = at(state, 'page.navigationCategories.data');
   if (!Array.isArray(navCategories)) throw new Error('Stream.cz returned no catalogue navigation');
   for (const entry of navCategories) {
     const node = nodeFrom(entry);
     if (!node) throw new Error('Stream.cz returned an incomplete category');
     nodes.push(node);
   }
-  const channel = nodeFrom(getPath(state, 'fetchable.tag.channel.data'));
+  const channel = nodeFrom(at(state, 'fetchable.tag.channel.data'));
   if (channel) nodes.push({ ...channel, kind: 'movie' }); // channel on the explicit /videa/filmy page
   return nodes;
 }
@@ -385,20 +355,20 @@ async function resolveStreamCz(release: Release, signal: AbortSignal): Promise<M
   const html = await fetchText(release.url, signal, { headers: { referer: REFERER } });
   const state = appServerState(html);
   if (!state) return [];
-  const videoData = getPath(state, 'fetchable.episode.videoDetail.data');
-  const spl = getPath(videoData, 'spl');
+  const videoData = at(state, 'fetchable.episode.videoDetail.data');
+  const spl = at(videoData, 'spl');
   if (typeof spl !== 'string') return [];
   const splUrl = `${spl}spl2,3,VOD`.replace(/\|/g, '%7C');
   const splUri = new URL(splUrl);
   const json = await fetchJson<unknown>(splUri, signal);
 
   const subtitleEntries: Array<{ language: string; srt?: string; webvtt?: string }> = [];
-  const rawSubtitles = getPath(json, 'data.subtitles');
+  const rawSubtitles = at(json, 'data.subtitles');
   if (Array.isArray(rawSubtitles)) {
     for (const entry of rawSubtitles) {
-      const language = getPath(entry, 'language');
-      const srt = getPath(entry, 'urls.srt');
-      const webvtt = getPath(entry, 'urls.webvtt');
+      const language = at(entry, 'language');
+      const srt = at(entry, 'urls.srt');
+      const webvtt = at(entry, 'urls.webvtt');
       subtitleEntries.push({
         language: typeof language === 'string' ? language : 'unknown',
         srt: typeof srt === 'string' ? new URL(srt.replace(/\|/g, '%7C'), splUri).toString() : undefined,
@@ -408,16 +378,16 @@ async function resolveStreamCz(release: Release, signal: AbortSignal): Promise<M
   }
 
   const sources: MediaSource[] = [];
-  const mp4 = getPath(json, 'data.mp4');
+  const mp4 = at(json, 'data.mp4');
   if (mp4 && typeof mp4 === 'object') {
     for (const [quality, item] of Object.entries(mp4)) {
-      const itemUrl = getPath(item, 'url');
+      const itemUrl = at(item, 'url');
       if (typeof itemUrl !== 'string') continue;
       const url = new URL(itemUrl.replace(/\|/g, '%7C'), splUri).toString();
-      const resolution = getPath(item, 'resolution');
+      const resolution = at(item, 'resolution');
       const resolutionHeight = Array.isArray(resolution) ? resolution[1] : undefined;
       const height = typeof resolutionHeight === 'number' ? resolutionHeight : parseQualityHeight(quality);
-      const bandwidthValue = getPath(item, 'bandwidth');
+      const bandwidthValue = at(item, 'bandwidth');
       const bandwidth = typeof bandwidthValue === 'number' && bandwidthValue >= 0 ? bandwidthValue : undefined;
       const source: MediaSource = { url, type: 'file', height, bandwidth };
       const subtitles = collectSubtitleSources(subtitleEntries);
@@ -425,7 +395,7 @@ async function resolveStreamCz(release: Release, signal: AbortSignal): Promise<M
       sources.push(source);
     }
   }
-  const hlsUrl = getPath(json, 'pls.hls.url');
+  const hlsUrl = at(json, 'pls.hls.url');
   if (typeof hlsUrl === 'string') {
     const url = new URL(hlsUrl.replace(/\|/g, '%7C'), splUri).toString();
     const source: MediaSource = { url, type: 'hls' };

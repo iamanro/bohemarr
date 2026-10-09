@@ -7,7 +7,7 @@
  *  - the iPrima JSON-RPC client (PrimaCommon.RPC),
  *  - small dotted-path JSON accessors mirroring `JSON.JSONCollection#getString/getInt/...`.
  */
-import { fetchText } from './common.ts';
+import { at, bracketSubstring, fetchText } from './common.ts';
 import { SessionRejected } from './account-session.ts';
 
 export class PrimaMessageError extends Error {}
@@ -15,12 +15,7 @@ export class PrimaAuthError extends Error {}
 
 /** Dotted-path getter mirroring `JSONCollection#get*(path, default)`. */
 export function get<T>(obj: unknown, path: string, fallback: T): T {
-  let cur: unknown = obj;
-  for (const part of path.split('.')) {
-    if (cur === null || typeof cur !== 'object') return fallback;
-    cur = (cur as Record<string, unknown>)[part];
-  }
-  return cur === undefined || cur === null ? fallback : (cur as T);
+  return at<T>(obj, path) ?? fallback;
 }
 
 export function has(obj: unknown, path: string): boolean {
@@ -30,30 +25,6 @@ export function has(obj: unknown, path: string): boolean {
     cur = (cur as Record<string, unknown>)[part];
   }
   return cur !== undefined;
-}
-
-/** Finds the closing bracket matching the opener at `startIndex`, skipping string literals. */
-export function bracketSubstring(text: string, open: string, close: string, startIndex: number): string {
-  let depth = 0;
-  let inString: string | null = null;
-  let escaped = false;
-
-  for (let i = startIndex; i < text.length; i++) {
-    const ch = text[i];
-
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === inString) inString = null;
-      continue;
-    }
-
-    if (ch === '"' || ch === "'" || ch === '`') { inString = ch; continue; }
-    if (ch === open) depth++;
-    else if (ch === close) { depth--; if (depth === 0) return text.slice(startIndex, i + 1); }
-  }
-
-  throw new Error(`Unbalanced ${open}${close} starting at index ${startIndex}`);
 }
 
 /**
@@ -75,7 +46,9 @@ export class Nuxt {
     const arrayStart = html.indexOf('[', markerIndex);
     if (arrayStart < 0) return null;
 
-    const raw = JSON.parse(bracketSubstring(html, '[', ']', arrayStart)) as unknown[];
+    const payload = bracketSubstring(html, arrayStart, '[', ']');
+    if (!payload) throw new Error('Nuxt payload is not a complete array');
+    const raw = JSON.parse(payload) as unknown[];
     const decoded = Nuxt.decode(raw);
 
     if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) {

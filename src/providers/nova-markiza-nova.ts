@@ -1,7 +1,7 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Element as CheerioElement } from 'domhandler';
 import type { Catalogue, CatalogueQuery, Provider, Release } from '../types.ts';
-import { empty, fetchText, releaseId } from './common.ts';
+import { cached, empty, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import {
   absUrl, fetchDocument, fetchTextOrEmpty, fetchTextRetry, joinUrl, loadHtml,
   playerTracks, queryParams, readInlineObject, select,
@@ -37,8 +37,6 @@ export interface NovaArchiveSite {
 
 /** The provider's stable program URL doubles as `Program.id`; this archive is TV-only. */
 interface Program { id: string; uri: string; title: string; kind: 'tv' }
-
-const PROGRAMS_TTL_MS = 10 * 60_000;
 
 function contentIdFromLoadMore($: CheerioAPI, el: CheerioElement, base: string, fallbackToIndex0: boolean): string | undefined {
   const href = $(el).attr('data-href');
@@ -245,14 +243,7 @@ async function resolveMedia(site: NovaArchiveSite, release: Release, signal: Abo
 }
 
 export function createNovaArchiveProvider(site: NovaArchiveSite): Provider {
-  let cache: { programs: Program[]; at: number } | null = null;
-
-  async function cachedPrograms(signal: AbortSignal): Promise<Program[]> {
-    if (cache && Date.now() - cache.at < PROGRAMS_TTL_MS) return cache.programs;
-    const programs = await listPrograms(site, signal);
-    cache = { programs, at: Date.now() };
-    return programs;
-  }
+  const cachedPrograms = cached(PROGRAM_LIST_TTL_MS, signal => listPrograms(site, signal));
 
   const catalogue: Catalogue<Program> = {
     async *programs(query: CatalogueQuery, signal: AbortSignal) {

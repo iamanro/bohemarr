@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pushedReply } from '../src/providers/oneplay-connection.ts';
-import { at, successData } from '../src/providers/oneplay-protocol.ts';
+import { successData } from '../src/providers/oneplay-protocol.ts';
+import { at } from '../src/providers/common.ts';
 
 test('a pushed error reply keeps its code where the busy and PIN checks read it', () => {
   const reply = pushedReply({

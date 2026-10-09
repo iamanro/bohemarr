@@ -1,6 +1,6 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Catalogue, CatalogueQuery, Provider, Release } from '../types.ts';
-import { empty, fetchText, releaseId } from './common.ts';
+import { cached, empty, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { absUrl, fetchDocument, loadHtml, playerTracks, queryParams, readInlineObject } from './nova-markiza-utils.ts';
 import { tracksToSources } from './nova-markiza-media.ts';
 
@@ -26,8 +26,6 @@ const CZECH_MONTHS_GENITIVE: Record<string, number> = {
 
 /** The provider's stable program URL doubles as `Program.id`; TN.cz is TV-only. */
 interface Program { id: string; uri: string; title: string; kind: 'tv' }
-
-const PROGRAMS_TTL_MS = 10 * 60_000;
 
 /** Parses a Czech "<weekday> <day>. <month>" textual date (e.g. "středa 3. září"), matching `DATE_FORMATTER_CZECH`. */
 function parseCzechWeekdayDate(text: string): { day: number; month: number } | null {
@@ -154,14 +152,7 @@ async function resolveMedia(release: Release, signal: AbortSignal) {
 }
 
 export function createTNCZProvider(): Provider {
-  let cache: { programs: Program[]; at: number } | null = null;
-
-  async function cachedPrograms(signal: AbortSignal): Promise<Program[]> {
-    if (cache && Date.now() - cache.at < PROGRAMS_TTL_MS) return cache.programs;
-    const programs = await listPrograms(signal);
-    cache = { programs, at: Date.now() };
-    return programs;
-  }
+  const cachedPrograms = cached(PROGRAM_LIST_TTL_MS, listPrograms);
 
   const catalogue: Catalogue<Program> = {
     async *programs(query: CatalogueQuery, signal: AbortSignal) {

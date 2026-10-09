@@ -17,7 +17,7 @@ import * as cheerio from 'cheerio';
 import type { Cheerio, CheerioAPI } from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { Catalogue, CatalogueQuery, MediaKind, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { empty, fetchJson, fetchText, mediaType, normalize, releaseId } from './common.ts';
+import { at, bracketSubstring, empty, fetchJson, fetchText, mediaType, normalize, releaseId } from './common.ts';
 import { isYouTubeUrl, maybeTransformYouTubeUrl, resolveYouTube } from './public-sites-youtube.ts';
 import { resolveOnNetworkEmbed } from './public-sites-onnetwork.ts';
 import { authenticateBarrandov, fetchBarrandovDocument, parseBarrandovLocalSources } from './public-sites-barrandov.ts';
@@ -265,21 +265,6 @@ async function* barrandovReleases(program: ScrapedProgram, signal: AbortSignal):
   }
 }
 
-// Finds the enclosing balanced-brace object starting at the '{' at or after fromIndex.
-function bracketForward(text: string, open: string, close: string, fromIndex: number): string {
-  const start = text.indexOf(open, fromIndex);
-  if (start < 0) throw new Error(`Barrandov: unable to find opening '${open}'`);
-  let depth = 0;
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === open) depth++;
-    else if (text[i] === close) {
-      depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  throw new Error(`Barrandov: unmatched '${open}${close}' block`);
-}
-
 function firstNestedObject(value: unknown): unknown {
   if (value && typeof value === 'object') {
     for (const nested of Object.values(value as Record<string, unknown>)) {
@@ -287,13 +272,6 @@ function firstNestedObject(value: unknown): unknown {
     }
   }
   return undefined;
-}
-
-function getPathValue(obj: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc == null) return undefined;
-    return Array.isArray(acc) ? acc[Number(key)] : (acc as Record<string, unknown>)[key];
-  }, obj);
 }
 
 /**
@@ -330,22 +308,23 @@ async function searchBarrandovYouTubeChannel(query: string, programNameLower: st
   const marker = /var ytInitialData\s*=\s*\{/.exec(body);
   if (!marker) return undefined;
 
-  const objectText = bracketForward(body, '{', '}', marker.index + marker[0].length - 1);
+  const objectText = bracketSubstring(body, marker.index + marker[0].length - 1);
+  if (!objectText) throw new Error('Barrandov: ytInitialData is not a complete object');
   const json = JSON5.parse<Record<string, unknown>>(objectText);
 
-  const tabs = getPathValue(json, 'contents.twoColumnBrowseResultsRenderer.tabs');
+  const tabs = at(json, 'contents.twoColumnBrowseResultsRenderer.tabs');
   if (!Array.isArray(tabs) || tabs.length === 0) return undefined;
 
-  const searchTabContent = getPathValue(firstNestedObject(tabs[tabs.length - 1]), 'content');
-  const searchContent = getPathValue(firstNestedObject(searchTabContent), 'contents');
+  const searchTabContent = at(firstNestedObject(tabs[tabs.length - 1]), 'content');
+  const searchContent = at(firstNestedObject(searchTabContent), 'contents');
   if (!Array.isArray(searchContent)) return undefined;
 
   for (const searchItem of searchContent) {
-    const itemData = getPathValue(firstNestedObject(searchItem), 'contents.0.videoRenderer') as Record<string, unknown> | undefined;
+    const itemData = at(firstNestedObject(searchItem), 'contents.0.videoRenderer') as Record<string, unknown> | undefined;
     if (!itemData) continue;
 
     const videoId = itemData.videoId;
-    const title = getPathValue(itemData, 'title.runs.0.text');
+    const title = at(itemData, 'title.runs.0.text');
     if (typeof videoId !== 'string' || typeof title !== 'string') continue;
 
     const titleLower = title.toLowerCase();
