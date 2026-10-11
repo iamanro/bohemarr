@@ -177,6 +177,8 @@ bun run build   # the web UI
 bun start
 ```
 
+CI (`.github/workflows/ci.yml`, on a self-hosted runner) runs `docker build --target test`, builds the image and smoke-tests it on every pull request.
+
 `bun run dev` restarts the service on every change, and `bun run dev:web` serves the web UI with hot reload, proxying the API to the service on port 8787.
 
 Build the production image with:
