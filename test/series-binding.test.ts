@@ -141,6 +141,26 @@ test('a provider without metadata is searched by the identity title and never la
   });
 });
 
+test('a search by series expands only Programs named as the series, not every title containing its words', async () => {
+  await withStore(async store => {
+    const most: SeriesIdentity = { tvdbId: 357409, title: 'MOST!', aliases: [], year: 2019, country: 'cze' };
+    const expanded: string[] = [];
+    const plain: Provider = {
+      id: 'ceskatelevize', name: 'ČT', resolve: async () => [],
+      catalogue: {
+        async *programs() { for (const title of ['Mostecký špacír', 'MOST!', 'Mosty přes řeku', 'Most! (making of)']) yield { id: title, title }; },
+        async *releases(program) {
+          expanded.push(program.id);
+          yield { id: `${program.id}-7`, provider: 'ceskatelevize', title: 'Díl 7', series: program.title, kind: 'tv', season: 1, episode: 7, url: `https://ct.test/${program.id}/7` };
+        },
+      },
+    };
+    const { releases } = await new SeriesBindings(store.database).search(plain, { ...episodeQuery, episode: 7 }, most, signal);
+    assert.deepEqual(expanded, ['MOST!', 'Most! (making of)']);
+    assert.deepEqual(releases.map(release => release.series), ['MOST!', 'Most! (making of)']);
+  });
+});
+
 test('the identity is checked against the requested TVDB id', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database, async () => ({ ...identity, tvdbId: 999 }));

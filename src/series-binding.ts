@@ -1,6 +1,6 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { searchCatalogue } from './catalogue.ts';
-import { loadSeriesIdentity, selectProgram, type SelectionFailure } from './series-identity.ts';
+import { isSeriesCandidate, loadSeriesIdentity, selectProgram, type SelectionFailure } from './series-identity.ts';
 import type { Provider, Release, SearchQuery, SeriesBinding, SeriesIdentity } from './types.ts';
 
 /** Why a provider returns no Releases for a Series identity. */
@@ -120,7 +120,9 @@ export class SeriesBindings {
       return { releases };
     }
 
-    const releases = (await searchCatalogue(provider, identity ? { ...query, q: identity.title } : query, signal)).map(release => {
+    // A search by a known series expands only Programs whose name is that series', not every title containing its words.
+    const isCandidate = identity && ((title: string) => isSeriesCandidate(title, identity));
+    const releases = (await searchCatalogue(provider, identity ? { ...query, q: identity.title } : query, signal, isCandidate)).map(release => {
       const binding = release.kind === 'tv' && release.programId ? this.byProgram(provider.id, release.programId) : undefined;
       return binding ? stamp(release, binding.identity) : release;
     });

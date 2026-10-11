@@ -1,5 +1,6 @@
 import { createWriteStream, existsSync } from 'node:fs';
-import { finished, pipeline } from 'node:stream/promises';
+import { finished } from 'node:stream/promises';
+import type { Writable } from 'node:stream';
 import { readFile, rename, stat, truncate, unlink, writeFile } from 'node:fs/promises';
 import { hash } from 'node:crypto';
 import type { MediaSegment } from '../types.ts';
@@ -70,29 +71,25 @@ async function fetchSegment(segment: MediaSegment, headers: Record<string, strin
 }
 
 /**
- * Streams one segment's response body into `writeStream` (kept open across segments via
- * `end: false`), calling `onChunk` for each chunk read from the network. `pipeline()` only
- * resolves once every yielded chunk has actually been flushed to `writeStream`, so an aborted or
- * failed read is guaranteed to never report more bytes as written than were durably persisted.
+ * Streams one segment's response body into `writeStream`, which stays open across segments,
+ * calling `onChunk` once each chunk is written. Each write is awaited, so an aborted or failed read
+ * never reports more bytes as written than were persisted, and no listener stays on the stream.
  */
 async function writeSegmentBody(
-  response: Response, writeStream: NodeJS.WritableStream, signal: AbortSignal, onChunk: (length: number) => void,
+  response: Response, writeStream: Writable, signal: AbortSignal, onChunk: (length: number) => void,
 ): Promise<void> {
   if (!response.body) throw new Error('Segment response has no body');
   const reader = response.body.getReader();
   const onAbort = (): void => { reader.cancel(signal.reason).catch(() => {}); };
   signal.addEventListener('abort', onAbort, { once: true });
-  async function* chunks(): AsyncGenerator<Buffer> {
+  try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) return;
       const buffer = Buffer.from(value);
+      await new Promise<void>((resolve, reject) => writeStream.write(buffer, error => error ? reject(error) : resolve()));
       onChunk(buffer.length);
-      yield buffer;
     }
-  }
-  try {
-    await pipeline(chunks(), writeStream, { end: false });
   } finally {
     signal.removeEventListener('abort', onAbort);
     await reader.cancel().catch(() => {});
@@ -151,8 +148,8 @@ export async function downloadSegmentsConcat(
   }
 
   const writeStream = createWriteStream(outputPath, { flags: startIndex > 0 ? 'r+' : 'w', start: bytesWritten });
-  // writeSegmentBody()'s pipeline() surfaces write errors directly; this no-op listener only
-  // prevents an uncaught 'error' event between segments, while no pipeline() call is active.
+  // Write errors reach writeSegmentBody() through each write's callback; this no-op listener only
+  // keeps the stream's own 'error' event from crashing the process.
   writeStream.on('error', () => {});
 
   let failed = false;
