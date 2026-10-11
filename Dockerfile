@@ -47,25 +47,26 @@ RUN mkdir /out
 
 FROM ${VLTAVA_CLI_STAGE} AS vltava-cli
 
-FROM node:26-trixie-slim AS build
+FROM oven/bun:1.4-slim AS build
 WORKDIR /app
-COPY package.json package-lock.json tsconfig.json tsconfig.build.json ./
-RUN npm ci
-COPY src/ ./src/
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
+COPY web/package.json web/bun.lock ./web/
+RUN bun install --frozen-lockfile --cwd web
 COPY web/ ./web/
-RUN npm run build && npm prune --omit=dev
+RUN bun run build
 
-FROM node:26-trixie-slim AS test
+FROM oven/bun:1.4-slim AS test
 WORKDIR /app
 COPY --from=ffmpeg /out/bin/ /usr/local/bin/
 COPY --from=bento4 /bento4/build/mp4decrypt /usr/local/bin/mp4decrypt
-COPY package.json package-lock.json tsconfig.json ./
-RUN npm ci
+COPY package.json bun.lock tsconfig.json ./
+RUN bun install --frozen-lockfile
 COPY src/ ./src/
 COPY test/ ./test/
-RUN npm run check && npm test
+RUN bun run check && bun run test
 
-FROM node:26-trixie-slim
+FROM oven/bun:1.4-slim
 LABEL org.opencontainers.image.title="Bohemarr" \
       org.opencontainers.image.description="Czech and Slovak TV archives for Sonarr and Radarr" \
       org.opencontainers.image.source="https://github.com/iamanro/bohemarr" \
@@ -73,20 +74,20 @@ LABEL org.opencontainers.image.title="Bohemarr" \
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules/
-COPY --from=build /app/dist ./dist/
 COPY --from=build /app/web/dist ./web/dist/
 COPY package.json LICENSE ./
 COPY LICENSES/ ./LICENSES/
+COPY src/ ./src/
 COPY --from=ffmpeg /out/bin/ /usr/local/bin/
 COPY --from=ffmpeg /out/doc/ /usr/share/doc/ffmpeg/
 COPY --from=bento4 /bento4/build/mp4decrypt /usr/local/bin/mp4decrypt
 COPY --from=bento4 /bento4-source.tar.gz /usr/share/bento4-source.tar.gz
 COPY --from=vltava-cli /out/ /usr/local/bin/
-RUN mkdir /config /downloads && chown node:node /config /downloads
+RUN mkdir /config /downloads && chown bun:bun /config /downloads
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 DATA_DIR=/config DOWNLOADS_DIR=/downloads
-USER node
+USER bun
 EXPOSE 8787
 VOLUME ["/config", "/downloads"]
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD bun -e "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["node", "dist/main.js"]
+CMD ["bun", "src/main.ts"]

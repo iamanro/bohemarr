@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { arrStatus } from './arr-setup.ts';
 import { EDITABLE_SETTINGS, SECRET_SETTING, env, loadConfig, readSettings, settingSource, writeSettings } from './config.ts';
 import { PROVIDER_IDS } from './providers/ids.ts';
+import { releaseTitle } from './providers/common.ts';
 import { Indexer, xml } from './indexer.ts';
 import { QBittorrent, sessionId, type QBittorrentResponse } from './qbittorrent.ts';
 import { SeriesBindings } from './series-binding.ts';
@@ -55,6 +56,11 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
       return [name, { value: SECRET_SETTING.test(name) ? undefined : value, set: value !== undefined, source: settingSource(name) }];
     })),
   }));
+  // The UI controls Jobs through the qBittorrent API; this adds what that API cannot carry, such as the failure reason.
+  app.get('/v1/jobs', async () => store.jobs().map(job => ({
+    id: job.id, title: releaseTitle(job.release), provider: job.release.provider, category: job.category, status: job.status,
+    progress: job.progress, bytes: job.bytes, totalBytes: job.totalBytes, error: job.error, createdAt: job.createdAt,
+  })));
   // Saved settings apply at the next start; a set that would stop Bohemarr from starting is refused.
   app.put('/v1/settings', async (request, reply) => {
     const changes = request.body;

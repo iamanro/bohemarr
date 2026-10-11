@@ -4,7 +4,8 @@
 
 ### Web UI
 
-- **Settings page** at `PUBLIC_URL/ui/`, signed in with the API key: provider accounts, enabled providers, Sonarr and Radarr connections with their setup status, categories and concurrency. Saved settings go to `/config/settings.json`, apply after **Restart to apply**, and never override a variable set in `.env`. A set Bohemarr could not start with is refused.
+- **Control panel** at `PUBLIC_URL/ui/` (React and shadcn/ui), signed in with the API key: the downloads, with pause, resume and remove, provider accounts, enabled providers, Sonarr and Radarr connections with their setup status, categories and concurrency. Saved settings go to `/config/settings.json`, apply after **Restart to apply**, and never override a variable set in `.env`. A set Bohemarr could not start with is refused.
+- **Bun:** Bohemarr runs on Bun instead of Node.js, in the image too, and installs, builds and tests with Bun. The image runs as the user `bun`, with the same UID 1000 as before, so existing volumes keep working.
 - **Naming:** `ARR_RENAME=true` turns on renaming in Sonarr and Radarr with Bohemarr's naming formats, including the TVDB or TMDB ID in folder names.
 
 ### Fixes from the repository audit

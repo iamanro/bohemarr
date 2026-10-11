@@ -4,7 +4,7 @@ Bohemarr makes Czech and Slovak streaming archives available to Sonarr and Radar
 
 ## What you need
 
-- Docker with the Compose plugin, or Node.js 26+ for a local build.
+- Docker with the Compose plugin, or [Bun](https://bun.sh) 1.4+ for a local build.
 - Sonarr and/or Radarr.
 - A directory mounted into Bohemarr and the *arr applications, at the same path, for completed downloads.
 
@@ -31,7 +31,7 @@ Every setting is in `.env`; `.env.example` documents each one. Run `docker compo
 
 ## Web UI
 
-Open `PUBLIC_URL/ui/` (by default `http://127.0.0.1:8787/ui/`) and sign in with the API key (`docker compose exec bohemarr cat /config/api-key`). It edits provider accounts, the enabled providers, the Sonarr and Radarr connections and downloads, and shows the values for adding Bohemarr to Sonarr and Radarr by hand. Saved settings go to `/config/settings.json` and apply after **Restart to apply**, which relies on the Compose restart policy. A variable set in `.env` always wins and appears read-only; leave it empty in `.env` to manage it in the UI.
+Open `PUBLIC_URL/ui/` (by default `http://127.0.0.1:8787/ui/`) and sign in with the API key (`docker compose exec bohemarr cat /config/api-key`). It lists the downloads, which you can pause, resume and remove, and edits provider accounts, the enabled providers, the Sonarr and Radarr connections and the download settings. Saved settings go to `/config/settings.json` and apply after **Restart to apply**, which relies on the Compose restart policy. A variable set in `.env` always wins and appears read-only; leave it empty in `.env` to manage it in the UI.
 
 ## Configure providers
 
@@ -169,12 +169,15 @@ VLTAVA_SEEDER_USERPASS=bohemarr:...   # rqbit's HTTP API login
 ## Build from source
 
 ```sh
-npm ci
-npm run check
-npm test
-npm run build
-npm start
+bun install
+bun install --cwd web
+bun run check
+bun run test
+bun run build   # the web UI
+bun start
 ```
+
+`bun run dev` restarts the service on every change, and `bun run dev:web` serves the web UI with hot reload, proxying the API to the service on port 8787.
 
 Build the production image with:
 

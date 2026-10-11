@@ -10,15 +10,15 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=26.0.0"
+    "bun": ">=1.4.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && vite build --config web/vite.config.js",
-    "start": "node dist/main.js",
-    "dev": "node --watch src/main.ts",
+    "build": "bun run --cwd web build",
+    "start": "bun src/main.ts",
+    "dev": "bun --watch src/main.ts",
+    "dev:web": "bun run --cwd web dev",
     "check": "tsc",
-    "test": "node --test \"test/*.test.ts\"",
-    "dev:web": "vite --config web/vite.config.js"
+    "test": "bun test --isolate ./test"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",
@@ -36,12 +36,8 @@
     "undici": "^8.11.2"
   },
   "devDependencies": {
-    "@picocss/pico": "^2.1.1",
-    "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.6.3",
     "@types/ws": "^8.18.2",
-    "preact": "^11.0.1",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.4"
+    "typescript": "^7.0.2"
   }
 }

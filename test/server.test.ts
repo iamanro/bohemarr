@@ -28,6 +28,7 @@ test('every endpoint but health and login needs the API key or the login cookie'
     ['GET', '/api?t=caps', {}],
     ['GET', `/api?t=caps&apikey=${'b'.repeat(64)}`, {}],
     ['GET', '/v1/providers', {}],
+    ['GET', '/v1/jobs', {}],
     ['GET', '/API/v2/torrents/info', {}],
     ['GET', '/api/v2/../v1/providers', {}],
   ] as const) {
