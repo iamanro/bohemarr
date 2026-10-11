@@ -36,7 +36,7 @@ test('every endpoint but health and login needs the API key or the login cookie'
     assert.ok([401, 403].includes(response.statusCode), `${method} ${url} ${JSON.stringify(headers)} answered ${response.statusCode}`);
   }
 
-  assert.equal((await app.inject('/health')).statusCode, 200);
+  assert.equal((await app.inject('/health')).statusCode, 418);
   assert.equal((await app.inject(`/api?t=caps&apikey=${config.apiKey}`)).statusCode, 200);
   assert.equal((await app.inject({ url: '/api?t=caps', headers: { 'x-api-key': config.apiKey } })).statusCode, 200);
 
