@@ -29,6 +29,10 @@ Every setting is in `.env`; `.env.example` documents each one. Run `docker compo
 - Leave `API_KEY` empty to generate one and store it in the `config` volume at `/config/api-key`.
 - `.env` holds provider passwords and API keys in plain text; keep it private, or read them from files (see [Secrets in files](#secrets-in-files)).
 
+## Web UI
+
+Open `PUBLIC_URL/ui/` (by default `http://127.0.0.1:8787/ui/`) and sign in with the API key (`docker compose exec bohemarr cat /config/api-key`). It edits provider accounts, the enabled providers, the Sonarr and Radarr connections and downloads, and shows the values for adding Bohemarr to Sonarr and Radarr by hand. Saved settings go to `/config/settings.json` and apply after **Restart to apply**, which relies on the Compose restart policy. A variable set in `.env` always wins and appears read-only; leave it empty in `.env` to manage it in the UI.
+
 ## Configure providers
 
 `PROVIDERS` lists the enabled providers, separated by commas; every other provider is disabled. Without it, every public provider is enabled, and every account provider whose credentials are set. Provider settings are named `<PROVIDER>_<SETTING>`, for example `ONEPLAY_USERNAME` or `ONEPLAY_PROFILE_PIN`; `.env.example` lists them.
@@ -90,6 +94,7 @@ RADARR_URL=http://radarr:7878
 RADARR_API_KEY=...
 RADARR_ROOT_FOLDER=/data/media/movies
 ARR_REMOVE_COMPLETED=true
+ARR_RENAME=false
 ```
 
 At every start, Bohemarr creates or updates the following in each application, retrying until the application is reachable:
@@ -97,7 +102,8 @@ At every start, Bohemarr creates or updates the following in each application, r
 - a qBittorrent download client named Bohemarr, with the category `SONARR_CATEGORY` (default `tv`) or `RADARR_CATEGORY` (default `movies`);
 - a Torznab indexer named Bohemarr with RSS, Automatic Search and Interactive Search enabled, which sends its grabs to that client;
 - a tag `bohemarr` with a Delay Profile without torrent delay;
-- the root folder, when `SONARR_ROOT_FOLDER` or `RADARR_ROOT_FOLDER` is set.
+- the root folder, when `SONARR_ROOT_FOLDER` or `RADARR_ROOT_FOLDER` is set;
+- with `ARR_RENAME=true`, renaming on import with the formats `Series (Year) - S01E01 - Episode [Quality]` in `Series (Year) [tvdbid-…]/Season 01` and `Movie (Year) [Quality]` in `Movie (Year) [tmdbid-…]`. This replaces the naming settings under Media Management.
 
 These settings are reapplied at every start, so change them in `.env`, not in Sonarr or Radarr. `docker compose logs bohemarr` shows whether each application was configured. Then add the `bohemarr` tag to every series and movie you download from Bohemarr, unless your default Delay Profile already has no torrent delay.
 

@@ -2,6 +2,11 @@
 
 ## 2026-10-09
 
+### Web UI
+
+- **Settings page** at `PUBLIC_URL/ui/`, signed in with the API key: provider accounts, enabled providers, Sonarr and Radarr connections with their setup status, categories and concurrency. Saved settings go to `/config/settings.json`, apply after **Restart to apply**, and never override a variable set in `.env`. A set Bohemarr could not start with is refused.
+- **Naming:** `ARR_RENAME=true` turns on renaming in Sonarr and Radarr with Bohemarr's naming formats, including the TVDB or TMDB ID in folder names.
+
 ### Fixes from the repository audit
 
 - **Downloads:** a video segment the CDN answers with 403 or 404 fails the download at once. It used to be retried for about 59 hours and kept a download slot busy all that time. Server errors and timeouts are still retried, for about two minutes.

@@ -13,14 +13,16 @@
     "node": ">=26.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && vite build --config web/vite.config.js",
     "start": "node dist/main.js",
     "dev": "node --watch src/main.ts",
     "check": "tsc",
-    "test": "node --test \"test/*.test.ts\""
+    "test": "node --test \"test/*.test.ts\"",
+    "dev:web": "vite --config web/vite.config.js"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",
+    "@fastify/static": "^10.1.6",
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.11.2",
     "fastify": "^5.12.5",
@@ -34,8 +36,12 @@
     "undici": "^8.11.2"
   },
   "devDependencies": {
+    "@picocss/pico": "^2.1.1",
+    "@preact/preset-vite": "^2.10.6",
     "@types/node": "^26.6.3",
     "@types/ws": "^8.18.2",
-    "typescript": "^7.0.2"
+    "preact": "^11.0.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
   }
 }

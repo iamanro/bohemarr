@@ -11,9 +11,27 @@ interface Field { name: string; value?: unknown }
 interface Provider { id?: number; name: string; implementation: string; fields: Field[]; [key: string]: unknown }
 
 const APPS = {
-  sonarr: { label: 'Sonarr', categoryField: 'tvCategory', searchCategories: [5000] },
-  radarr: { label: 'Radarr', categoryField: 'movieCategory', searchCategories: [2000] },
+  sonarr: {
+    label: 'Sonarr', categoryField: 'tvCategory', searchCategories: [5000],
+    naming: {
+      renameEpisodes: true, replaceIllegalCharacters: true,
+      standardEpisodeFormat: '{Series TitleYear} - S{season:00}E{episode:00} - {Episode CleanTitle} [{Quality Full}]',
+      dailyEpisodeFormat: '{Series TitleYear} - {Air-Date} - {Episode CleanTitle} [{Quality Full}]',
+      seriesFolderFormat: '{Series TitleYear} [tvdbid-{TvdbId}]', seasonFolderFormat: 'Season {season:00}',
+    },
+  },
+  radarr: {
+    label: 'Radarr', categoryField: 'movieCategory', searchCategories: [2000],
+    naming: {
+      renameMovies: true, replaceIllegalCharacters: true,
+      standardMovieFormat: '{Movie CleanTitle} ({Release Year}) [{Quality Full}]',
+      movieFolderFormat: '{Movie CleanTitle} ({Release Year}) [tmdbid-{TmdbId}]',
+    },
+  },
 } as const;
+
+/** The outcome of the last setup attempt of each application, for the web UI. */
+export const arrStatus = new Map<string, { ok: boolean; message: string; at: string }>();
 
 class ArrError extends Error {}
 
@@ -96,6 +114,11 @@ export async function configureArr(config: Config, arr: ArrConfig, signal: Abort
     if (existing) await request('DELETE', `notification/${existing.id}`);
   }
 
+  if (arr.rename) {
+    const naming = await request<{ id: number }>('GET', 'config/naming');
+    await request('PUT', `config/naming/${naming.id}`, { ...naming, ...app.naming });
+  }
+
   if (arr.rootFolder) {
     const folders = await request<Array<{ path: string }>>('GET', 'rootfolder');
     const normalized = (path: string) => path.replace(/\/+$/, '');
@@ -112,10 +135,12 @@ export function configureArrs(config: Config, signal: AbortSignal): Promise<void
     for (let delay = FIRST_RETRY_MS; !signal.aborted; delay = Math.min(delay * 2, MAX_RETRY_MS)) {
       try {
         await configureArr(config, arr, signal);
+        arrStatus.set(arr.app, { ok: true, message: 'Configured', at: new Date().toISOString() });
         console.log(`${label} at ${arr.url} is configured for Bohemarr`);
         return;
       } catch (error) {
         if (signal.aborted) return;
+        arrStatus.set(arr.app, { ok: false, message: error instanceof Error ? error.message : String(error), at: new Date().toISOString() });
         console.error(`${label} setup failed, retrying in ${Math.round(delay / 1000)} s: ${error instanceof Error ? error.message : String(error)}`);
       }
       await new Promise<void>(resolve => {
