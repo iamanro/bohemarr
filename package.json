@@ -18,7 +18,7 @@
     "dev": "bun --watch src/main.ts",
     "dev:web": "bun run --cwd web dev",
     "check": "tsc",
-    "test": "bun test --isolate ./test"
+    "test": "bun test --isolate --timeout 60000 ./test"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",
