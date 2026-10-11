@@ -1,9 +1,9 @@
 .git
-node_modules
-dist
 data
 downloads
 .env
 .env.*
 compose.override.yaml
 *.log
+**/node_modules
+**/dist

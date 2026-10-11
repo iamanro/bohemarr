@@ -1,6 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import { fileURLToPath } from 'node:url';
+import { arrStatus } from './arr-setup.ts';
+import { EDITABLE_SETTINGS, SECRET_SETTING, env, loadConfig, readSettings, settingSource, writeSettings } from './config.ts';
+import { PROVIDER_IDS } from './providers/ids.ts';
+import { releaseTitle } from './providers/common.ts';
 import { Indexer, xml } from './indexer.ts';
 import { QBittorrent, sessionId, type QBittorrentResponse } from './qbittorrent.ts';
 import { SeriesBindings } from './series-binding.ts';
@@ -19,9 +25,12 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
   const indexer = new Indexer(config, store, providers, new SeriesBindings(store.database));
   const qbittorrent = new QBittorrent(config, queue, indexer);
   const session = sessionId(config);
+  // The web UI's static files hold no secrets; it calls /v1/* with the API key.
+  await app.register(fastifyStatic, { root: fileURLToPath(new URL('../web/dist', import.meta.url)), prefix: '/ui/' });
   app.addHook('onRequest', async (request, reply) => {
     const path = request.url.split('?')[0];
-    if (path === '/health' || path === '/api/v2/auth/login') return;
+    if (path === '/health' || path === '/api/v2/auth/login' || path === '/') return;
+    if (request.routeOptions.url?.startsWith('/ui/')) return;
     if (path?.startsWith('/api/v2/')) {
       // qBittorrent clients authenticate with a session cookie or, in newer versions, a bearer API key.
       const bearer = /^Bearer (.+)$/.exec(request.headers.authorization || '')?.[1];
@@ -38,6 +47,43 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
     }
   });
   app.get('/health', async () => ({ status: 'ok' }));
+  app.get('/', async (_request, reply) => reply.redirect('/ui/'));
+  app.get('/v1/settings', async () => ({
+    publicUrl: config.publicUrl, categories: config.categories, providerIds: PROVIDER_IDS,
+    enabled: [...providers.keys()], vltava: Boolean(config.vltava), arrs: Object.fromEntries(arrStatus),
+    settings: Object.fromEntries(EDITABLE_SETTINGS.map(name => {
+      const value = env(name);
+      return [name, { value: SECRET_SETTING.test(name) ? undefined : value, set: value !== undefined, source: settingSource(name) }];
+    })),
+  }));
+  // The UI controls Jobs through the qBittorrent API; this adds what that API cannot carry, such as the failure reason.
+  app.get('/v1/jobs', async () => store.jobs().map(job => ({
+    id: job.id, title: releaseTitle(job.release), provider: job.release.provider, category: job.category, status: job.status,
+    progress: job.progress, bytes: job.bytes, totalBytes: job.totalBytes, error: job.error, createdAt: job.createdAt,
+  })));
+  // Saved settings apply at the next start; a set that would stop Bohemarr from starting is refused.
+  app.put('/v1/settings', async (request, reply) => {
+    const changes = request.body;
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return reply.code(400).send({ error: 'Expected an object' });
+    const next = await readSettings(config.dataDir);
+    for (const [name, value] of Object.entries(changes)) {
+      if (!EDITABLE_SETTINGS.includes(name)) return reply.code(400).send({ error: `${name} cannot be set here` });
+      if (value !== null && typeof value !== 'string') return reply.code(400).send({ error: `${name} must be a string` });
+      if (value) next[name] = value.trim(); else delete next[name];
+    }
+    try {
+      await loadConfig(next);
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+    await writeSettings(config.dataDir, next);
+    return { saved: true };
+  });
+  // Docker's restart policy starts Bohemarr again with the saved settings.
+  app.post('/v1/restart', async (_request, reply) => {
+    reply.raw.once('finish', () => process.kill(process.pid, 'SIGTERM'));
+    return { restarting: true };
+  });
   app.get('/v1/providers', async () => [...providers.values()].map(provider => ({ id: provider.id, name: provider.name })));
   app.get('/api', async (request, reply) => {
     const params = stringParams(request.query);

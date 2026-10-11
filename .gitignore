@@ -1,6 +1,5 @@
 # Dependencies and build output
 /node_modules/
-/dist/
 
 # Local runtime state: private configuration, API key, database, downloads
 /data/
@@ -14,3 +13,4 @@
 *.log
 .DS_Store
 !/.env.example
+/web/dist/

@@ -67,7 +67,7 @@ test('publishing to Vltava is off without its URL and token, and a partial setup
 
 test('Sonarr and Radarr are configured only with both URL and API key, in a known category', async () => {
   const config = await load({ SONARR_URL: 'http://sonarr:8989/', SONARR_API_KEY: 's', RADARR_URL: '', RADARR_API_KEY: '', ARR_REMOVE_COMPLETED: 'false' });
-  assert.deepEqual(config.arrs, [{ app: 'sonarr', url: 'http://sonarr:8989', apiKey: 's', category: 'tv', rootFolder: undefined, removeCompleted: false }]);
+  assert.deepEqual(config.arrs, [{ app: 'sonarr', url: 'http://sonarr:8989', apiKey: 's', category: 'tv', rootFolder: undefined, removeCompleted: false, rename: false }]);
   await assert.rejects(load({ RADARR_URL: 'http://radarr:7878' }), /RADARR_URL and RADARR_API_KEY must be set together/);
   await assert.rejects(load({ SONARR_URL: 'http://sonarr:8989', SONARR_API_KEY: 's', SONARR_CATEGORY: 'series' }), /SONARR_CATEGORY/);
 });

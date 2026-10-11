@@ -4,7 +4,7 @@ Bohemarr makes Czech and Slovak streaming archives available to Sonarr and Radar
 
 ## What you need
 
-- Docker with the Compose plugin, or Node.js 26+ for a local build.
+- Docker with the Compose plugin, or [Bun](https://bun.sh) 1.4+ for a local build.
 - Sonarr and/or Radarr.
 - A directory mounted into Bohemarr and the *arr applications, at the same path, for completed downloads.
 
@@ -28,6 +28,10 @@ Every setting is in `.env`; `.env.example` documents each one. Run `docker compo
 - `DOWNLOADS_PATH` is the host directory for completed downloads. `DOWNLOADS_DIR` is the path of that directory inside the containers, and Sonarr and Radarr must mount it at the same path. Hardlinks also need the library on the same filesystem and in the same mount, for example the host's `/srv/data` mounted at `/data` in Sonarr and Radarr, with `DOWNLOADS_PATH=/srv/data/downloads` and `DOWNLOADS_DIR=/data/downloads`.
 - Leave `API_KEY` empty to generate one and store it in the `config` volume at `/config/api-key`.
 - `.env` holds provider passwords and API keys in plain text; keep it private, or read them from files (see [Secrets in files](#secrets-in-files)).
+
+## Web UI
+
+Open `PUBLIC_URL/ui/` (by default `http://127.0.0.1:8787/ui/`) and sign in with the API key (`docker compose exec bohemarr cat /config/api-key`). It lists the downloads, which you can pause, resume and remove, and edits provider accounts, the enabled providers, the Sonarr and Radarr connections and the download settings. Saved settings go to `/config/settings.json` and apply after **Restart to apply**, which relies on the Compose restart policy. A variable set in `.env` always wins and appears read-only; leave it empty in `.env` to manage it in the UI.
 
 ## Configure providers
 
@@ -90,6 +94,7 @@ RADARR_URL=http://radarr:7878
 RADARR_API_KEY=...
 RADARR_ROOT_FOLDER=/data/media/movies
 ARR_REMOVE_COMPLETED=true
+ARR_RENAME=false
 ```
 
 At every start, Bohemarr creates or updates the following in each application, retrying until the application is reachable:
@@ -97,7 +102,8 @@ At every start, Bohemarr creates or updates the following in each application, r
 - a qBittorrent download client named Bohemarr, with the category `SONARR_CATEGORY` (default `tv`) or `RADARR_CATEGORY` (default `movies`);
 - a Torznab indexer named Bohemarr with RSS, Automatic Search and Interactive Search enabled, which sends its grabs to that client;
 - a tag `bohemarr` with a Delay Profile without torrent delay;
-- the root folder, when `SONARR_ROOT_FOLDER` or `RADARR_ROOT_FOLDER` is set.
+- the root folder, when `SONARR_ROOT_FOLDER` or `RADARR_ROOT_FOLDER` is set;
+- with `ARR_RENAME=true`, renaming on import with the formats `Series (Year) - S01E01 - Episode [Quality]` in `Series (Year) [tvdbid-…]/Season 01` and `Movie (Year) [Quality]` in `Movie (Year) [tmdbid-…]`. This replaces the naming settings under Media Management.
 
 These settings are reapplied at every start, so change them in `.env`, not in Sonarr or Radarr. `docker compose logs bohemarr` shows whether each application was configured. Then add the `bohemarr` tag to every series and movie you download from Bohemarr, unless your default Delay Profile already has no torrent delay.
 
@@ -163,12 +169,17 @@ VLTAVA_SEEDER_USERPASS=bohemarr:...   # rqbit's HTTP API login
 ## Build from source
 
 ```sh
-npm ci
-npm run check
-npm test
-npm run build
-npm start
+bun install
+bun install --cwd web
+bun run check
+bun run test
+bun run build   # the web UI
+bun start
 ```
+
+CI (`.github/workflows/ci.yml`, on a self-hosted runner) runs `docker build --target test`, builds the image and smoke-tests it on every pull request.
+
+`bun run dev` restarts the service on every change, and `bun run dev:web` serves the web UI with hot reload, proxying the API to the service on port 8787.
 
 Build the production image with:
 

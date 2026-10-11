@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PROVIDER_IDS } from './providers/ids.ts';
 import type { ArrConfig, Config, ProviderConfig, VltavaConfig } from './types.ts';
@@ -9,6 +9,43 @@ import type { ArrConfig, Config, ProviderConfig, VltavaConfig } from './types.ts
 const PROVIDER_FIELDS = ['username', 'password', 'profile', 'profilePin', 'accountId', 'deviceId', 'cookies', 'client', 'poToken', 'visitorData', 'playerId'] as const;
 /** Provider settings that are lists or objects, which only config.json can hold. */
 const NESTED_PROVIDER_FIELDS = ['catalog', 'headers'];
+
+/** Settings the web UI may store in `DATA_DIR/settings.json`; never paths or commands, which only the deployment sets. */
+export const EDITABLE_SETTINGS: readonly string[] = [
+  'PROVIDERS', 'CATEGORIES', 'CONCURRENCY', 'ARR_REMOVE_COMPLETED', 'ARR_RENAME',
+  ...['SONARR', 'RADARR'].flatMap(app => ['URL', 'API_KEY', 'CATEGORY', 'ROOT_FOLDER'].map(field => `${app}_${field}`)),
+  ...PROVIDER_IDS.flatMap(id => PROVIDER_FIELDS.map(field => `${id.toUpperCase()}_${constantCase(field)}`)),
+];
+/** Values the UI shows only as set or unset. */
+export const SECRET_SETTING = /PASSWORD|API_KEY|COOKIES|PIN|TOKEN/;
+
+/** The settings saved from the web UI, used for every variable the environment leaves unset. */
+let saved: Record<string, string> = {};
+
+export function settingsPath(dataDir: string): string {
+  return resolve(dataDir, 'settings.json');
+}
+
+export async function readSettings(dataDir: string): Promise<Record<string, string>> {
+  try {
+    return JSON.parse(await readFile(settingsPath(dataDir), 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw error;
+  }
+}
+
+export async function writeSettings(dataDir: string, settings: Record<string, string>): Promise<void> {
+  const file = settingsPath(dataDir);
+  await writeFile(`${file}.tmp`, JSON.stringify(settings, null, 2), { mode: 0o600 });
+  await rename(`${file}.tmp`, file);
+}
+
+/** Where a setting comes from: the environment (which the UI cannot override) or the UI's settings file. */
+export function settingSource(name: string): 'env' | 'ui' | undefined {
+  if (process.env[name] || process.env[`${name}_FILE`]) return 'env';
+  return saved[name] ? 'ui' : undefined;
+}
 
 /** `profilePin` → `PROFILE_PIN`. */
 function constantCase(name: string): string {
@@ -30,7 +67,7 @@ export function env(name: string): string | undefined {
       throw new Error(`${name}_FILE: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return process.env[name] || undefined;
+  return process.env[name] || saved[name] || undefined;
 }
 
 function boolean(name: string, fallback: boolean): boolean {
@@ -111,9 +148,21 @@ async function readNestedProviders(file: string, required: boolean): Promise<Rec
   return providers as Record<string, ProviderConfig>;
 }
 
-export async function loadConfig(): Promise<Config> {
+/** Loads the configuration; `settings` replaces the saved UI settings, e.g. to validate them before saving. */
+export async function loadConfig(settings?: Record<string, string>): Promise<Config> {
   const dataDir = resolve(env('DATA_DIR') || './data');
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
+  const previous = saved;
+  saved = Object.fromEntries(Object.entries(settings ?? await readSettings(dataDir)).filter(([name]) => EDITABLE_SETTINGS.includes(name)));
+  try {
+    return await readConfig(dataDir);
+  } catch (error) {
+    saved = previous;
+    throw error;
+  }
+}
+
+async function readConfig(dataDir: string): Promise<Config> {
   const integer = (name: string, fallback: number, min: number, max: number): number => {
     const value = env(name);
     const result = value === undefined ? fallback : Number(value);
@@ -170,7 +219,7 @@ export async function loadConfig(): Promise<Config> {
     if (!/^https?:\/\//.test(url)) throw new Error(`${prefix}_URL must be an HTTP(S) URL`);
     const category = env(`${prefix}_CATEGORY`) ?? (app === 'sonarr' ? 'tv' : 'movies');
     if (!categories.includes(category)) throw new Error(`${prefix}_CATEGORY must be one of the categories: ${category}`);
-    return [{ app, url, apiKey: key, category, rootFolder: env(`${prefix}_ROOT_FOLDER`), removeCompleted }];
+    return [{ app, url, apiKey: key, category, rootFolder: env(`${prefix}_ROOT_FOLDER`), removeCompleted, rename: boolean('ARR_RENAME', false) }];
   });
   const vltava = vltavaConfig();
   await Promise.all(categories.map(category => mkdir(resolve(downloadsDir, category), { recursive: true })));

@@ -186,6 +186,8 @@ export interface ArrConfig {
   rootFolder?: string;
   /** Sonarr's and Radarr's "Remove Completed": move and remove completed downloads, instead of copying or hardlinking them. */
   removeCompleted: boolean;
+  /** Turn on Sonarr's and Radarr's renaming with Bohemarr's naming formats. */
+  rename: boolean;
 }
 
 export type JobStatus = 'Queued' | 'Downloading' | 'Paused' | 'Completed' | 'Failed';
