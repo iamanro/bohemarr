@@ -46,6 +46,13 @@ export class Indexer {
   }
 
   async search(params: Record<string, string>, signal: AbortSignal): Promise<string> {
+    const { page, offset, total } = await this.find(params, signal);
+    const items = page.map(release => this.item(release)).join('');
+    return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><title>Bohemarr</title><description>Source media download tasks</description><link>${xml(this.config.publicUrl)}</link><torznab:response offset="${offset}" total="${total}"/>${items}</channel></rss>`;
+  }
+
+  /** The page of Releases a Torznab query names, inspected and saved so that a Task descriptor can name each. */
+  async find(params: Record<string, string>, signal: AbortSignal): Promise<{ page: Release[]; offset: number; total: number }> {
     const integer = (name: string, fallback?: number): number | undefined => {
       if (params[name] === undefined || params[name] === '') return fallback;
       const result = Number(params[name]);
@@ -113,7 +120,7 @@ export class Indexer {
    * One Torznab page of `all`. Feed pages reuse a Release's playback inspection for six hours,
    * because every RSS sync lists the same newest Releases again; searches always inspect anew.
    */
-  private async respond(all: Release[], offset: number, limit: number, signal: AbortSignal, feed: boolean): Promise<string> {
+  private async respond(all: Release[], offset: number, limit: number, signal: AbortSignal, feed: boolean): Promise<{ page: Release[]; offset: number; total: number }> {
     const page = all.slice(offset, offset + limit).map(release => ({ ...release }));
     const now = Date.now();
     for (const [id, inspection] of this.feedInspections) if (now - inspection.at >= FEED_INSPECTION_TTL_MS) this.feedInspections.delete(id);
@@ -131,8 +138,7 @@ export class Indexer {
     }
     signal.throwIfAborted();
     this.store.saveReleases(page);
-    const items = page.map(release => this.item(release)).join('');
-    return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed"><channel><title>Bohemarr</title><description>Source media download tasks</description><link>${xml(this.config.publicUrl)}</link><torznab:response offset="${offset}" total="${all.length}"/>${items}</channel></rss>`;
+    return { page, offset, total: all.length };
   }
 
   /** Inspects current source variants; durable release URLs can acquire better renditions later. */

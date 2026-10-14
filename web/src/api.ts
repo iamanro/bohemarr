@@ -50,3 +50,15 @@ export interface Job {
   error: string
   createdAt: number
 }
+
+export interface SearchRelease {
+  id: string
+  title: string
+  provider: string
+  kind: "tv" | "movie"
+  url: string
+  publishedAt?: string
+  size?: number
+  sizeEstimated?: boolean
+  height?: number
+}
