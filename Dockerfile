@@ -72,18 +72,20 @@ LABEL org.opencontainers.image.title="Bohemarr" \
       org.opencontainers.image.source="https://github.com/iamanro/bohemarr" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY --from=build /app/node_modules ./node_modules/
-COPY --from=build /app/web/dist ./web/dist/
-COPY package.json LICENSE ./
-COPY LICENSES/ ./LICENSES/
-COPY src/ ./src/
+# Layers from the least to the most often changed, so a code change exports and pulls only the last ones.
 COPY --from=ffmpeg /out/bin/ /usr/local/bin/
 COPY --from=ffmpeg /out/doc/ /usr/share/doc/ffmpeg/
 COPY --from=bento4 /bento4/build/mp4decrypt /usr/local/bin/mp4decrypt
 COPY --from=bento4 /bento4-source.tar.gz /usr/share/bento4-source.tar.gz
 COPY --from=vltava-cli /out/ /usr/local/bin/
 RUN mkdir /config /downloads && chown bun:bun /config /downloads
+WORKDIR /app
+COPY LICENSE ./
+COPY LICENSES/ ./LICENSES/
+COPY --from=build /app/node_modules ./node_modules/
+COPY package.json ./
+COPY --from=build /app/web/dist ./web/dist/
+COPY src/ ./src/
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8787 DATA_DIR=/config DOWNLOADS_DIR=/downloads
 USER bun
 EXPOSE 8787
