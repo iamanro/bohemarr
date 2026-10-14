@@ -31,7 +31,7 @@ Every setting is in `.env`; `.env.example` documents each one. Run `docker compo
 
 ## Web UI
 
-Open `PUBLIC_URL/ui/` (by default `http://127.0.0.1:8787/ui/`) and sign in with the API key (`docker compose exec bohemarr cat /config/api-key`). It lists the downloads, which you can pause, resume and remove, and edits provider accounts, the enabled providers, the Sonarr and Radarr connections and the download settings. Saved settings go to `/config/settings.json` and apply after **Restart to apply**, which relies on the Compose restart policy. A variable set in `.env` always wins and appears read-only; leave it empty in `.env` to manage it in the UI.
+Open `PUBLIC_URL/ui/` (by default `http://127.0.0.1:8787/ui/`) and sign in with the API key (`docker compose exec bohemarr cat /config/api-key`). It lists the downloads, which you can pause, resume and remove; searches the enabled providers and downloads a chosen result into a category (Sonarr and Radarr may import a download in their category, so pick another to keep it out of the library); and edits provider accounts, the enabled providers, the Sonarr and Radarr connections and the download settings. Saved settings go to `/config/settings.json` and apply after **Restart to apply**, which relies on the Compose restart policy. A variable set in `.env` always wins and appears read-only; leave it empty in `.env` to manage it in the UI.
 
 ## Configure providers
 

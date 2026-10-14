@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import Fastify from 'fastify';
+import Fastify, { type FastifyReply } from 'fastify';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import { fileURLToPath } from 'node:url';
@@ -85,12 +85,34 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
     return { restarting: true };
   });
   app.get('/v1/providers', async () => [...providers.values()].map(provider => ({ id: provider.id, name: provider.name })));
+  // Manual search in the UI: a Torznab query, answered as JSON.
+  app.get('/v1/search', async (request, reply) => {
+    const params = stringParams(request.query);
+    try {
+      const { page, total } = await whileOpen(reply, signal => indexer.find({ ...params, t: params.t || 'search' }, signal));
+      return { total, releases: page.map(release => ({
+        id: release.id, title: releaseTitle(release), provider: release.provider, kind: release.kind, url: release.url,
+        publishedAt: release.publishedAt, size: release.size, sizeEstimated: release.sizeEstimated, height: release.height,
+      })) };
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  // Downloads a Release found by a search, as a Job with the ID Sonarr's or Radarr's grab of it would have.
+  app.post('/v1/jobs', async (request, reply) => {
+    const { release: id = '', category } = stringParams(request.body);
+    const release = store.release(id);
+    if (!release) return reply.code(404).send({ error: 'Unknown release; search again' });
+    try {
+      const job = queue.add(indexer.taskDescriptor(id).infoHash, release, category || (release.kind === 'movie' ? 'movies' : 'tv'));
+      return { id: job.id, status: job.status };
+    } catch (error) {
+      return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
   app.get('/api', async (request, reply) => {
     const params = stringParams(request.query);
     reply.type('application/xml; charset=utf-8');
-    const controller = new AbortController();
-    const onClose = () => { if (!reply.raw.writableEnded) controller.abort(); };
-    reply.raw.on('close', onClose);
     try {
       if (params.t === 'caps') return indexer.capabilities();
       if (params.t === 'get') {
@@ -99,13 +121,11 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
         return descriptor.content;
       }
       if (!['search', 'tvsearch', 'movie'].includes(params.t || '')) throw new Error('Unsupported Torznab function');
-      return await indexer.search(params, AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]));
+      return await whileOpen(reply, signal => indexer.search(params, signal));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       reply.type('application/xml; charset=utf-8');
       return `<error code="900" description="${xml(message)}"/>`;
-    } finally {
-      reply.raw.removeListener('close', onClose);
     }
   });
   if (publisher && config.vltava) {
@@ -156,6 +176,18 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
     },
   });
   return app;
+}
+
+/** Runs `task` with a signal that aborts when the client disconnects or after 120 seconds. */
+async function whileOpen<T>(reply: FastifyReply, task: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const onClose = () => { if (!reply.raw.writableEnded) controller.abort(); };
+  reply.raw.on('close', onClose);
+  try {
+    return await task(AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]));
+  } finally {
+    reply.raw.removeListener('close', onClose);
+  }
 }
 
 function stringParams(input: unknown): Record<string, string> {

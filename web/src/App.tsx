@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { LogOut, Pause, Play, RotateCw, Save, Trash2 } from "lucide-react"
+import { Download, LogOut, Pause, Play, RotateCw, Save, Search as SearchIcon, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { api, apiKey, jobAction, type Job, type Settings } from "@/api"
+import { api, apiKey, jobAction, type Job, type SearchRelease, type Settings } from "@/api"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -115,6 +115,7 @@ function Dashboard({ data, onSignOut }: { data: Settings; onSignOut: () => void 
       <Tabs defaultValue="downloads" className="min-w-0">
         <TabsList className="max-w-full justify-start overflow-x-auto">
           <TabsTrigger value="downloads">Downloads</TabsTrigger>
+          <TabsTrigger value="search">Search</TabsTrigger>
           <TabsTrigger value="providers">Providers</TabsTrigger>
           <TabsTrigger value="accounts">Accounts</TabsTrigger>
           <TabsTrigger value="arrs">Sonarr &amp; Radarr</TabsTrigger>
@@ -122,6 +123,7 @@ function Dashboard({ data, onSignOut }: { data: Settings; onSignOut: () => void 
         </TabsList>
 
         <TabsContent value="downloads"><Downloads /></TabsContent>
+        <TabsContent value="search"><Search categories={data.categories} /></TabsContent>
 
         <TabsContent value="providers">
           <Section title="Providers" description={`${enabled.length ? "Only the checked providers are enabled." : "None checked: every public provider and every account provider with credentials is enabled."}${setting("PROVIDERS").source === "env" ? " Set in .env." : ""}`}>
@@ -242,6 +244,82 @@ function Downloads() {
             ))}
           </TableBody>
         </Table>
+      )}
+    </Section>
+  )
+}
+
+/** A native select styled as an Input; the UI kit has no Select. */
+const SELECT = "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs"
+
+function Search({ categories }: { categories: string[] }) {
+  const queryClient = useQueryClient()
+  const [query, setQuery] = useState<Record<string, string>>({ t: "search" })
+  const [category, setCategory] = useState("")
+  const [results, setResults] = useState<{ releases: SearchRelease[]; total: number }>()
+  const search = useMutation({
+    mutationFn: (offset: number) => api<{ releases: SearchRelease[]; total: number }>("GET", `search?${new URLSearchParams({ ...query, offset: String(offset) })}`),
+    onSuccess: (page, offset) => setResults({ total: page.total, releases: offset ? [...(results?.releases ?? []), ...page.releases] : page.releases }),
+    onError: error => toast.error(error.message),
+  })
+  const download = useMutation({
+    mutationFn: (release: SearchRelease) => api("POST", "jobs", { release: release.id, ...(category && { category }) }),
+    onSuccess: (_job, release) => { toast.success(`Queued ${release.title}`); void queryClient.invalidateQueries({ queryKey: ["jobs"] }) },
+    onError: error => toast.error(error.message),
+  })
+  const set = (name: string, value: string) => setQuery({ ...query, [name]: value })
+  const tv = query.t === "tvsearch"
+
+  return (
+    <Section title="Search" description="Searches every enabled provider, as Sonarr and Radarr do, and inspects each result, which can take a minute. Sonarr and Radarr may import a download in their category.">
+      <form className="mb-4 flex flex-wrap items-end gap-2" onSubmit={event => { event.preventDefault(); search.mutate(0) }}>
+        <div className="grid min-w-48 flex-1 gap-1.5">
+          <Label htmlFor="q">Title or URL</Label>
+          <Input id="q" value={query.q ?? ""} required onChange={event => set("q", event.target.value)} />
+        </div>
+        <div className="grid gap-1.5">
+          <Label htmlFor="t">Type</Label>
+          <select id="t" className={SELECT} value={query.t} onChange={event => setQuery({ q: query.q ?? "", t: event.target.value })}>
+            <option value="search">Any</option><option value="tvsearch">Series</option><option value="movie">Movie</option>
+          </select>
+        </div>
+        {tv && <>
+          <div className="grid w-20 gap-1.5"><Label htmlFor="season">Season</Label><Input id="season" type="number" min={0} value={query.season ?? ""} onChange={event => set("season", event.target.value)} /></div>
+          <div className="grid w-20 gap-1.5"><Label htmlFor="ep">Episode</Label><Input id="ep" type="number" min={0} value={query.ep ?? ""} onChange={event => set("ep", event.target.value)} /></div>
+        </>}
+        <div className="grid gap-1.5">
+          <Label htmlFor="category">Download to</Label>
+          <select id="category" className={SELECT} value={category} onChange={event => setCategory(event.target.value)}>
+            <option value="">By type</option>{categories.map(name => <option key={name}>{name}</option>)}
+          </select>
+        </div>
+        <Button type="submit" disabled={search.isPending}><SearchIcon />{search.isPending ? "Searching…" : "Search"}</Button>
+      </form>
+      {results && (results.releases.length === 0 ? <p className="text-sm text-muted-foreground">Nothing found.</p> : (
+        <Table>
+          <TableHeader>
+            <TableRow><TableHead>Release</TableHead><TableHead>Published</TableHead><TableHead /></TableRow>
+          </TableHeader>
+          <TableBody>
+            {results.releases.map(release => (
+              <TableRow key={release.id}>
+                <TableCell className="max-w-md whitespace-normal">
+                  <a className="font-medium hover:underline" href={release.url} target="_blank" rel="noreferrer">{release.title}</a>
+                  <div className="text-xs text-muted-foreground">{release.provider}{release.size ? ` · ${release.sizeEstimated ? "~" : ""}${(release.size / 1e9).toFixed(2)} GB` : ""}</div>
+                </TableCell>
+                <TableCell className="text-sm">{release.publishedAt ? new Date(release.publishedAt).toLocaleDateString() : ""}</TableCell>
+                <TableCell className="text-right">
+                  <Button variant="ghost" size="icon" aria-label={`Download ${release.title}`} onClick={() => download.mutate(release)}><Download /></Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      ))}
+      {results && results.releases.length < results.total && (
+        <Button className="mt-3" variant="secondary" disabled={search.isPending} onClick={() => search.mutate(results.releases.length)}>
+          {search.isPending ? "Loading…" : `More (${results.releases.length} of ${results.total})`}
+        </Button>
       )}
     </Section>
   )

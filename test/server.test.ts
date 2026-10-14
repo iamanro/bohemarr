@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { createServer } from '../src/server.ts';
 import { Store } from '../src/store.ts';
 import { Queue } from '../src/queue.ts';
-import type { Config } from '../src/types.ts';
+import { parseTaskTorrent } from '../src/torrent.ts';
+import type { Config, Provider } from '../src/types.ts';
+import { fakeCatalogue } from './fake-catalogue.ts';
 
 const config: Config = {
   host: '127.0.0.1', port: 8787, apiKey: 'a'.repeat(64), publicUrl: 'http://localhost:8787',
@@ -80,4 +82,32 @@ test('the settings API needs the API key, hides secrets and saves only settings 
   assert.deepEqual(settings.ONEPLAY_USERNAME, { value: 'me', set: true, source: 'ui' });
   assert.equal((await save({ ONEPLAY_USERNAME: null })).statusCode, 200);
   assert.equal(JSON.parse(await readFile(join(dir.path, 'settings.json'), 'utf8')).ONEPLAY_USERNAME, undefined);
+});
+
+test('the UI searches as Torznab does and downloads a found Release as the Job a grab of it would be', async t => {
+  const store = new Store(':memory:');
+  const provider: Provider = {
+    id: 'direct', name: 'Direct', resolve: async () => [],
+    catalogue: fakeCatalogue(() => [{ id: 'film', provider: 'direct', title: 'Example film', kind: 'movie', year: 2024, url: 'https://example.test/film.mp4' }]),
+  };
+  const providers = new Map([[provider.id, provider]]);
+  const app = await createServer(config, store, new Queue(store, config, providers, async () => ''), providers);
+  t.after(async () => { await app.close(); store.close(); });
+  const headers = { 'x-api-key': config.apiKey };
+
+  assert.equal((await app.inject('/v1/search?q=example')).statusCode, 401);
+  const found = await app.inject({ url: '/v1/search?q=example&t=movie', headers });
+  assert.equal(found.statusCode, 200);
+  assert.equal(found.json().total, 1);
+  assert.equal(found.json().releases[0].title, 'Example film 2024[WEB-DL]');
+  assert.equal((await app.inject({ url: '/v1/search?q=example&offset=x', headers })).statusCode, 400);
+
+  const download = (payload: object) => app.inject({ method: 'POST', url: '/v1/jobs', headers, payload });
+  assert.equal((await download({ release: 'unknown' })).statusCode, 404);
+  assert.match((await download({ release: 'film', category: 'music' })).json().error, /Unknown category/);
+  const grab = await app.inject({ url: `/api?t=get&id=film&apikey=${config.apiKey}` });
+  const { infoHash } = parseTaskTorrent(grab.rawPayload, config.apiKey);
+  const added = await download({ release: 'film' });
+  assert.equal(added.json().id, infoHash);
+  assert.equal(store.job(infoHash)?.category, 'movies');
 });
