@@ -39,6 +39,7 @@ export class SeriesBindings {
   private readonly selectBindingByProgram: StatementSync;
   private readonly selectEpisodeCache: StatementSync;
   private readonly upsertEpisodeCache: StatementSync;
+  private readonly deleteExpiredEpisodeCache: StatementSync;
 
   constructor(db: DatabaseSync, lookupIdentity: IdentityLookup = loadSeriesIdentity, now: () => number = Date.now) {
     this.lookupIdentity = lookupIdentity;
@@ -74,6 +75,8 @@ export class SeriesBindings {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, program_id, tvdb_id, season, episode, offset, limit_count)
         DO UPDATE SET created_at = excluded.created_at, payload = excluded.payload`);
+    this.deleteExpiredEpisodeCache = db.prepare('DELETE FROM series_release_cache WHERE created_at < ?');
+    this.deleteExpiredEpisodeCache.run(this.now() - SERIES_RELEASE_CACHE_TTL_MS);
   }
 
   /** The Series identity for `tvdbId`: from any stored binding, else from TVDB metadata. */
@@ -172,6 +175,7 @@ export class SeriesBindings {
   private cacheEpisode(
     provider: string, programId: string, tvdbId: number, season: number, episode: number, offset: number, limit: number, releases: Release[],
   ): void {
+    this.deleteExpiredEpisodeCache.run(this.now() - SERIES_RELEASE_CACHE_TTL_MS);
     this.upsertEpisodeCache.run(provider, programId, tvdbId, season, episode, offset, limit, this.now(), JSON.stringify(releases));
   }
 }

@@ -42,7 +42,13 @@ const MIGRATIONS: readonly string[] = [
    DELETE FROM settings WHERE key = 'paused';`,
   // Imports can outlive their Job (Sonarr and Radarr remove completed downloads), so each Job's Release is kept.
   `INSERT OR IGNORE INTO job_releases SELECT id, payload -> '$.release' FROM jobs;`,
+  // Search results are kept for a limited time (see `RELEASE_RETENTION_MS`); rows from before count as saved now.
+  `ALTER TABLE releases ADD COLUMN saved_at INTEGER;
+   UPDATE releases SET saved_at = strftime('%s', 'now') * 1000;`,
 ];
+
+/** A Release Sonarr or Radarr has not seen in a search for this long is forgotten; a Job keeps its own copy. */
+const RELEASE_RETENTION_MS = 90 * 24 * 60 * 60_000;
 
 export class Store {
   private readonly db: DatabaseSync;
@@ -63,7 +69,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS job_releases (job_id TEXT PRIMARY KEY, release TEXT NOT NULL);`);
     this.migrate();
-    this.insertRelease = this.db.prepare('INSERT INTO releases VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload');
+    this.db.prepare('DELETE FROM releases WHERE saved_at < ?').run(Date.now() - RELEASE_RETENTION_MS);
+    this.insertRelease = this.db.prepare('INSERT INTO releases (id, payload, saved_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, saved_at=excluded.saved_at');
     this.selectRelease = this.db.prepare('SELECT payload FROM releases WHERE id=?');
     this.selectJobs = this.db.prepare('SELECT payload FROM jobs');
     this.selectJob = this.db.prepare('SELECT payload FROM jobs WHERE id=?');
@@ -102,7 +109,8 @@ export class Store {
 
   saveReleases(releases: Release[]): void {
     this.transaction(() => {
-      for (const release of releases) this.insertRelease.run(release.id, JSON.stringify(release));
+      const now = Date.now();
+      for (const release of releases) this.insertRelease.run(release.id, JSON.stringify(release), now);
     });
   }
 

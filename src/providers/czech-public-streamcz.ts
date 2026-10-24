@@ -45,6 +45,7 @@ class StreamCzCache {
   private readonly insertRow: StatementSync;
   private readonly selectEpisodes: StatementSync;
   private readonly upsertEpisodes: StatementSync;
+  private readonly deleteExpiredEpisodes: StatementSync;
   private readonly db: DatabaseSync;
   private readonly now: () => number;
 
@@ -68,6 +69,8 @@ class StreamCzCache {
     this.selectEpisodes = db.prepare('SELECT refreshed_at, payload FROM stream_episode_cache WHERE program_id=?');
     this.upsertEpisodes = db.prepare(`INSERT INTO stream_episode_cache (program_id, refreshed_at, payload) VALUES (?, ?, ?)
       ON CONFLICT(program_id) DO UPDATE SET refreshed_at=excluded.refreshed_at, payload=excluded.payload`);
+    this.deleteExpiredEpisodes = db.prepare('DELETE FROM stream_episode_cache WHERE refreshed_at < ?');
+    this.deleteExpiredEpisodes.run(this.now() - EPISODE_CACHE_TTL_MS);
   }
 
   episodes(programId: string): CatalogNode[] | undefined {
@@ -77,6 +80,7 @@ class StreamCzCache {
   }
 
   saveEpisodes(programId: string, episodes: readonly CatalogNode[]): void {
+    this.deleteExpiredEpisodes.run(this.now() - EPISODE_CACHE_TTL_MS);
     if (episodes.length) this.upsertEpisodes.run(programId, this.now(), JSON.stringify(episodes));
   }
 
