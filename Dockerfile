@@ -18,6 +18,11 @@ ARG FFMPEG_BUILD=autobuild-2026-10-24-13-02
 ARG FFMPEG_VERSION=n9.0.2-35-g9a9b70bb8c
 ARG FFMPEG_SHA256_AMD64=ddffcf6e3d537dd9e0039f0635261be40dd9bfdafb2ea85970173e928e024e50
 ARG FFMPEG_SHA256_ARM64=710ac178fffa266d6b197a9e3cca4d2c62f35bed70d5cf99762d40aa8a5791f9
+# Where the tarballs are downloaded from. BtbN removes its autobuilds after a few weeks, so a copy of
+# both files in a release of this repository keeps the build working:
+#   gh release create ffmpeg-${FFMPEG_VERSION} --latest=false *.tar.xz
+#   docker build --build-arg FFMPEG_BASE_URL=https://github.com/iamanro/bohemarr/releases/download/ffmpeg-${FFMPEG_VERSION} .
+ARG FFMPEG_BASE_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_BUILD}
 RUN set -eu; \
   case "${TARGETARCH:-amd64}" in \
     amd64) platform=linux64; sha="$FFMPEG_SHA256_AMD64" ;; \
@@ -25,7 +30,7 @@ RUN set -eu; \
     *) echo "unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
   esac; \
   asset="ffmpeg-${FFMPEG_VERSION}-${platform}-gpl-9.0"; \
-  curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_BUILD}/${asset}.tar.xz" -o /tmp/ffmpeg.tar.xz; \
+  curl -fsSL "${FFMPEG_BASE_URL}/${asset}.tar.xz" -o /tmp/ffmpeg.tar.xz; \
   echo "$sha  /tmp/ffmpeg.tar.xz" | sha256sum -c -; \
   tar -xJf /tmp/ffmpeg.tar.xz -C /tmp; \
   mkdir -p /out/bin /out/doc; \
