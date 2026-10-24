@@ -1,6 +1,6 @@
 # Refactor plan
 
-Written 2026-10-24 after a whole-repo audit. It says what the code is, which stack it should stay on, where it hurts, and in which order to fix that without a rewrite. Vocabulary follows `CONTEXT.md`.
+Written 2026-10-24 after a whole-repo audit; phases 0 to 4 landed in PR #7 on 2026-10-25 (Stream.cz keeps its lazy discovery, see ADR 0002). It says what the code is, which stack it should stay on, where it hurts, and in which order to fix that without a rewrite. Vocabulary follows `CONTEXT.md`.
 
 ## What the repo is
 
