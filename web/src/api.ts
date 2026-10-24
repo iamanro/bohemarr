@@ -12,7 +12,8 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
     headers: { "x-api-key": apiKey.get(), ...(body !== undefined && { "content-type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  const json = await response.json()
+  // A restart or a proxy error page is not JSON; it is still an error with a status.
+  const json = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(json.error ?? `HTTP ${response.status}`)
   return json
 }

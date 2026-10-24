@@ -91,3 +91,22 @@ test('a ČT text search reads only the first 40 results, which ČT ranks by rele
   assert.deepEqual(await searchCatalogue(provider, { q: 'Vyprávěj', kind: 'tv', limit: 5, offset: 0 }, new AbortController().signal), []);
   assert.deepEqual(offsets, [0, 20]);
 });
+
+test('a Déčko show URL searches the API at its page limit instead of asking for 100 results', async t => {
+  const limits: number[] = [];
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input) === 'https://api.ceskatelevize.cz/graphql/') {
+      const request = JSON.parse(String(init?.body));
+      if (request.operationName === 'SearchShows') {
+        limits.push(request.variables.limit);
+        return Response.json({ data: { searchShows: { items: [], totalCount: 0 } } });
+      }
+    }
+    throw new Error(`Unexpected request: ${input}`);
+  });
+  const provider = createCeskaTelevizeProvider({ enabled: true })!;
+  const release = { id: 'd1', provider: 'ceskatelevize', title: 'Kouzelná školka', url: 'https://decko.ceskatelevize.cz/kouzelna-skolka', kind: 'tv' as const };
+  const sources = await provider.resolve(release, new AbortController().signal).catch(() => []);
+  assert.deepEqual(sources, []);
+  assert.deepEqual(limits, [40], 'one search page at the limit the API accepts');
+});

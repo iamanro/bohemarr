@@ -59,15 +59,21 @@ export function cached<T>(ttlMs: number, load: (signal: AbortSignal) => Promise<
       entry = current;
       current.value.catch(() => { if (entry === current) entry = undefined; });
     }
-    const { promise: aborted, reject } = Promise.withResolvers<never>();
-    const onAbort = (): void => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-    try {
-      return await Promise.race([entry.value, aborted]);
-    } finally {
-      signal.removeEventListener('abort', onAbort);
-    }
+    return untilAborted(entry.value, signal);
   };
+}
+
+/** `promise`'s result, unless `signal` aborts first; the work behind `promise` goes on for other callers. */
+export async function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  const { promise: aborted, reject } = Promise.withResolvers<never>();
+  const onAbort = (): void => reject(signal.reason);
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
 }
 
 /** The items of a list still being loaded, as the async iterable a Catalogue hands out. */

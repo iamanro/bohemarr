@@ -5,6 +5,7 @@ import type { AnyNode } from 'domhandler';
 import type { Catalogue, MediaSource, Provider, Release } from '../types.ts';
 import { cached, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { resolveOnNetworkEmbed } from './public-sites-onnetwork.ts';
+import { resolveStreamCz } from './czech-public-streamcz.ts';
 import type { ScrapedProgram } from './public-sites.ts';
 
 const URL_PRIMADOMA_PROGRAMS = 'https://primadoma.tv/porady';
@@ -113,9 +114,7 @@ async function resolveTvPrimaDoma(release: Release, signal: AbortSignal): Promis
   const iframe = $('.container div > iframe').first();
   if (iframe.length > 0) {
     const iframeSrc = iframe.attr('src');
-    if (iframeSrc?.startsWith('https://www.stream.cz')) {
-      throw new Error('TVPrimaDoma: video is embedded from Stream.cz, which is outside this provider bundle (no Stream.cz provider available)');
-    }
+    if (iframeSrc?.startsWith('https://www.stream.cz')) return resolveStreamCz(iframeSrc, signal);
   }
 
   const scriptSrc = $('.container div > script').first().attr('src');

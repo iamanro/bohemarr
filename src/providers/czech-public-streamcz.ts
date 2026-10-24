@@ -355,8 +355,9 @@ function collectSubtitleSources(subtitleEntries: Array<{ language: string; srt?:
   return out.length ? out : undefined;
 }
 
-async function resolveStreamCz(release: Release, signal: AbortSignal): Promise<MediaSource[]> {
-  const html = await fetchText(release.url, signal, { headers: { referer: REFERER } });
+/** The sources of a Stream.cz episode page, also when another site embeds it. */
+export async function resolveStreamCz(url: string, signal: AbortSignal): Promise<MediaSource[]> {
+  const html = await fetchText(url, signal, { headers: { referer: REFERER } });
   const state = appServerState(html);
   if (!state) return [];
   const videoData = at(state, 'fetchable.episode.videoDetail.data');
@@ -422,6 +423,6 @@ export function createStreamCzProvider(config: ProviderConfig = {}, database: Da
     id: 'streamcz',
     name: 'Stream.cz',
     catalogue: streamCzCatalogue(new StreamCzCache(database, timing)),
-    async resolve(release, signal) { return resolveStreamCz(release, signal); },
+    async resolve(release, signal) { return resolveStreamCz(release.url, signal); },
   };
 }

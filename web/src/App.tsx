@@ -35,8 +35,18 @@ export function App() {
   const [signedIn, setSignedIn] = useState(Boolean(apiKey.get()))
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api<Settings>("GET", "settings"), enabled: signedIn, retry: false })
 
-  if (!signedIn || settings.isError) {
+  const refused = settings.error?.message === "Invalid API key"
+  if (!signedIn || refused) {
     return <SignIn error={signedIn ? settings.error?.message : undefined} onSignIn={key => { apiKey.set(key); setSignedIn(true); void settings.refetch() }} />
+  }
+  if (settings.isError) {
+    // Bohemarr is restarting or unreachable; the stored key is fine.
+    return (
+      <div className="mx-auto max-w-md p-6">
+        <Alert variant="destructive"><AlertDescription>Bohemarr did not answer: {settings.error.message}</AlertDescription></Alert>
+        <Button className="mt-3" variant="secondary" onClick={() => void settings.refetch()}>Try again</Button>
+      </div>
+    )
   }
   if (!settings.data) return null
   return <Dashboard data={settings.data} onSignOut={() => { apiKey.clear(); setSignedIn(false) }} />
@@ -235,7 +245,7 @@ function Downloads() {
                   {job.error && <div className="text-xs text-destructive">{job.error}</div>}
                 </TableCell>
                 <TableCell><Badge variant={STATUS_VARIANT[job.status]}>{job.status}</Badge></TableCell>
-                <TableCell><Progress value={job.status === "Completed" ? 100 : job.progress || (job.totalBytes ? (job.bytes / job.totalBytes) * 100 : 0)} /></TableCell>
+                <TableCell><Progress value={job.status === "Completed" ? 100 : Math.min(100, job.progress || (job.totalBytes ? (job.bytes / job.totalBytes) * 100 : 0))} /></TableCell>
                 <TableCell className="text-right">
                   {["Queued", "Downloading"].includes(job.status) && <Button variant="ghost" size="icon" aria-label="Pause" onClick={() => act.mutate({ action: "pause", id: job.id })}><Pause /></Button>}
                   {job.status === "Paused" && <Button variant="ghost" size="icon" aria-label="Resume" onClick={() => act.mutate({ action: "resume", id: job.id })}><Play /></Button>}

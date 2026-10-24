@@ -145,7 +145,8 @@ export class PrimaAuthenticator {
     });
 
     if (response.status !== 200) {
-      throw new PrimaAuthError(`Incorrect iPrima account credentials (HTTP ${response.status})`);
+      const reason = response.status === 401 || response.status === 403 ? 'Incorrect iPrima account credentials' : 'Prima+ login failed';
+      throw new PrimaAuthError(`${reason} (HTTP ${response.status})`);
     }
 
     const json = (await response.json()) as Record<string, unknown>;

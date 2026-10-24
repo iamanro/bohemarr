@@ -272,11 +272,13 @@ function jojSessionSource(username: string, password: string): SessionSource<str
     label: 'jojplay',
     async login(signal) {
       const body = JSON.stringify({ tenantId: TENANT_ID, email: username, password, returnSecureToken: true });
-      const json = await fetchJson<{ idToken?: string; expiresIn?: string; error?: { message?: string } }>(URI_LOGIN, signal, {
+      // Firebase answers a wrong password with HTTP 400 and the reason in the body, so the status is not the verdict.
+      const response = await fetchResponse(URI_LOGIN, signal, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Referer: 'https://play.joj.sk/' },
         body,
       });
+      const json = await response.json().catch(() => ({})) as { idToken?: string; expiresIn?: string; error?: { message?: string } };
       if (!json.idToken) {
         throw new Error(`jojplay: login failed${json.error?.message ? ` (${json.error.message})` : ''}`);
       }

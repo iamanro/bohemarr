@@ -20,8 +20,8 @@ import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { Catalogue, CatalogueQuery, License, MediaKind, MediaSource, Provider, ProviderConfig, Release, SeriesIdentity, ProgramMetadata } from '../types.ts';
 import { isSeriesCandidate } from '../series-identity.ts';
-import { cached, fetchJson, fetchText, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
-import { extractPlayIds, get, has, Nuxt, PrimaAuthError, PrimaMessageError, PrimaRpc } from './prima-common.ts';
+import { at, cached, fetchJson, fetchText, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import { extractPlayIds, get, Nuxt, PrimaAuthError, PrimaMessageError, PrimaRpc } from './prima-common.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { PrimaAuthenticator } from './prima-auth.ts';
 import { PrimaIndex, pageTitle } from './prima-index.ts';
@@ -310,7 +310,7 @@ async function listEpisodesForSeason(
   const episodes: PrimaEpisode[] = [];
 
   for (const item of get<unknown[]>(result, 'data.episodes', [])) {
-    if (has(item, 'distribution.upsell')) continue; // Not playable at the current account tier
+    if (at(item, 'distribution.upsell') !== undefined) continue; // Not playable at the current account tier
 
     let title: string | null = get<string>(item, 'title', '');
     const webUrl = get<string | null>(item, 'additionals.webUrl', null);
@@ -566,10 +566,10 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
 
       let nuxtData: Record<string, unknown> | null = null;
       for (const value of Object.values(nuxt.data())) {
-        if (has(value, 'playId') || has(value, 'content')) { nuxtData = value as Record<string, unknown>; break; }
+        if (at(value, 'playId') !== undefined || at(value, 'content') !== undefined) { nuxtData = value as Record<string, unknown>; break; }
       }
       if (!nuxtData) throw new Error(`Unable to extract Prima+ media information for ${release.url}`);
-      if (has(nuxtData, 'content')) nuxtData = get(nuxtData, 'content', {} as Record<string, unknown>);
+      if (at(nuxtData, 'content') !== undefined) nuxtData = get(nuxtData, 'content', {} as Record<string, unknown>);
 
       const playId = get<string | null>(nuxtData, 'playId', null);
       if (!playId) throw new Error(`Unable to extract Prima+ play ID for ${release.url}`);
@@ -615,7 +615,7 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
       const type = get<string>(streamInfo, 'type', '').toLowerCase();
       let drm: License | undefined;
 
-      if (has(streamInfo, 'drmInfo')) {
+      if (at(streamInfo, 'drmInfo') !== undefined) {
         if (type !== 'dash') continue; // Widevine over HLS is not supported, matching upstream
         const modular = get<unknown[]>(streamInfo, 'drmInfo.modularDrmInfos', []);
         const widevine = modular.find((m) => get<string>(m, 'keySystem', '') === 'com.widevine.alpha');

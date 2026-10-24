@@ -1,4 +1,5 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
+import { untilAborted } from './providers/common.ts';
 import type { SeriesBindings } from './series-binding.ts';
 import type { Provider, Release, SeriesIdentity } from './types.ts';
 
@@ -81,14 +82,7 @@ export class SeriesFeed {
         return releases;
       })
       .finally(() => { this.building = undefined; });
-    const { promise: aborted, reject } = Promise.withResolvers<never>();
-    const onAbort = (): void => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-    try {
-      return await Promise.race([this.building, aborted]);
-    } finally {
-      signal.removeEventListener('abort', onAbort);
-    }
+    return untilAborted(this.building, signal);
   }
 
   private async build(signal: AbortSignal): Promise<Release[]> {

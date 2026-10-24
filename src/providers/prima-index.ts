@@ -3,6 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { XMLParser } from 'fast-xml-parser';
 import * as cheerio from 'cheerio';
 import type { MediaKind } from '../types.ts';
+import { untilAborted } from './common.ts';
 
 const SITEMAPS: ReadonlyArray<{ url: string; kind: MediaKind }> = [
   { url: 'https://www.iprima.cz/sitemap-series.xml', kind: 'tv' },
@@ -90,7 +91,8 @@ export class PrimaIndex {
   /** Programmes, most recently changed first. */
   async *programs(signal: AbortSignal): AsyncGenerator<IndexedProgram> {
     const refreshedAt = this.selectRefreshedAt.get()?.value;
-    if (refreshedAt === undefined) await this.refresh(signal);
+    // The first refresh runs on the index's own lifetime: an impatient first caller must not cancel it for the others.
+    if (refreshedAt === undefined) await untilAborted(this.refresh(this.lifetime.signal), signal);
     else if (this.now() - Number(refreshedAt) >= REFRESH_AFTER_MS) void this.refresh(this.lifetime.signal).catch(logFailure);
     // Titles left over from an earlier run are completed once per process; a refresh starts another pass.
     if (!this.resumed) { this.resumed = true; this.startTitling(); }
@@ -187,7 +189,7 @@ export class PrimaIndex {
 }
 
 function logFailure(error: unknown): void {
-  if (error instanceof Error && error.message === 'Prima+ index closed') return;
+  if (error instanceof Error && (error.message === 'Prima+ index closed' || error.name === 'AbortError')) return;
   console.error(`iprima: updating the programme index failed: ${error instanceof Error ? error.message : String(error)}`);
 }
 

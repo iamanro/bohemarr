@@ -12,12 +12,9 @@ export interface OneplayCredentials {
   readonly profilePin: string | undefined;
 }
 
-export type AccountProvider = 'ANY' | 'EBOX' | 'O2';
-
+/** The parts of an Oneplay account the login reads: which one to pick. */
 export interface OneplayAccount {
   readonly id: string;
-  readonly provider: AccountProvider;
-  readonly name: string;
   readonly isActive: boolean;
 }
 
@@ -31,27 +28,10 @@ export interface AuthenticationData {
   readonly profileId: string;
   readonly authToken: AuthenticationToken;
   readonly deviceId: string;
-  readonly accounts: readonly OneplayAccount[];
 }
-
-const ACCOUNT_PROVIDER_BY_VALUE: Record<string, AccountProvider> = { eBox: 'EBOX', O2: 'O2' };
-
-function accountProviderOf(value: string | undefined): AccountProvider {
-  return ACCOUNT_PROVIDER_BY_VALUE[value ?? ''] ?? 'ANY';
-}
-
-/** `Authenticator.Accounts.setAccounts(null)`: the single-account fallback shape. */
-const DEFAULT_ACCOUNTS: readonly OneplayAccount[] = [
-  { id: '', provider: 'EBOX', name: 'Oneplay', isActive: true },
-];
 
 function parseAccounts(rawAccounts: readonly unknown[]): OneplayAccount[] {
-  return rawAccounts.map((raw) => ({
-    id: at<string>(raw, 'accountId') ?? '',
-    provider: accountProviderOf(at<string>(raw, 'accountProvider')),
-    name: at<string>(raw, 'name') ?? '',
-    isActive: at<boolean>(raw, 'isActive') ?? false,
-  }));
+  return rawAccounts.map((raw) => ({ id: at<string>(raw, 'accountId') ?? '', isActive: at<boolean>(raw, 'isActive') ?? false }));
 }
 
 /** `Authenticator.selectAccount`. */
@@ -115,7 +95,6 @@ async function selectAccountStep(
 interface LoginStepResult {
   readonly accountId: string;
   readonly authTokenValue: string;
-  readonly accounts: readonly OneplayAccount[];
 }
 
 /** `Authenticator.doLogin`. */
@@ -142,14 +121,14 @@ async function loginWithCredentials(
     const account = selectAccount(accounts, credentials.accountId);
     const authCode = at<string>(response.data, 'step.authToken');
     const selected = await selectAccountStep(connection, account, authCode, signal);
-    return { accountId: selected.accountId, authTokenValue: selected.authTokenValue, accounts };
+    return selected;
   }
 
   const authTokenValue = at<string>(response.data, 'step.bearerToken');
   if (!authTokenValue) {
     throw new Error(`Failed to log in. Reason: ${readErrorMessage(response.data)}`);
   }
-  return { accountId: '', authTokenValue, accounts: DEFAULT_ACCOUNTS };
+  return { accountId: '', authTokenValue };
 }
 
 /** `Authenticator.doSelectProfile`: handles the optional 4-digit profile-PIN challenge. */
@@ -220,7 +199,7 @@ export async function login(
   const authToken: AuthenticationToken = { accountId, type: 'FULL', value: profileAuthValue };
   connection.authenticate(authToken);
 
-  return { accountId, profileId: profile.id, authToken, deviceId, accounts: loginResult.accounts };
+  return { accountId, profileId: profile.id, authToken, deviceId };
 }
 
 /**
