@@ -102,6 +102,7 @@ test('a Déčko show URL searches the API at its page limit instead of asking fo
         return Response.json({ data: { searchShows: { items: [], totalCount: 0 } } });
       }
     }
+    if (String(input) === 'https://decko.ceskatelevize.cz/kouzelna-skolka') return new Response('<html></html>'); // the show page itself carries no IDEC
     throw new Error(`Unexpected request: ${input}`);
   });
   const provider = createCeskaTelevizeProvider({ enabled: true })!;
