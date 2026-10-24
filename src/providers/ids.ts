@@ -2,4 +2,5 @@
 export const PROVIDER_IDS = [
   'ceskatelevize', 'streamcz', 'iprima', 'oneplay', 'novaplus', 'tncz', 'markizaplus', 'markizavoyo',
   'jojplay', 'sledovanitv', 'tvprimadoma', 'tvbarrandov', 'tvautosalon', 'stvr', 'html5', 'youtube', 'direct',
+  'webshare', 'prehrajto',
 ] as const;
