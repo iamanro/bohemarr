@@ -4,7 +4,41 @@ import type { Writable } from 'node:stream';
 import { readFile, rename, stat, truncate, unlink, writeFile } from 'node:fs/promises';
 import { hash } from 'node:crypto';
 import type { MediaSegment } from '../types.ts';
+import { fetchResponse } from '../providers/common.ts';
 import { sleep } from './process.ts';
+
+/** A body that sends nothing for this long is a stalled connection, not a slow one. */
+export const IDLE_TIMEOUT_MS = 60_000;
+
+/**
+ * The chunks of a response body. Aborting `signal` cancels the read, and so does a pause longer
+ * than `idleMs` between two chunks, so a server that accepts the request and then hangs fails the
+ * download instead of holding its slot forever.
+ */
+export async function* readChunks(body: ReadableStream<Uint8Array>, signal: AbortSignal, idleMs = IDLE_TIMEOUT_MS): AsyncGenerator<Buffer> {
+  const reader = body.getReader();
+  const idle = Promise.withResolvers<never>();
+  let timer: NodeJS.Timeout | undefined;
+  const onAbort = (): void => { reader.cancel(signal.reason).catch(() => {}); };
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    for (;;) {
+      timer = setTimeout(() => {
+        idle.reject(new Error(`No data received for ${Math.round(idleMs / 1000)} s`));
+        reader.cancel().catch(() => {});
+      }, idleMs);
+      const { done, value } = await Promise.race([reader.read(), idle.promise]);
+      clearTimeout(timer);
+      if (done) return;
+      yield Buffer.from(value);
+    }
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener('abort', onAbort);
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
 
 /** Transient failures are retried for about two minutes of growing waits (250ms * attempt^(4/3)). */
 const SEGMENT_MAX_RETRY_ATTEMPTS = 20;
@@ -25,7 +59,7 @@ async function fetchSegmentWithRetry(url: string, headers: Record<string, string
     signal.throwIfAborted();
     let response: Response | undefined;
     try {
-      response = await fetch(url, { headers, signal });
+      response = await fetchResponse(url, signal, { headers });
     } catch (error) {
       if (signal.aborted) throw error;
       lastError = error;
@@ -79,21 +113,9 @@ async function writeSegmentBody(
   response: Response, writeStream: Writable, signal: AbortSignal, onChunk: (length: number) => void,
 ): Promise<void> {
   if (!response.body) throw new Error('Segment response has no body');
-  const reader = response.body.getReader();
-  const onAbort = (): void => { reader.cancel(signal.reason).catch(() => {}); };
-  signal.addEventListener('abort', onAbort, { once: true });
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return;
-      const buffer = Buffer.from(value);
-      await new Promise<void>((resolve, reject) => writeStream.write(buffer, error => error ? reject(error) : resolve()));
-      onChunk(buffer.length);
-    }
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
+  for await (const buffer of readChunks(response.body, signal)) {
+    await new Promise<void>((resolve, reject) => writeStream.write(buffer, error => error ? reject(error) : resolve()));
+    onChunk(buffer.length);
   }
 }
 

@@ -1,13 +1,14 @@
 import type { Config } from '../types.ts';
 import type { Cdm } from './protected-media.ts';
+import { fetchResponse } from '../providers/common.ts';
 
 function wvApiBase(config: Config): string {
   return config.wvApiUrl.endsWith('/') ? config.wvApiUrl : `${config.wvApiUrl}/`;
 }
 
 async function wvApiRequest(config: Config, path: string, body: unknown, signal: AbortSignal): Promise<unknown> {
-  const response = await fetch(new URL(path, wvApiBase(config)), {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
+  const response = await fetchResponse(new URL(path, wvApiBase(config)), signal, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(`WV API HTTP ${response.status} on /${path}`);
   return response.json();

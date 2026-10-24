@@ -10,6 +10,7 @@ import { findWidevinePsshBoxes } from './mp4-box.ts';
 import { decryptTrack } from './mp4decrypt.ts';
 import { downloadSegmentsConcat } from './segment-download.ts';
 import { runProcess, sleep } from './process.ts';
+import { fetchResponse } from '../providers/common.ts';
 
 /** Matches `DecryptionKeyObtainer`'s `DEFAULT_KEYS_MAX_RETRY_ATTEMPTS`/`DEFAULT_WAIT_ON_RETRY_MS` (drm plugin defaults: 5 / 250ms). */
 const KEY_MAX_RETRY_ATTEMPTS = 5;
@@ -54,9 +55,8 @@ async function isAlreadyComplete(doneMarkerPath: string, outputPath: string, ide
 /** Sends the CDM challenge to the provider's license server (or its custom exchange callback) and returns the raw response bytes. */
 async function exchangeLicense(license: License, challenge: Uint8Array, signal: AbortSignal): Promise<Uint8Array> {
   if (license.exchange) return license.exchange(challenge, signal);
-  const response = await fetch(license.url, {
-    method: 'POST', headers: { ...license.headers, 'Content-Type': 'application/octet-stream' },
-    body: Buffer.from(challenge), signal,
+  const response = await fetchResponse(license.url, signal, {
+    method: 'POST', headers: { ...license.headers, 'Content-Type': 'application/octet-stream' }, body: Buffer.from(challenge),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} from license server ${new URL(license.url).hostname}`);
   return new Uint8Array(await response.arrayBuffer());

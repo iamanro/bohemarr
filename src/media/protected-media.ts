@@ -1,13 +1,13 @@
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Config, DownloadProgress, License, MediaSource } from '../types.ts';
 import type { ProtectedTrack } from './mpd.ts';
 import { parseManifest, selectVideoAndAudio } from './mpd.ts';
 import { resolveHlsTracks } from './m3u8.ts';
 import { obtainAndDecryptTrack } from './track-decrypt.ts';
-import { ffmpegMux, type MuxInput } from './ffmpeg.ts';
-import { validateMediaFile } from './ffprobe.ts';
+import { muxToFile, type MuxInput } from './ffmpeg.ts';
 import { runProcess } from './process.ts';
+import { fetchResponse } from '../providers/common.ts';
 
 /** One Widevine content key: a key ID paired with the raw key bytes (hex), as returned by a CDM's license extraction step. */
 export interface ContentKey { kid: string; key: string; }
@@ -54,7 +54,7 @@ async function resolvePeriods(source: MediaSource, signal: AbortSignal): Promise
     return [{ video: selection.video, audio: selection.audio }];
   }
 
-  const response = await fetch(source.url, { headers: source.headers, signal });
+  const response = await fetchResponse(source.url, signal, { headers: source.headers });
   if (!response.ok) throw new Error(`HTTP ${response.status} fetching DASH manifest`);
   const manifestText = await response.text();
   const manifest = parseManifest(manifestText, response.url);
@@ -128,14 +128,10 @@ export async function muxPeriods(
   if (audioPath) inputs.push({ url: audioPath, kind: 'audio' });
   for (const subtitle of source.subtitles ?? []) inputs.push({ url: subtitle.url, headers: subtitle.headers, kind: 'subtitle', language: subtitle.language });
 
-  const tempPath = join(outputDir, `.${safeTitle}.tmp.${extension}`);
-  const finalPath = join(outputDir, `${safeTitle}.${extension}`);
   // The mux only copies tracks already downloaded, so its own byte count is not added on top.
-  await ffmpegMux(config, inputs, tempPath, signal, progress => {
+  const finalPath = await muxToFile(config, inputs, join(outputDir, `${safeTitle}.${extension}`), signal, progress => {
     onProgress({ bytes, progress: progress.progress });
   }, totalDurationSeconds || undefined);
-  await validateMediaFile(config, tempPath, signal);
-  await rename(tempPath, finalPath);
   await rm(workDir, { recursive: true, force: true }).catch(() => {});
   return finalPath;
 }

@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { mkdtempDisposable, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { downloadSegmentsConcat } from '../src/media/segment-download.ts';
+import { downloadSegmentsConcat, readChunks } from '../src/media/segment-download.ts';
 
 test('aborting halfway through a segment never checkpoints that segment as complete', async () => {
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-segments-'));
@@ -106,4 +106,13 @@ test('many segments leave no listener behind on the output stream', async () => 
     process.off('warning', onWarning);
     server.closeAllConnections();
   }
+});
+
+test('a body that stops sending is cut off after the idle deadline instead of holding the download forever', async () => {
+  const stalled = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(new Uint8Array([1, 2])); /* then silence */ } });
+  const received: number[] = [];
+  await assert.rejects(async () => {
+    for await (const chunk of readChunks(stalled, AbortSignal.timeout(5000), 50)) received.push(chunk.length);
+  }, /No data received/);
+  assert.deepEqual(received, [2], 'the bytes that did arrive were delivered first');
 });

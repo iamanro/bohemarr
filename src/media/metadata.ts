@@ -3,6 +3,7 @@ import { parseManifest, selectVideoAndAudio, type DashRepresentation, type Prote
 import { resolveHlsTracks } from './m3u8.ts';
 import { probeMedia, type ProbedStream } from './ffprobe.ts';
 import { normalizeLanguage } from '../providers/common.ts';
+import { fetchResponse } from '../providers/common.ts';
 
 /** Bohemarr's catalogue is Czech-market: when a source offers multiple audio languages and the
  * caller hasn't pinned one via `MediaSource.audioLanguage`, Czech is preferred if present. */
@@ -92,12 +93,12 @@ async function headContentLength(url: string, headers: Record<string, string> | 
     return value !== null && Number.isFinite(length) && length >= 0 ? length : undefined;
   };
 
-  const head = await fetch(url, { method: 'HEAD', headers, signal });
+  const head = await fetchResponse(url, signal, { method: 'HEAD', headers });
   await head.body?.cancel().catch(() => {});
   if (head.ok) return parseLength(head.headers.get('content-length'));
   if (head.status !== 405 && head.status !== 501) return undefined;
 
-  const ranged = await fetch(url, { headers: { ...headers, Range: 'bytes=0-0' }, signal });
+  const ranged = await fetchResponse(url, signal, { headers: { ...headers, Range: 'bytes=0-0' } });
   if (ranged.status === 206) {
     const match = /^bytes \d+-\d+\/(\d+)$/.exec(ranged.headers.get('content-range') ?? '');
     await ranged.body?.cancel().catch(() => {});
@@ -111,7 +112,7 @@ async function headContentLength(url: string, headers: Record<string, string> | 
 }
 
 async function inspectDash(source: MediaSource, signal: AbortSignal): Promise<Candidate | undefined> {
-  const response = await fetch(source.url, { headers: source.headers, signal });
+  const response = await fetchResponse(source.url, signal, { headers: source.headers });
   if (!response.ok) throw new Error(`HTTP ${response.status} fetching DASH manifest`);
   const manifest = parseManifest(await response.text(), response.url);
   if (manifest.live) return undefined;

@@ -1,14 +1,13 @@
-import { rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Config, DownloadProgress, MediaSource } from '../types.ts';
-import { ffmpegMux } from './ffmpeg.ts';
-import type { MuxInput } from './ffmpeg.ts';
-import { probeMedia, validateMediaFile } from './ffprobe.ts';
+import { muxToFile, type MuxInput } from './ffmpeg.ts';
+import { probeMedia } from './ffprobe.ts';
 import { resolveHlsTracks } from './m3u8.ts';
 import { parseManifest, selectVideoAndAudio } from './mpd.ts';
 import { downloadSegmentsConcat } from './segment-download.ts';
 import { muxPeriods } from './protected-media.ts';
 import { bestStream, DEFAULT_AUDIO_LANGUAGE } from './metadata.ts';
+import { fetchResponse } from '../providers/common.ts';
 
 /**
  * Downloads a clear (non-DRM) DASH `source` by explicitly selecting the best video/audio
@@ -20,7 +19,7 @@ async function downloadClearDash(
   config: Config, source: MediaSource, outputDir: string, safeTitle: string, signal: AbortSignal,
   onProgress: (progress: DownloadProgress) => void,
 ): Promise<string> {
-  const response = await fetch(source.url, { headers: source.headers, signal });
+  const response = await fetchResponse(source.url, signal, { headers: source.headers });
   if (!response.ok) throw new Error(`HTTP ${response.status} fetching DASH manifest`);
   const manifest = parseManifest(await response.text(), response.url);
   if (manifest.live) throw new Error('An ongoing DASH live stream cannot be imported');
@@ -49,12 +48,7 @@ async function downloadClearHls(
   if (selection.audioPlaylistUrl) inputs.push({ url: selection.audioPlaylistUrl, headers: source.headers, kind: 'audio' });
   for (const subtitle of source.subtitles ?? []) inputs.push({ url: subtitle.url, headers: subtitle.headers, kind: 'subtitle', language: subtitle.language });
   const ext = source.subtitles?.length ? 'mkv' : 'mp4';
-  const tempPath = join(outputDir, `.${safeTitle}.tmp.${ext}`);
-  const finalPath = join(outputDir, `${safeTitle}.${ext}`);
-  await ffmpegMux(config, inputs, tempPath, signal, onProgress, selection.video.durationSeconds || undefined);
-  await validateMediaFile(config, tempPath, signal);
-  await rename(tempPath, finalPath);
-  return finalPath;
+  return muxToFile(config, inputs, join(outputDir, `${safeTitle}.${ext}`), signal, onProgress, selection.video.durationSeconds || undefined);
 }
 
 /** Clear adaptive streams and separate file tracks share the same explicit stream-selection path. */
@@ -86,10 +80,5 @@ export async function downloadRemux(
     inputs.push({ url: subtitle.url, headers: subtitle.headers, kind: 'subtitle', language: subtitle.language });
   }
   const ext = source.subtitles?.length ? 'mkv' : 'mp4';
-  const tempPath = join(outputDir, `.${safeTitle}.tmp.${ext}`);
-  const finalPath = join(outputDir, `${safeTitle}.${ext}`);
-  await ffmpegMux(config, inputs, tempPath, signal, onProgress, media.duration);
-  await validateMediaFile(config, tempPath, signal);
-  await rename(tempPath, finalPath);
-  return finalPath;
+  return muxToFile(config, inputs, join(outputDir, `${safeTitle}.${ext}`), signal, onProgress, media.duration);
 }

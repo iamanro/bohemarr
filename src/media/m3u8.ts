@@ -1,6 +1,7 @@
 import type { ProtectedTrack } from './mpd.ts';
 import type { MediaSegment } from '../types.ts';
 import { normalizeLanguage } from '../providers/common.ts';
+import { fetchResponse } from '../providers/common.ts';
 
 export interface HlsTrack extends ProtectedTrack { kind: 'video' | 'audio'; height?: number; bandwidth?: number; averageBandwidth?: number; language?: string; }
 export interface HlsSelection { live: boolean; video: HlsTrack; audio?: HlsTrack; videoPlaylistUrl: string; audioPlaylistUrl?: string; }
@@ -138,7 +139,7 @@ function parsePlaylist(text: string, baseUrl: string): ParsedPlaylist {
 }
 
 async function fetchPlaylist(url: string, headers: Record<string, string> | undefined, signal: AbortSignal): Promise<ParsedPlaylist> {
-  const response = await fetch(url, { headers, signal });
+  const response = await fetchResponse(url, signal, { headers });
   if (!response.ok) throw new Error(`HTTP ${response.status} fetching HLS playlist`);
   const text = await response.text();
   return parsePlaylist(text, response.url);
