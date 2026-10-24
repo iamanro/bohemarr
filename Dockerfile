@@ -14,10 +14,10 @@ RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --targ
 FROM debian:trixie-slim AS ffmpeg
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils && rm -rf /var/lib/apt/lists/*
 ARG TARGETARCH
-ARG FFMPEG_BUILD=autobuild-2026-09-29-13-10
-ARG FFMPEG_VERSION=n9.0.2-14-gebafaee10a
-ARG FFMPEG_SHA256_AMD64=1ea5558621c3fdb4b0b99a1f02f881eefd7670cd70d88a8bee88edc899687552
-ARG FFMPEG_SHA256_ARM64=18f4c6d488894183632f50d4af0b4d5fd2606fd7ca7daf4f6d6fa1bd71eae3ef
+ARG FFMPEG_BUILD=autobuild-2026-10-24-13-02
+ARG FFMPEG_VERSION=n9.0.2-35-g9a9b70bb8c
+ARG FFMPEG_SHA256_AMD64=ddffcf6e3d537dd9e0039f0635261be40dd9bfdafb2ea85970173e928e024e50
+ARG FFMPEG_SHA256_ARM64=710ac178fffa266d6b197a9e3cca4d2c62f35bed70d5cf99762d40aa8a5791f9
 RUN set -eu; \
   case "${TARGETARCH:-amd64}" in \
     amd64) platform=linux64; sha="$FFMPEG_SHA256_AMD64" ;; \

@@ -3,7 +3,7 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
-// `npm run dev` proxies the API to a Bohemarr running on the default port.
+// `bun run dev:web` proxies the API to a Bohemarr running on the default port.
 export default defineConfig({
   base: "/ui/",
   plugins: [react(), tailwindcss()],
