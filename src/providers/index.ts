@@ -4,6 +4,7 @@ import { createCzechPublicProviders } from './czech-public.ts';
 import { createNovaMarkizaProviders } from './nova-markiza.ts';
 import { createPublicSiteProviders } from './public-sites.ts';
 import { createJojSledovaniProviders } from './joj-sledovani.ts';
+import { createFileHostProviders } from './file-hosts.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { releaseId } from './common.ts';
 import { PROVIDER_IDS } from './ids.ts';
@@ -13,7 +14,7 @@ import type { Config, Provider, Release } from '../types.ts';
 export function createProviders(config: Config, database: DatabaseSync): Map<string, Provider> {
   const providers = new Map<string, Provider>();
   for (const factory of [createPrimaProviders, createOneplayProviders, createCzechPublicProviders,
-    createNovaMarkizaProviders, createPublicSiteProviders, createJojSledovaniProviders]) {
+    createNovaMarkizaProviders, createPublicSiteProviders, createJojSledovaniProviders, createFileHostProviders]) {
     for (const provider of factory(config.providers, database)) {
       if (providers.has(provider.id)) throw new Error(`Duplicate provider ID: ${provider.id}`);
       if (!(PROVIDER_IDS as readonly string[]).includes(provider.id)) throw new Error(`Provider ID missing from PROVIDER_IDS: ${provider.id}`);

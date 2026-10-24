@@ -25,6 +25,8 @@ const ACCOUNTS: Record<string, string[]> = {
   jojplay: ["USERNAME", "PASSWORD"],
   sledovanitv: ["USERNAME", "PASSWORD", "DEVICE_ID", "PROFILE", "COOKIES"],
   tvbarrandov: ["USERNAME", "PASSWORD"],
+  webshare: ["USERNAME", "PASSWORD"],
+  prehrajto: ["USERNAME", "PASSWORD"],
   youtube: ["CLIENT", "COOKIES", "PO_TOKEN", "VISITOR_DATA", "PLAYER_ID"],
 }
 const SECRET = /PASSWORD|API_KEY|PIN|TOKEN|COOKIES/
