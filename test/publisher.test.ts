@@ -131,7 +131,7 @@ async function fixture() {
     seeder: { url: `http://127.0.0.1:${address.port}`, userpass: 'seeder:secret' } };
   const config: Config = {
     host: '127.0.0.1', port: 0, apiKey: 'k'.repeat(32), publicUrl: 'http://127.0.0.1', dataDir: dir.path, downloadsDir: dir.path,
-    concurrency: 1, ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'http://unused.invalid',
+    concurrency: 1, requestRate: 100, ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'http://unused.invalid',
     categories: ['tv'], providers: {}, arrs: [], vltava: publishing,
   };
   const store = new Store(':memory:');

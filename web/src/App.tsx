@@ -197,6 +197,7 @@ function Dashboard({ data, onSignOut }: { data: Settings; onSignOut: () => void 
             <div className="grid gap-3 sm:grid-cols-2">
               {field("CATEGORIES", "Categories (comma-separated)")}
               {field("CONCURRENCY", "Simultaneous downloads (1–32)")}
+              {field("REQUEST_RATE", "Requests per second to one service (1–100)")}
             </div>
           </Section>
         </TabsContent>

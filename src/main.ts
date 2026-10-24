@@ -7,8 +7,10 @@ import { createMediaDownloader } from './media/download.ts';
 import { createServer } from './server.ts';
 import { configureArrs } from './arr-setup.ts';
 import { Publisher } from './publisher.ts';
+import { setRequestRate } from './providers/common.ts';
 
 const config = await loadConfig();
+setRequestRate(config.requestRate);
 const store = new Store(await databasePath(config.dataDir));
 const providers = createProviders(config, store.database);
 const queue = new Queue(store, config, providers, createMediaDownloader(config));

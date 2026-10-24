@@ -148,6 +148,8 @@ export interface Config {
   dataDir: string;
   downloadsDir: string;
   concurrency: number;
+  /** Upstream requests per second to one host. */
+  requestRate: number;
   ffmpeg: string;
   ffprobe: string;
   mp4decrypt: string;

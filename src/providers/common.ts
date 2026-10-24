@@ -1,11 +1,32 @@
 import { hash } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { MediaSource, Release } from '../types.ts';
 
 /** Every upstream request gives up after this long, whatever the caller's own deadline. */
 export const REQUEST_TIMEOUT_MS = 45_000;
 
-/** `fetch` with the request deadline; the status is the caller's to judge. */
-export function fetchResponse(url: string | URL | Request, signal: AbortSignal, init: RequestInit = {}): Promise<Response> {
+/** Upstream requests per second and host; see `setRequestRate`. */
+let minSpacingMs = 0; // no limit until main.ts applies REQUEST_RATE; tests run unthrottled
+/** When the next request to each host may start (epoch ms). */
+const nextSlot = new Map<string, number>();
+
+/** At most `perSecond` requests go to one host per second; the rest wait their turn. Set from REQUEST_RATE. */
+export function setRequestRate(perSecond: number): void {
+  minSpacingMs = 1000 / perSecond;
+}
+
+async function waitForSlot(host: string, signal: AbortSignal): Promise<void> {
+  const now = Date.now();
+  for (const [other, at] of nextSlot) if (at <= now) nextSlot.delete(other);
+  const at = Math.max(now, nextSlot.get(host) ?? 0);
+  nextSlot.set(host, at + minSpacingMs);
+  // A caller aborted while waiting gets its own reason, not the timer's AbortError.
+  if (at > now) await sleep(at - now, undefined, { signal }).catch(() => signal.throwIfAborted());
+}
+
+/** `fetch` with the request deadline and the per-host rate limit; the status is the caller's to judge. */
+export async function fetchResponse(url: string | URL | Request, signal: AbortSignal, init: RequestInit = {}): Promise<Response> {
+  await waitForSlot(new URL(url instanceof Request ? url.url : url).hostname, signal);
   return fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
 }
 
