@@ -157,7 +157,7 @@ async function walkNumberedByPosition(
   const chunks: Release[][] = [];
   let index = startIndex;
 
-  for (let offset = lo; offset >= -step; offset -= step) {
+  for (let offset = lo; offset >= 0; offset -= step) {
     const $page = loadHtml(await fetchTextRetry(site.episodeListUrl(contentId, offset), signal, 5));
     const { releases: pageReleases, count } = parseEpisodeItems($page, select($page, site.selEpisodes).toArray(), program, index, site);
     chunks.push(pageReleases);

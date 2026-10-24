@@ -18,9 +18,12 @@ export class OneplayConnectionPool {
   private authToken: AuthenticationToken | null = null;
   private active = true;
   private readonly device: Device;
+  private readonly connect: (clientId: string, device: Device) => OneplayConnection;
 
-  constructor(capacity: number, device: Device) {
+  /** `connect` builds a connection for a slot; tests pass a fake. */
+  constructor(capacity: number, device: Device, connect = (clientId: string, device: Device) => new OneplayConnection(clientId, device)) {
     this.device = device;
+    this.connect = connect;
     this.slots = Array.from({ length: capacity }, (_, idx) => ({ idx, connection: null, closeTimer: undefined }));
     this.acquired = new Array(capacity).fill(false);
   }
@@ -38,7 +41,7 @@ export class OneplayConnectionPool {
         try {
           if (!slot.connection?.isOpen()) {
             slot.connection?.close();
-            const connection = new OneplayConnection(randomUUID(), this.device);
+            const connection = this.connect(randomUUID(), this.device);
             slot.connection = connection;
             await connection.open(signal);
             if (this.authToken) connection.authenticate(this.authToken);

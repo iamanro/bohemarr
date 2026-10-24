@@ -81,6 +81,8 @@ export async function fetchTextRetry(url: string | URL, signal: AbortSignal, ret
     try {
       return await fetchText(url, signal);
     } catch (error) {
+      // Retrying cannot help an aborted caller or a page the server says does not exist.
+      if (signal.aborted || (error instanceof Error && /^HTTP 4\d\d\b/.test(error.message))) throw error;
       lastError = error;
     }
   }
