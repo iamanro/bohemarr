@@ -1,7 +1,8 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Catalogue, CatalogueQuery, Provider, Release } from '../types.ts';
-import { cached, empty, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
-import { absUrl, fetchDocument, loadHtml, playerTracks, queryParams, readInlineObject } from './nova-markiza-utils.ts';
+import * as cheerio from 'cheerio';
+import { absUrl, cached, empty, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import { fetchDocument, playerTracks, queryParams, readInlineObject } from './nova-markiza-utils.ts';
 import { tracksToSources } from './nova-markiza-media.ts';
 
 /** Ported from `TNCZEngine` (`media_engine.tncz`). No upstream `drm_engine.tncz` was ever registered. */
@@ -128,7 +129,7 @@ async function* listEpisodes(program: Program, signal: AbortSignal): AsyncGenera
   for (let page = 2; ; page++) {
     const url = `https://tn.nova.cz/api/v1/episodes/more?channel=${channel}&limit=${limit}&page=${page}`
       + `&filter=%7B%22show%22%3A%22${show}%22%7D&content=${content}`;
-    $ = loadHtml(await fetchText(url, signal));
+    $ = cheerio.load(await fetchText(url, signal));
     yield* parseEpisodes($, program);
     if ($(SEL_EPISODES_LOAD_MORE).length === 0) break;
   }

@@ -14,7 +14,7 @@
  * calls, only over the supported REST transport instead of the undocumented channel framing.
  */
 import type { CatalogueQuery, MediaSource, Program, Provider, Release } from '../types.ts';
-import { cached, each, fetchJson, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import { cached, each, fetchJson, fetchResponse, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { AccountSession, SessionRejected, type SessionSource } from './account-session.ts';
 
 const APP_KEY = 'AIzaSyB02udgMkNLADkLJ_w5YNBMR2VR1WHfusI';
@@ -293,11 +293,10 @@ async function requestSourceUrl(videoId: string, idToken: string | undefined, si
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Referer: 'https://play.joj.sk/' };
   if (idToken) headers.Authorization = `Bearer ${idToken}`;
 
-  const response = await fetch(URI_SOURCES, {
+  const response = await fetchResponse(URI_SOURCES, signal, {
     method: 'POST',
     headers,
     body: sourceUrlRequestBody(videoId),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(URI_SOURCES).hostname}`);
 

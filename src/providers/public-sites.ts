@@ -17,7 +17,7 @@ import * as cheerio from 'cheerio';
 import type { Cheerio, CheerioAPI } from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { Catalogue, CatalogueQuery, MediaKind, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { at, bracketSubstring, empty, fetchJson, fetchText, mediaType, normalize, releaseId } from './common.ts';
+import { at, bracketSubstring, empty, fetchJson, fetchResponse, fetchText, mediaType, normalize, releaseId } from './common.ts';
 import { isYouTubeUrl, maybeTransformYouTubeUrl, resolveYouTube } from './public-sites-youtube.ts';
 import { resolveOnNetworkEmbed } from './public-sites-onnetwork.ts';
 import { authenticateBarrandov, fetchBarrandovDocument, parseBarrandovLocalSources } from './public-sites-barrandov.ts';
@@ -26,10 +26,6 @@ import { AccountSession, SessionRejected } from './account-session.ts';
 // ---------------------------------------------------------------------------
 // Generic helpers shared across providers in this file
 // ---------------------------------------------------------------------------
-
-function absUrl(base: string, href: string): string {
-  return new URL(href, base).toString();
-}
 
 function basenameNoExt(pathname: string): string {
   const base = pathname.split('/').filter(Boolean).pop() ?? '';
@@ -83,7 +79,7 @@ async function fetchPrimaDomaPrograms(signal: AbortSignal): Promise<ScrapedProgr
     const title = $el.find('h3').first().text();
     const href = $el.attr('href');
     if (href && title) {
-      const url = absUrl(URL_PRIMADOMA_PROGRAMS, href);
+      const url = new URL(href, URL_PRIMADOMA_PROGRAMS).href;
       programs.push({ id: url, title, kind: 'tv', url });
     }
   });
@@ -123,7 +119,7 @@ function parsePrimaDomaEpisodesList($: CheerioAPI, container: Cheerio<AnyNode>, 
       title = (title.slice(0, programTitleMatch.index) + title.slice(programTitleMatch.index + programTitleMatch[0].length)).trim();
     }
 
-    const url = absUrl(program.url, href);
+    const url = new URL(href, program.url).href;
     releases.push({
       id: releaseId('tvprimadoma', url), provider: 'tvprimadoma', title: title.trim() || program.title,
       url, kind: 'tv', series: program.title, season, episode,
@@ -154,7 +150,7 @@ async function* primaDomaReleases(program: ScrapedProgram, signal: AbortSignal):
   const nextHref = pagination.find('[aria-current]').first().next().find('a').first().attr('href');
   if (!nextHref || !Number.isFinite(maxPage)) return;
 
-  const urlBase = absUrl(program.url, nextHref).replace(/\?page=\d+/, '?page=%PAGE%');
+  const urlBase = new URL(nextHref, program.url).href.replace(/\?page=\d+/, '?page=%PAGE%');
   for (let page = 2; page <= maxPage; page++) {
     const pageHtml = await fetchText(urlBase.replace('%PAGE%', String(page)), signal);
     const $page = cheerio.load(pageHtml);
@@ -178,7 +174,7 @@ async function resolveTvPrimaDoma(release: Release, signal: AbortSignal): Promis
   const scriptSrc = $('.container div > script').first().attr('src');
   if (!scriptSrc) throw new Error('TVPrimaDoma: unable to find embedding script on the episode page');
 
-  return resolveOnNetworkEmbed(absUrl(release.url, scriptSrc), URL_PRIMADOMA_REFERER, signal);
+  return resolveOnNetworkEmbed(new URL(scriptSrc, release.url).href, URL_PRIMADOMA_REFERER, signal);
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +197,7 @@ async function fetchBarrandovPrograms(signal: AbortSignal): Promise<ScrapedProgr
     const href = $el.find('a.show-box__container').first().attr('href');
     const title = $el.find('.show-box__title').first().text();
     if (href && title) {
-      const url = absUrl(URL_BARRANDOV_PROGRAMS, href);
+      const url = new URL(href, URL_BARRANDOV_PROGRAMS).href;
       programs.push({ id: url, title, kind: 'tv', url });
     }
   });
@@ -232,7 +228,7 @@ function parseBarrandovEpisodesPage($: CheerioAPI, program: ScrapedProgram): Rel
     const href = $el.find('a.show-box__container').first().attr('href');
     const timestamp = $el.find('.show-box__timestamp').first().text();
     if (!href) return;
-    const url = absUrl(program.url, href);
+    const url = new URL(href, program.url).href;
     const title = maybeImproveBarrandovTitle(program, url, timestamp);
     releases.push({ id: releaseId('tvbarrandov', url), provider: 'tvbarrandov', title, url, kind: 'tv', series: program.title });
   });
@@ -301,7 +297,7 @@ async function findBarrandovYouTubeFallback(originalUrl: string, signal: AbortSi
 async function searchBarrandovYouTubeChannel(query: string, programNameLower: string, dateString: string, signal: AbortSignal): Promise<string | undefined> {
   const searchUrl = `https://www.youtube.com/c/TelevizeBarrandovOfficial/search?query=${encodeURIComponent(query)}`;
   // SOCS=CAI is YouTube's own answer to its EU consent page (as yt-dlp sends it); fetch keeps no cookies.
-  const response = await fetch(searchUrl, { headers: { Cookie: 'SOCS=CAI' }, signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) });
+  const response = await fetchResponse(searchUrl, signal, { headers: { Cookie: 'SOCS=CAI' } });
   const body = await response.text();
   if (new URL(response.url).hostname === 'consent.youtube.com') return undefined; // still blocked by consent wall
 
@@ -381,7 +377,7 @@ async function resolveTvBarrandov(
     const sourceElements = videoEl.find('source').toArray()
       .map((el) => ({ src: $(el).attr('src') ?? '', res: $(el).attr('res') ?? '', type: $(el).attr('type') ?? '' }))
       .filter((s) => s.src)
-      .map((s) => ({ ...s, src: absUrl(release.url, s.src) }));
+      .map((s) => ({ ...s, src: new URL(s.src, release.url).href }));
 
     const sources = parseBarrandovLocalSources(sourceElements);
     if (sources.length > 0) return sources;
@@ -389,7 +385,7 @@ async function resolveTvBarrandov(
 
   if (!uriToProcess) {
     const embedSrc = $('.video-responsive > iframe').first().attr('src');
-    if (embedSrc) uriToProcess = absUrl(release.url, embedSrc);
+    if (embedSrc) uriToProcess = new URL(embedSrc, release.url).href;
   }
 
   if (uriToProcess) {
@@ -435,7 +431,7 @@ async function fetchAutosalonPrograms(signal: AbortSignal): Promise<ScrapedProgr
       if (!href || AUTOSALON_IGNORED_HREFS.includes(href)) continue;
       if (el.text().trim().toLowerCase() !== 'epizody') continue;
 
-      const url = absUrl(URL_AUTOSALON_HOME, href);
+      const url = new URL(href, URL_AUTOSALON_HOME).href;
       programs.push({ id: url, title, kind: 'tv', url });
     }
   });
@@ -459,7 +455,7 @@ async function fetchAutosalonSeasons(program: ScrapedProgram, signal: AbortSigna
     const $el = $(el);
     const href = $el.attr('href');
     const title = $el.find('.title').first().text();
-    if (href) seasons.push({ url: absUrl(program.url, href), title });
+    if (href) seasons.push({ url: new URL(href, program.url).href, title });
   });
 
   if (seasons.length === 0) seasons.push({ url: program.url, title: '' });
@@ -507,7 +503,7 @@ function parseAutosalonEpisodesPage($: CheerioAPI, program: ScrapedProgram, seas
 
     if (date) text = text ? `${text} (${date})` : date;
 
-    const url = absUrl(program.url, href);
+    const url = new URL(href, program.url).href;
     releases.push({
       id: releaseId('tvautosalon', url), provider: 'tvautosalon', title: text || program.title,
       url, kind: 'tv', series: program.title, season, episode,
@@ -524,7 +520,7 @@ async function* autosalonSeasonReleases(program: ScrapedProgram, season: Autosal
   let hasMore = true;
 
   while (hasMore) {
-    const pageUrl = page === 1 ? season.url : absUrl(season.url, `${new URL(season.url).pathname.replace(/\/$/, '')}/${page}`);
+    const pageUrl = page === 1 ? season.url : new URL(`${new URL(season.url).pathname.replace(/\/$/, '')}/${page}`, season.url).href;
     const html = await fetchText(pageUrl, signal);
     const $ = cheerio.load(html);
 
@@ -564,7 +560,7 @@ async function resolveTvAutosalon(release: Release, signal: AbortSignal): Promis
   if (!scriptSrc) throw new Error('TVAutosalon: unable to find embedding script on the episode page');
 
   const referer = `${new URL(release.url).origin}/`;
-  return resolveOnNetworkEmbed(absUrl(release.url, scriptSrc), referer, signal);
+  return resolveOnNetworkEmbed(new URL(scriptSrc, release.url).href, referer, signal);
 }
 
 // ---------------------------------------------------------------------------
@@ -633,14 +629,14 @@ async function resolveHtml5(url: string, config: ProviderConfig, signal: AbortSi
     const $video = $(video);
     const directSrc = $video.attr('src');
     if (directSrc) {
-      const sourceUrl = absUrl(url, directSrc);
+      const sourceUrl = new URL(directSrc, url).href;
       sources.push({ url: sourceUrl, type: mediaType(sourceUrl), headers: config.headers });
     }
 
     $video.find('source').each((_j, sourceEl) => {
       const src = $(sourceEl).attr('src');
       if (!src) return;
-      const sourceUrl = absUrl(url, src);
+      const sourceUrl = new URL(src, url).href;
       const mime = $(sourceEl).attr('type') ?? '';
       const type = mime.includes('mpegurl') ? 'hls' : mime.includes('dash') ? 'dash' : mediaType(sourceUrl);
       sources.push({ url: sourceUrl, type, headers: config.headers });

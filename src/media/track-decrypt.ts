@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Config, License, MediaSegment } from '../types.ts';
 import type { ProtectedTrack } from './mpd.ts';
 import type { Cdm, ContentKey } from './protected-media.ts';
+import { fetchSegment } from './segment-download.ts';
 import { findWidevinePsshBoxes } from './mp4-box.ts';
 import { decryptTrack } from './mp4decrypt.ts';
 import { downloadSegmentsConcat } from './segment-download.ts';
@@ -14,27 +15,6 @@ import { runProcess, sleep } from './process.ts';
 const KEY_MAX_RETRY_ATTEMPTS = 5;
 const KEY_RETRY_BASE_MS = 250;
 
-/**
- * Fetches a single (optionally range-restricted) `MediaSegment`, enforcing the same strictness as
- * `downloadSegmentsConcat`: a ranged request that the server silently serves in full (200 instead
- * of 206) is treated as an error rather than scanned as if it were just the requested bytes.
- */
-async function fetchSegment(segment: MediaSegment, headers: Record<string, string> | undefined, signal: AbortSignal): Promise<Buffer> {
-  const requestHeaders = { ...headers };
-  if (segment.range) requestHeaders.Range = `bytes=${segment.range.start}-${segment.range.start + segment.range.length - 1}`;
-  const response = await fetch(segment.url, { headers: requestHeaders, signal });
-  if (segment.range) {
-    if (response.status !== 206) throw new Error(`HTTP ${response.status} fetching ranged segment (expected 206)`);
-  } else if (!response.ok) {
-    throw new Error(`HTTP ${response.status} fetching initialization segment`);
-  }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (segment.range && buffer.length !== segment.range.length) {
-    throw new Error(`Ranged segment returned ${buffer.length} bytes, expected ${segment.range.length}`);
-  }
-  return buffer;
-}
-
 /** Prefers a provider-supplied PSSH, then the manifest's own ContentProtection/EXT-X-KEY PSSH, then scans the initialization segment as a last resort. */
 async function resolveTrackPssh(
   license: License, track: ProtectedTrack, headers: Record<string, string> | undefined, signal: AbortSignal,
@@ -42,7 +22,8 @@ async function resolveTrackPssh(
   if (license.pssh?.length) return license.pssh[0] ?? '';
   if (track.pssh.length) return track.pssh[0] ?? '';
   if (!track.initSegment) throw new Error('Cannot locate a Widevine PSSH: track has no initialization segment');
-  const buffer = await fetchSegment(track.initSegment, headers, signal);
+  // Init segments are a few KB; the shared fetcher brings its retries and byte-range checks.
+  const buffer = Buffer.from(await (await fetchSegment(track.initSegment, headers, signal)).arrayBuffer());
   const found = findWidevinePsshBoxes(buffer);
   if (!found.length) throw new Error('No Widevine PSSH found in the manifest or initialization segment');
   return found[0] ?? '';

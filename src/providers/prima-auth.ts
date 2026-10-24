@@ -10,7 +10,7 @@
 import { createHmac } from 'node:crypto';
 import JSON5 from 'json5';
 import type { ProviderConfig } from '../types.ts';
-import { bracketSubstring, fetchText } from './common.ts';
+import { bracketSubstring, fetchResponse, fetchText } from './common.ts';
 import { base64url, get, Nuxt, PrimaAuthError, findByKey } from './prima-common.ts';
 import { AccountSession, type SessionGrant, type SessionSource } from './account-session.ts';
 
@@ -138,11 +138,10 @@ export class PrimaAuthenticator {
       password: this.password!,
     }).toString();
 
-    const response = await fetch(URL_SESSION_CREATE, {
+    const response = await fetchResponse(URL_SESSION_CREATE, signal, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body,
-      signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
     });
 
     if (response.status !== 200) {

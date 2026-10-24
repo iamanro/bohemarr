@@ -3,7 +3,7 @@ import * as cheerio from 'cheerio';
 import { XMLParser } from 'fast-xml-parser';
 import type { CatalogueQuery, MediaSource, Program, Provider, ProviderConfig, Release } from '../types.ts';
 import { AccountSession, SessionRejected } from './account-session.ts';
-import { at, empty, fetchText, releaseId } from './common.ts';
+import { at, empty, fetchResponse, fetchText, releaseId } from './common.ts';
 
 /**
  * Webshare.cz and Přehraj.to: file hosts searched by file name. Every search hit is one Program
@@ -164,11 +164,10 @@ export function parsePrehrajtoSources(html: string): MediaSource[] {
 
 async function loginPrehrajto(username: string, password: string, signal: AbortSignal): Promise<string> {
   // ponytail: the Nette form's success is inferred from a redirect with cookies; unverified against a real account.
-  const response = await fetch(`${PREHRAJTO}/?frm=loginDialog-login-loginForm`, {
+  const response = await fetchResponse(`${PREHRAJTO}/?frm=loginDialog-login-loginForm`, signal, {
     method: 'POST', redirect: 'manual',
     headers: { 'User-Agent': USER_AGENT, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ email: username, password, remember_login: 'on', _submit: 'Přihlásit se', _do: 'loginDialog-login-loginForm-submit' }),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
   });
   const cookie = response.headers.getSetCookie().map(value => value.split(';', 1)[0]).join('; ');
   await response.body?.cancel();

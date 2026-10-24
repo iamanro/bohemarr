@@ -48,7 +48,7 @@ async function fetchSegmentWithRetry(url: string, headers: Record<string, string
  * the range and would return the whole resource) or a mismatched `Content-Range` is a hard error,
  * never silently downloaded and spliced in as if it were the requested slice.
  */
-async function fetchSegment(segment: MediaSegment, headers: Record<string, string> | undefined, signal: AbortSignal): Promise<Response> {
+export async function fetchSegment(segment: MediaSegment, headers: Record<string, string> | undefined, signal: AbortSignal): Promise<Response> {
   const range = segment.range;
   const requestHeaders = range ? { ...headers, Range: `bytes=${range.start}-${range.start + range.length - 1}` } : headers;
   const response = await fetchSegmentWithRetry(segment.url, requestHeaders, signal);

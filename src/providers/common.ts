@@ -1,8 +1,16 @@
 import { hash } from 'node:crypto';
 import type { MediaSource, Release } from '../types.ts';
 
+/** Every upstream request gives up after this long, whatever the caller's own deadline. */
+export const REQUEST_TIMEOUT_MS = 45_000;
+
+/** `fetch` with the request deadline; the status is the caller's to judge. */
+export function fetchResponse(url: string | URL | Request, signal: AbortSignal, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
+}
+
 export async function fetchText(url: string | URL, signal: AbortSignal, init: RequestInit = {}): Promise<string> {
-  const response = await fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) });
+  const response = await fetchResponse(url, signal, init);
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(url).hostname}`);
   return response.text();
 }
@@ -102,6 +110,16 @@ export function bracketSubstring(text: string, fromIndex: number, open = '{', cl
   }
 
   return '';
+}
+
+/** `href` resolved against `base`, as jsoup's `absUrl`: `undefined` for a missing or malformed value. */
+export function absUrl(base: string, href: string | undefined): string | undefined {
+  if (!href) return undefined;
+  try {
+    return new URL(href, base).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 export function releaseId(provider: string, url: string): string {

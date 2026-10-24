@@ -16,7 +16,7 @@
  * `Provider.entries` and resolved through `resolve()` below.
  */
 import type { License, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { fetchText, mediaType } from './common.ts';
+import { fetchResponse, fetchText, mediaType } from './common.ts';
 import { AccountSession, SessionRejected, type SessionSource } from './account-session.ts';
 
 const API_BASE = 'https://sledovanitv.cz/';
@@ -61,10 +61,9 @@ async function apiRequest(
   const cookies = ['_nss=1'];
   if (sessionId) cookies.push(`PHPSESSID=${sessionId}`);
 
-  const response = await fetch(url, {
+  const response = await fetchResponse(url, signal, {
     headers: { 'User-Agent': USER_AGENT, Cookie: cookies.join('; ') },
     redirect: 'manual',
-    signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
   });
 
   const contentType = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase();
