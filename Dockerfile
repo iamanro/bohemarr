@@ -18,11 +18,9 @@ ARG FFMPEG_BUILD=autobuild-2026-10-24-13-02
 ARG FFMPEG_VERSION=n9.0.2-35-g9a9b70bb8c
 ARG FFMPEG_SHA256_AMD64=ddffcf6e3d537dd9e0039f0635261be40dd9bfdafb2ea85970173e928e024e50
 ARG FFMPEG_SHA256_ARM64=710ac178fffa266d6b197a9e3cca4d2c62f35bed70d5cf99762d40aa8a5791f9
-# Where the tarballs are downloaded from. BtbN removes its autobuilds after a few weeks, so a copy of
-# both files in a release of this repository keeps the build working:
-#   gh release create ffmpeg-${FFMPEG_VERSION} --latest=false *.tar.xz
-#   docker build --build-arg FFMPEG_BASE_URL=https://github.com/iamanro/bohemarr/releases/download/ffmpeg-${FFMPEG_VERSION} .
-ARG FFMPEG_BASE_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_BUILD}
+# The tarballs come from this repository's release ffmpeg-${FFMPEG_VERSION}, a copy of the BtbN build
+# FFMPEG_BUILD: BtbN removes its autobuilds after a few weeks. Pass the BtbN URL to build from the original.
+ARG FFMPEG_BASE_URL=https://github.com/iamanro/bohemarr/releases/download/ffmpeg-${FFMPEG_VERSION}
 RUN set -eu; \
   case "${TARGETARCH:-amd64}" in \
     amd64) platform=linux64; sha="$FFMPEG_SHA256_AMD64" ;; \
