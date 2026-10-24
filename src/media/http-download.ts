@@ -68,7 +68,8 @@ export async function downloadDirectFile(
   const validator = requestHeaders['If-Range'];
   if (resumeFrom > 0 && (response.status === 206 || response.status === 416)) {
     const returned = validator?.startsWith('"') ? response.headers.get('etag') : response.headers.get('last-modified');
-    if ((returned && returned !== validator) || (response.status === 416 && returned !== validator)) {
+    // A 416 rarely echoes the validator; its `Content-Range: bytes */total` below proves the match instead.
+    if (returned && returned !== validator) {
       await response.body?.cancel();
       throw new Error('Remote media changed while resuming the download');
     }
