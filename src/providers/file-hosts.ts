@@ -121,7 +121,8 @@ function createWebshareProvider(config: ProviderConfig | undefined): Provider {
       const response = await webshareApi('file_link', { ident, download_type: 'video_stream', force_https: '1', ...(wst && { wst }) }, signal);
       return [{ url: String(response.link), type: 'file', headers: { 'User-Agent': USER_AGENT } }];
     } catch (error) {
-      if (wst) throw new SessionRejected((error as Error).message);
+      // Only a refused token earns a new login; a timeout or a missing file does not.
+      if (wst && /WST|token|login/i.test((error as Error).message)) throw new SessionRejected((error as Error).message);
       throw error;
     }
   };

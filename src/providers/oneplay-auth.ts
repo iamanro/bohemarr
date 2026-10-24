@@ -228,10 +228,14 @@ export async function login(
  * is reused while Oneplay still accepts it; the account and profile come from the credentials,
  * which never change while the process runs.
  */
+/** A token verified this recently is used without another probe request. */
+const PROBE_TTL_MS = 60_000;
+
 export class OneplaySession {
   private readonly pool: OneplayConnectionPool;
   private readonly credentials: OneplayCredentials;
   private lock: Promise<void> = Promise.resolve();
+  private verifiedAt = 0;
 
   constructor(pool: OneplayConnectionPool, credentials: OneplayCredentials) {
     this.pool = pool;
@@ -240,6 +244,7 @@ export class OneplaySession {
 
   async ensureAuthenticated(signal: AbortSignal): Promise<void> {
     signal.throwIfAborted();
+    if (this.pool.isAuthenticated() && Date.now() - this.verifiedAt < PROBE_TTL_MS) return;
     const previous = this.lock;
     let release!: () => void;
     this.lock = new Promise((resolve) => {
@@ -249,13 +254,15 @@ export class OneplaySession {
     try {
       signal.throwIfAborted();
       if (this.pool.isAuthenticated()) {
+        if (Date.now() - this.verifiedAt < PROBE_TTL_MS) return; // verified by the caller that held the lock
         const probe = await this.pool.withConnection(signal, connection =>
           connection.request('setting.display', { payload: { screen: 'account' } }, signal));
-        if (probe.status === 'Ok') return;
+        if (probe.status === 'Ok') { this.verifiedAt = Date.now(); return; }
         this.pool.authenticate(null);
       }
       const authData = await this.pool.withConnection(signal, (connection) => login(connection, this.credentials, signal));
       this.pool.authenticate(authData.authToken);
+      this.verifiedAt = Date.now();
     } finally {
       release();
     }
