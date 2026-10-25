@@ -12,7 +12,7 @@ export const DEFAULT_AUDIO_LANGUAGE = 'cs';
 /** The result of inspecting a release's alternative `MediaSource`s: the best one (by actual
  * discovered video height, then bandwidth) plus honest, never-fabricated metadata about it.
  * `source` carries ephemeral, short-lived URLs/headers and MUST NEVER be persisted. */
-export interface MediaMetadata {
+interface MediaMetadata {
   source: MediaSource;
   height?: number;
   size?: number;

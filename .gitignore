@@ -4,8 +4,6 @@ node_modules/
 # Build output
 /web/dist/
 *.tsbuildinfo
-# An old tsc build; nothing writes it any more
-/dist/
 
 # Local runtime state: the API key, the database, downloads
 /data/

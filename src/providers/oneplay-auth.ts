@@ -13,17 +13,17 @@ export interface OneplayCredentials {
 }
 
 /** The parts of an Oneplay account the login reads: which one to pick. */
-export interface OneplayAccount {
+interface OneplayAccount {
   readonly id: string;
   readonly isActive: boolean;
 }
 
-export interface OneplayProfile {
+interface OneplayProfile {
   readonly id: string;
   readonly name: string;
 }
 
-export interface AuthenticationData {
+interface AuthenticationData {
   readonly accountId: string;
   readonly profileId: string;
   readonly authToken: AuthenticationToken;
@@ -172,11 +172,7 @@ async function fetchCurrentDeviceId(connection: OneplayConnection, signal: Abort
  * client's `CredentialsManager` has no equivalent here), so every call performs a fresh
  * email+password login; `OneplaySession` below avoids repeating it once already authenticated.
  */
-export async function login(
-  connection: OneplayConnection,
-  credentials: OneplayCredentials,
-  signal: AbortSignal,
-): Promise<AuthenticationData> {
+async function login(connection: OneplayConnection, credentials: OneplayCredentials, signal: AbortSignal): Promise<AuthenticationData> {
   const loginResult = await loginWithCredentials(connection, credentials, signal);
   const accountId = loginResult.accountId;
   connection.authenticate({ accountId, type: 'NO_PROFILE', value: loginResult.authTokenValue });

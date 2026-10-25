@@ -48,7 +48,7 @@ function applyProgressLine(
  * local decrypted track files for the encrypted-DASH/HLS final assembly step) into `outputPath`,
  * stream-copying video/audio and converting subtitles only when the container requires it.
  */
-export async function ffmpegMux(
+async function ffmpegMux(
   config: Config,
   inputs: MuxInput[],
   outputPath: string,

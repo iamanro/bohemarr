@@ -18,11 +18,11 @@ export interface DashRepresentation extends ProtectedTrack {
   language?: string;
 }
 
-export interface DashPeriod {
+interface DashPeriod {
   representations: DashRepresentation[];
 }
 
-export interface DashManifest {
+interface DashManifest {
   live: boolean;
   periods: DashPeriod[];
 }

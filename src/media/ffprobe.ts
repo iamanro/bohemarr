@@ -19,7 +19,7 @@ export interface ProbedStream {
   bit_rate?: string;
   tags?: { language?: string };
 }
-export interface MediaProbe {
+interface MediaProbe {
   streams: ProbedStream[];
   duration?: number;
   size?: number;
