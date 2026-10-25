@@ -1,7 +1,6 @@
 import type { MediaSource } from '../types.ts';
-import { mediaType } from './common.ts';
+import { axdrmLicense, mediaType } from './common.ts';
 import type { PlayerTrack } from './nova-markiza-utils.ts';
-import { axdrmLicense } from './nova-markiza-drm.ts';
 
 /**
  * Ported from the identical `getMedia` loop present in `NovaPlusEngine`,

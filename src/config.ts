@@ -40,7 +40,7 @@ export const SECRET_SETTING = /PASSWORD|API_KEY|COOKIES|PIN|TOKEN/;
 /** The settings saved from the web UI, used for every variable the environment leaves unset. */
 let saved: Record<string, string> = {};
 
-export function settingsPath(dataDir: string): string {
+function settingsPath(dataDir: string): string {
   return resolve(dataDir, 'settings.json');
 }
 

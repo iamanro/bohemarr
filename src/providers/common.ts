@@ -1,6 +1,6 @@
 import { hash } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
-import type { MediaSource, Release } from '../types.ts';
+import type { License, MediaSource, Release } from '../types.ts';
 
 /** A host that sends no response headers within this long has failed, whatever the caller's own deadline. */
 let requestTimeoutMs = 45_000;
@@ -174,6 +174,14 @@ export function absUrl(base: string, href: string | undefined): string | undefin
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The Widevine license request of the AxDRM service that Nova, Markíza/VOYO and Prima+ share: the
+ * challenge goes to one endpoint, authorised by a per-media `X-AxDRM-Message` token and the site's `Referer`.
+ */
+export function axdrmLicense(token: string, referer: string): License {
+  return { url: 'https://drm-widevine-licensing.axprod.net/AcquireLicense', headers: { Referer: referer, 'X-AxDRM-Message': token } };
 }
 
 export function releaseId(provider: string, url: string): string {

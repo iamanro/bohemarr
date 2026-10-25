@@ -17,7 +17,7 @@ const TITLE_INTERVAL_MS = 1000;
 const TITLE_READ_LIMIT = 16 * 1024;
 
 /** Clock and wait used by the index; tests replace both to avoid real time. */
-export interface IndexTiming {
+interface IndexTiming {
   now?: () => number;
   pause?: (ms: number, signal: AbortSignal) => Promise<unknown>;
 }

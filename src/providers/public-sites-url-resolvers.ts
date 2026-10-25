@@ -15,7 +15,7 @@ function basenameNoExt(pathname: string): string {
  * URL-resolver providers (stvr, html5, direct, youtube): these have no upstream
  * browse/search capability and only resolve `q` as a URL naming their own host.
  */
-export async function urlResolverRelease(
+async function urlResolverRelease(
   id: string,
   url: URL,
   query: CatalogueQuery,

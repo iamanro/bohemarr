@@ -7,7 +7,7 @@ const SIGNATURE_KEY = 'x-bohemarr-signature';
 const MAX_DEPTH = 32;
 
 /** A Task descriptor: a signed .torrent that names one Release and carries no content of its own. */
-export interface TaskTorrent {
+interface TaskTorrent {
   content: Buffer;
   /** Lowercase hex SHA-1 of the bencoded info dictionary, which Sonarr and Radarr use as the download ID. */
   infoHash: string;

@@ -32,7 +32,7 @@ interface StreamCzProgram {
 }
 
 /** Clock used by the cache; tests replace it to avoid real time. */
-export interface StreamCzCacheTiming {
+interface StreamCzCacheTiming {
   now?: () => number;
 }
 

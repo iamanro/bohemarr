@@ -8,7 +8,7 @@ import { fetchResponse } from '../providers/common.ts';
 import { sleep } from './process.ts';
 
 /** A body that sends nothing for this long is a stalled connection, not a slow one. */
-export const IDLE_TIMEOUT_MS = 60_000;
+const IDLE_TIMEOUT_MS = 60_000;
 
 /**
  * The chunks of a response body. Aborting `signal` cancels the read, and so does a pause longer

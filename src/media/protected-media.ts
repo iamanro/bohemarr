@@ -34,7 +34,7 @@ interface Period {
 }
 
 /** Fetches one track into `workDir` and returns the path of its playable (clear) file. */
-export type TrackFetcher = (
+type TrackFetcher = (
   track: ProtectedTrack,
   workDir: string,
   label: string,
@@ -48,13 +48,7 @@ function concatListEntry(path: string): string {
 }
 
 /** Losslessly concatenates same-codec ordered fragments (one per DASH Period) via ffmpeg's concat demuxer, preserving timestamps/audio without re-encoding. */
-export async function concatOrdered(
-  config: Config,
-  paths: string[],
-  listPath: string,
-  outputPath: string,
-  signal: AbortSignal,
-): Promise<string> {
+async function concatOrdered(config: Config, paths: string[], listPath: string, outputPath: string, signal: AbortSignal): Promise<string> {
   if (paths.length === 1) return paths[0]!;
   await writeFile(listPath, paths.map(concatListEntry).join(''));
   await runProcess(

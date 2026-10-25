@@ -62,8 +62,7 @@ export interface ImportEvent {
   movieFile?: { path?: string };
 }
 
-export type ImportDecision =
-  { publish: Omit<Publication, 'status' | 'attempts' | 'error' | 'createdAt' | 'updatedAt'> } | { ignore: string };
+type ImportDecision = { publish: Omit<Publication, 'status' | 'attempts' | 'error' | 'createdAt' | 'updatedAt'> } | { ignore: string };
 
 /**
  * Whether an import is published: only files Bohemarr downloaded from an allowed provider, one
@@ -106,7 +105,7 @@ export function decideImport(event: ImportEvent, store: Store, vltava: VltavaCon
 const LANGUAGES: Record<string, string> = { CZ: 'čeština', SK: 'slovenština', EN: 'angličtina' };
 
 /** The Markdown description of a Publication. */
-export function describe(publication: Publication): string {
+function describe(publication: Publication): string {
   const { release } = publication;
   const episode =
     publication.kind === 'tv' && publication.season !== undefined && publication.episode !== undefined

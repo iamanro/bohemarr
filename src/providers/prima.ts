@@ -31,7 +31,7 @@ import type {
   ProgramMetadata,
 } from '../types.ts';
 import { isSeriesCandidate } from '../series-identity.ts';
-import { at, cached, fetchJson, fetchText, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import { at, axdrmLicense, cached, fetchJson, fetchText, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { extractPlayIds, get, Nuxt, PrimaAuthError, PrimaMessageError, PrimaRpc } from './prima-common.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { PrimaAuthenticator } from './prima-auth.ts';
@@ -41,7 +41,6 @@ import { SessionRejected } from './account-session.ts';
 const PROVIDER_ID = 'iprima';
 const REFERER = 'https://www.iprima.cz/';
 const CNN_PROGRAMS_PAGE = 'https://cnn.iprima.cz/porady';
-const AXDRM_LICENSE_URL = 'https://drm-widevine-licensing.axprod.net/AcquireLicense';
 
 type Site = 'www' | 'zoom' | 'cnn' | 'fresh' | 'zeny' | 'cool';
 const BROWSABLE_SITES: readonly Site[] = ['www', 'zoom', 'cnn'];
@@ -693,7 +692,7 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
         const widevine = modular.find(m => get<string>(m, 'keySystem', '') === 'com.widevine.alpha');
         const token = widevine ? get<string | null>(widevine, 'token', null) : null;
         if (token) {
-          drm = { url: AXDRM_LICENSE_URL, headers: { Referer: REFERER, 'X-AxDRM-Message': token } };
+          drm = axdrmLicense(token, REFERER);
         }
       }
 

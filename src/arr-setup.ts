@@ -57,7 +57,7 @@ class ArrError extends Error {}
  * connection named Bohemarr while publishing to Vltava and, when configured, the root folder. Each
  * start reapplies these settings; anything else is left alone.
  */
-export async function configureArr(config: Config, arr: ArrConfig, signal: AbortSignal): Promise<void> {
+async function configureArr(config: Config, arr: ArrConfig, signal: AbortSignal): Promise<void> {
   const app = APPS[arr.app];
   const request = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
     const response = await fetch(`${arr.url}/api/v3/${path}`, {

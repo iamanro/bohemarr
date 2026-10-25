@@ -12,8 +12,8 @@ export const HTTP_BASE = 'https://http.cms.jyxo.cz/api/v1.12/';
 export const WS_BASE = 'wss://ws.cms.jyxo.cz/websocket/';
 
 /** Pinned web-client version string used by the upstream Java client (`Oneplay.APP_VERSION`). */
-export const APP_VERSION = 'R12.26';
-export const DEVICE_TYPE_WEB = 'web';
+const APP_VERSION = 'R12.26';
+const DEVICE_TYPE_WEB = 'web';
 
 export const PROGRAM_LIST_MAX_ITEMS_PER_PAGE = 24;
 export const EPISODE_LIST_MAX_ITEMS_PER_PAGE = 12;
@@ -117,7 +117,7 @@ export function playbackCapabilities(): Record<string, unknown> {
  */
 const IGNORED_ERROR_CODES: Record<number, true> = { 5029: true, 4091: true, 4054: true, 4094: true };
 
-export function resultError(data: unknown): Error | null {
+function resultError(data: unknown): Error | null {
   if (at<string>(data, 'result.status') !== 'Error') return null;
   const code = Number.parseInt(at<string>(data, 'result.code') ?? '', 10) || 0;
   if (IGNORED_ERROR_CODES[code]) return null;

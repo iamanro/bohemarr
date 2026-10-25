@@ -3,14 +3,14 @@ import type { MediaSegment } from '../types.ts';
 import { normalizeLanguage } from '../providers/common.ts';
 import { fetchResponse } from '../providers/common.ts';
 
-export interface HlsTrack extends ProtectedTrack {
+interface HlsTrack extends ProtectedTrack {
   kind: 'video' | 'audio';
   height?: number;
   bandwidth?: number;
   averageBandwidth?: number;
   language?: string;
 }
-export interface HlsSelection {
+interface HlsSelection {
   live: boolean;
   video: HlsTrack;
   audio?: HlsTrack;
