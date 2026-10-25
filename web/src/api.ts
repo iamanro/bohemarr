@@ -6,9 +6,10 @@ export const apiKey = {
 }
 
 /** Calls Bohemarr's JSON API under /v1. */
-export async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function api<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/v1/${path}`, {
     method,
+    signal,
     headers: { "x-api-key": apiKey.get(), ...(body !== undefined && { "content-type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -39,6 +40,7 @@ export interface Settings {
   categories: string[]
   providerIds: string[]
   enabled: string[]
+  vltava: boolean
   arrs: Record<string, { ok: boolean; message: string; at: string }>
   settings: Record<string, Setting>
 }

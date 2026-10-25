@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-25T04:00:00Z",
+  "title": "Design System: Bohemarr",
+  "extensions": {
+    "colorMeta": {
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.145 0 0)"
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "oklch(0.205 0 0)"
+      },
+      "slate-dim": {
+        "role": "neutral",
+        "displayName": "Slate Dim",
+        "canonical": "oklch(0.269 0 0)"
+      },
+      "steel-muted": {
+        "role": "neutral",
+        "displayName": "Steel Muted",
+        "canonical": "oklch(0.556 0 0)"
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.922 0 0)"
+      },
+      "mist": {
+        "role": "neutral",
+        "displayName": "Mist",
+        "canonical": "oklch(0.97 0 0)"
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(1 0 0)"
+      },
+      "signal-red": {
+        "role": "tertiary",
+        "displayName": "Signal Red",
+        "canonical": "oklch(0.577 0.245 27.325)",
+        "tonalRamp": [
+          "oklch(0.25 0.1 27)",
+          "oklch(0.35 0.14 27)",
+          "oklch(0.45 0.19 27)",
+          "oklch(0.577 0.245 27.325)",
+          "oklch(0.67 0.19 24)",
+          "oklch(0.77 0.13 22)",
+          "oklch(0.87 0.07 20)",
+          "oklch(0.95 0.03 20)"
+        ]
+      },
+      "signal-red-dark": {
+        "role": "tertiary",
+        "displayName": "Signal Red (dark)",
+        "canonical": "oklch(0.704 0.191 22.216)"
+      },
+      "signal-blue": {
+        "role": "primary",
+        "displayName": "Signal Blue",
+        "canonical": "oklch(0.53 0.15 252)"
+      },
+      "signal-blue-dark": {
+        "role": "primary",
+        "displayName": "Signal Blue (dark)",
+        "canonical": "oklch(0.7 0.13 245)"
+      },
+      "go-green": {
+        "role": "secondary",
+        "displayName": "Go Green",
+        "canonical": "oklch(0.52 0.14 150)"
+      },
+      "go-green-dark": {
+        "role": "secondary",
+        "displayName": "Go Green (dark)",
+        "canonical": "oklch(0.74 0.16 150)"
+      },
+      "amber": {
+        "role": "secondary",
+        "displayName": "Amber",
+        "canonical": "oklch(0.55 0.13 65)"
+      },
+      "amber-dark": {
+        "role": "secondary",
+        "displayName": "Amber (dark)",
+        "canonical": "oklch(0.8 0.14 75)"
+      },
+      "rack": {
+        "role": "neutral",
+        "displayName": "Rack",
+        "canonical": "oklch(0.22 0.012 260)"
+      },
+      "rack-dark": {
+        "role": "neutral",
+        "displayName": "Rack (dark)",
+        "canonical": "oklch(0.18 0.01 260)"
+      },
+      "rack-raised": {
+        "role": "neutral",
+        "displayName": "Rack Raised",
+        "canonical": "oklch(0.29 0.014 260)"
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles and section headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Tables, form fields, descriptions."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Badges, small buttons, field labels."
+      }
+    },
+    "shadows": [],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Main action in a card or form.",
+      "html": "<button class=\"ds-btn-primary\">Save</button>",
+      "css": ".ds-btn-primary { height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: oklch(0.53 0.15 252); color: oklch(0.985 0 0); font: 500 14px 'Geist Variable', sans-serif; transition: background 0.15s; } .ds-btn-primary:hover { background: oklch(0.53 0.15 252 / 80%); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.53 0.15 252 / 50%); } .ds-btn-primary:active { transform: translateY(1px); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions such as pause and resume.",
+      "html": "<button class=\"ds-btn-outline\">Pause</button>",
+      "css": ".ds-btn-outline { height: 32px; padding: 0 10px; border: 1px solid oklch(0.922 0 0); border-radius: 6px; background: oklch(1 0 0); color: oklch(0.145 0 0); font: 500 14px 'Geist Variable', sans-serif; } .ds-btn-outline:hover { background: oklch(0.97 0 0); } .ds-btn-outline:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.53 0.15 252 / 50%); }"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Removing a Job; red text on a red tint.",
+      "html": "<button class=\"ds-btn-destructive\">Remove</button>",
+      "css": ".ds-btn-destructive { height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: oklch(0.577 0.245 27.325 / 10%); color: oklch(0.577 0.245 27.325); font: 500 14px 'Geist Variable', sans-serif; } .ds-btn-destructive:hover { background: oklch(0.577 0.245 27.325 / 20%); } .ds-btn-destructive:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.577 0.245 27.325 / 20%); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Settings and account fields.",
+      "html": "<input class=\"ds-input\" placeholder=\"tv,movies\">",
+      "css": ".ds-input { height: 32px; width: 240px; padding: 4px 10px; border: 1px solid oklch(0.922 0 0); border-radius: 6px; background: transparent; color: oklch(0.145 0 0); font: 400 14px 'Geist Variable', sans-serif; } .ds-input::placeholder { color: oklch(0.556 0 0); } .ds-input:focus-visible { outline: none; border-color: oklch(0.53 0.15 252); box-shadow: 0 0 0 3px oklch(0.53 0.15 252 / 50%); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Every settings group and the Job table live in cards.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-card-title\">Downloads</div><p class=\"ds-card-body\">Categories, simultaneous downloads, request rate.</p></div>",
+      "css": ".ds-card { width: 320px; padding: 12px; border-radius: 8.4px; background: oklch(1 0 0); box-shadow: 0 0 0 1px oklch(0.145 0 0 / 10%); font-family: 'Geist Variable', sans-serif; } .ds-card-title { font-size: 16px; font-weight: 500; color: oklch(0.145 0 0); } .ds-card-body { margin: 4px 0 0; font-size: 14px; color: oklch(0.556 0 0); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge-success",
+      "description": "Status pill; coloured text on a tint (here: Completed).",
+      "html": "<span class=\"ds-badge\">Completed</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 2px 8px; border-radius: 15.6px; background: oklch(0.52 0.14 150 / 12%); color: oklch(0.52 0.14 150); font: 500 12px 'Geist Variable', sans-serif; }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Dark rack in both themes; active item raised with blue text.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-active\">Jobs <span class=\"ds-count\">2</span></a><a class=\"ds-nav-item\">Search</a><a class=\"ds-nav-item\">Providers <span class=\"ds-dot\"></span></a></nav>",
+      "css": ".ds-nav { display: grid; gap: 4px; width: 200px; padding: 12px 8px; background: oklch(0.22 0.012 260); font: 500 14px 'Geist Variable', sans-serif; } .ds-nav-item { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: 6px; color: oklch(0.8 0.01 260); text-decoration: none; } .ds-nav-item:hover { background: oklch(0.29 0.014 260); color: oklch(0.985 0 0); } .ds-nav-active { background: oklch(0.29 0.014 260); color: oklch(0.7 0.13 245); } .ds-count { margin-left: auto; padding: 0 6px; border-radius: 3.6px; background: oklch(0.7 0.13 245); color: oklch(0.985 0 0); font-size: 12px; } .ds-dot { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: oklch(0.8 0.14 75); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Control Room",
+    "overview": "Bohemarr's UI is a control room for a service that otherwise runs unattended: the operator walks in to check what is downloading, fix an account, or push one manual Job, then leaves. State, numbers and actions come first; decoration does not. It is dense and utilitarian: compact controls, tight radii, flat surfaces, and colour that reports state.\n\nIt deliberately reads as a neighbour of Sonarr and Radarr: a dark sidebar rack on the left in both themes, one content column beside it, and the *arr family's status language (blue for activity, green for connected or done, amber for attention, red for failure). Built on shadcn/ui (`radix-nova`) and Geist; light and dark follow the system theme.",
+    "keyCharacteristics": [
+      "Dark sidebar navigation in both themes; it becomes a horizontal strip on phones.",
+      "Colour reports state; neutrals carry everything else.",
+      "One family (Geist), hierarchy by weight and size.",
+      "Flat panels separated by hairline rings, not shadows.",
+      "Compact: 32px controls, 6px corners, 12px gaps."
+    ],
+    "rules": [
+      {
+        "name": "The Earned Colour Rule",
+        "body": "Colour encodes state. Blue, green, amber and red each mean one thing everywhere; nothing decorative uses them.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tint Rule",
+        "body": "Status badges are coloured text on a 12–20% tint of the same colour, never a solid fill.",
+        "section": "colors"
+      },
+      {
+        "name": "The One Family Rule",
+        "body": "Hierarchy comes from weight and size inside Geist; no second typeface.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Panel Rule",
+        "body": "No drop shadows on surfaces; a hairline ring or a tonal fill separates panels.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use the shadcn components in `web/src/components/ui/` and their variants (including Badge `success` and `warning`) before writing new styles.",
+      "Do define colours as tokens on `:root` and `.dark` in `web/src/index.css`.",
+      "Do show state with the status vocabulary and words together, never colour alone.",
+      "Do keep both themes working; every token has a light and a dark value."
+    ],
+    "donts": [
+      "Don't add drop shadows to panels (The Flat Panel Rule).",
+      "Don't add a second typeface (The One Family Rule).",
+      "Don't use blue, green, amber or red decoratively (The Earned Colour Rule).",
+      "Don't mark the active navigation item with a thick coloured side border; use the raised fill and blue text."
+    ]
+  }
+}
