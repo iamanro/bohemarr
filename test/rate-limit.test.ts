@@ -16,10 +16,12 @@ test('requests to one host are spaced by the rate, while another host goes at on
     const a = started.filter(([host]) => host === 'a.example').map(([, at]) => at - begin).sort((x, y) => x - y);
     assert.ok(a[2]! >= 95, `third request to a.example waited two slots, got ${a[2]} ms`);
     assert.ok(started.find(([host]) => host === 'b.example')![1] - begin < 40, 'b.example did not wait for a.example');
-    const aborted = fetchResponse('https://a.example/4', AbortSignal.abort(new Error('cancelled')));
+    // A fresh host whose next slot is taken just now, so the aborted caller is certain to be waiting.
+    void fetchResponse('https://c.example/1', signal);
+    const aborted = fetchResponse('https://c.example/2', AbortSignal.abort(new Error('cancelled')));
     await assert.rejects(aborted, /cancelled/, 'a caller aborted while waiting for its slot stops waiting');
   } finally {
-    setRequestRate(100);
+    setRequestRate(Infinity); // the module default: no limit
   }
 });
 

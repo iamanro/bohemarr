@@ -8,12 +8,13 @@ import { join } from 'node:path';
 import { inspectMediaSources } from '../src/media/metadata.ts';
 import type { Config } from '../src/types.ts';
 
-test('a direct file ffprobe cannot read remotely is still offered, with its size and no height', async () => {
+test('a direct file ffprobe cannot read remotely is offered when its size is known, and fails when nothing is known', async () => {
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-unprobed-'));
   const ffprobe = join(directory.path, 'ffprobe');
   await writeFile(ffprobe, '#!/bin/sh\necho "Input/output error" >&2\nexit 1\n');
   await chmod(ffprobe, 0o755);
   await using server = createServer((request, response) => {
+    if (request.url === '/unknown.avi') return void response.writeHead(403).end(); // neither size nor content readable
     if (request.method === 'HEAD') return void response.writeHead(200, { 'Content-Length': 734003235 }).end();
     response.writeHead(302, { Location: '/error' }).end(); // ranged reads are refused, as on a free file host
   });
@@ -24,6 +25,8 @@ test('a direct file ffprobe cannot read remotely is still offered, with its size
     const metadata = await inspectMediaSources({ ffprobe } as Config, [{ url, type: 'file' }], AbortSignal.timeout(5000));
     assert.equal(metadata.source.url, url);
     assert.deepEqual([metadata.size, metadata.sizeEstimated, metadata.height], [734003235, false, undefined]);
+    const unknown = url.replace('Matrix.avi', 'unknown.avi');
+    await assert.rejects(inspectMediaSources({ ffprobe } as Config, [{ url: unknown, type: 'file' }], AbortSignal.timeout(5000)), /Input\/output error/);
   } finally {
     server.closeAllConnections();
   }

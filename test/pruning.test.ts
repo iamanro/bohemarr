@@ -26,8 +26,8 @@ test('a search result not seen for 90 days is forgotten at the next start, a fre
   assert.equal(store.release('fresh')?.id, 'fresh');
 });
 
-test('expired cache rows are removed when their module starts and when it writes', () => {
-  const db = new DatabaseSync(':memory:');
+test('expired cache rows are removed when their module starts', () => {
+  using db = new DatabaseSync(':memory:');
   let now = 1_000_000_000_000;
   const clock = () => now;
   const count = (table: string): number => Number(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n);

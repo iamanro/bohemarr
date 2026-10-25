@@ -113,6 +113,33 @@ test('a rejection is never answered with a refresh of the rejected session', asy
   assert.equal(calls.refresh, 1, 'the expired seed was refreshed once; the rejected refresh was replaced by a login');
 });
 
+test('a rejection while a refresh of the same session is in flight is answered by a login, not by that refresh', async () => {
+  let now = 0;
+  const refreshGate = Promise.withResolvers<void>();
+  const { value, calls } = source({
+    async login() { calls.login++; return { session: `login-${calls.login}`, expiresAt: now + 100_000 }; },
+    async refresh(session) { await refreshGate.promise; return { session: `${session}+refreshed`, expiresAt: now + 100_000 }; },
+  });
+  const account = new AccountSession(value, () => now);
+  const holding = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const first = account.run(async session => {
+    holding.resolve();
+    await release.promise;
+    if (session === 'login-1') throw new SessionRejected('refused');
+    return session;
+  }, signal);
+  await holding.promise;
+  now = 80_000; // login-1 is now expiring, so the next caller starts a refresh of it
+  const refreshed = account.run(echo, signal);
+  release.resolve();
+  await new Promise(resolve => setImmediate(resolve));
+  refreshGate.resolve();
+  assert.equal(await first, 'login-2', 'the rejected caller waits for a new login, not for the refresh');
+  assert.equal(await refreshed, 'login-1+refreshed');
+  assert.equal(calls.login, 2);
+});
+
 test('a configured session is used without logging in; once rejected it needs credentials', async () => {
   const seeded: SessionGrant<string> = { session: 'configured' };
   const withCredentials = source({ seed: seeded });

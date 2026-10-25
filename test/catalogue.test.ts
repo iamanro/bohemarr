@@ -85,7 +85,10 @@ test('text search expands only Programs with every query word, else any word', a
 });
 
 test('the any-word fallback ignores short words, so a foreign title expands no unrelated Program', async () => {
-  const { value, expanded } = catalogue({ 'Ulice': [episode('Ulice', 1)], 'Specialisté': [episode('Specialisté', 1)], 'Most!': [episode('Most!', 1)] });
+  const { value, expanded } = catalogue({
+    'Ulice': [episode('Ulice', 1)], 'Specialisté': [episode('Specialisté', 1)], 'Most!': [episode('Most!', 1)],
+    'Život s Lucií': [episode('Život s Lucií', 1)], // shares only the one-letter word "s" with the query
+  });
   assert.deepEqual(ids(await search(value, query({ q: "Grey's Anatomy" }))), []);
   assert.deepEqual(expanded, []);
 });
@@ -190,13 +193,20 @@ test('a Release owned by another provider is rejected', async () => {
 test('a cached program list is shared, a failed load is retried, and a caller giving up cancels nothing', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: 0 });
   const loads: Array<PromiseWithResolvers<string[]>> = [];
-  const programs = cached(1000, async () => { const load = Promise.withResolvers<string[]>(); loads.push(load); return load.promise; });
+  const loadSignals: AbortSignal[] = [];
+  const programs = cached(1000, async loadSignal => {
+    loadSignals.push(loadSignal);
+    const load = Promise.withResolvers<string[]>();
+    loads.push(load);
+    return load.promise;
+  });
 
   const impatient = new AbortController();
   const first = programs(impatient.signal);
   const second = programs(signal);
   impatient.abort(new Error('gave up'));
   await assert.rejects(first, /gave up/);
+  assert.equal(loadSignals[0]!.aborted, false, 'the impatient caller did not cancel the shared load');
   loads[0]!.resolve(['Ulice']);
   assert.deepEqual(await second, ['Ulice'], 'the other caller still gets the shared load');
   assert.deepEqual(await programs(signal), ['Ulice']);

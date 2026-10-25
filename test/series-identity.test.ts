@@ -79,7 +79,7 @@ test('verified TVmaze names bind a Czech programme to its English TVDB identity'
   t.mock.method(globalThis, 'fetch', async (input: string | URL) => {
     const url = String(input);
     if (url.includes('skyhook.sonarr.tv')) return Response.json({ tvdbId: 441247, title: 'Extractors', firstAired: '2023-10-27', originalCountry: 'cze', tmdbId: 215097, tvMazeId: 72176 });
-    if (url.endsWith('/akas')) return Response.json([{ name: 'Extractors' }, { name: 'Extraktoři' }]);
+    if (url.endsWith('/akas')) return Response.json([{ name: 'Extractors' }, { name: 'Vyprošťovači' }]);
     return Response.json({ id: 72176, name: 'Extraktoři', externals: { thetvdb: 441247 } });
   });
   const identity = await loadSeriesIdentity(441247, new AbortController().signal);
@@ -87,7 +87,7 @@ test('verified TVmaze names bind a Czech programme to its English TVDB identity'
   assert.equal(outcome(selectProgram(identity, [programme])), programme.id);
   assert.equal(identity.title, 'Extractors');
   assert.equal(identity.tmdbId, 215097);
-  assert.deepEqual(identity.aliases, ['Extraktoři']);
+  assert.deepEqual(identity.aliases, ['Extraktoři', 'Vyprošťovači'], 'the TVmaze name and its akas, without the TVDB title');
 });
 
 test('TVmaze aliases cannot attach a different TVDB identity', async (t: TestContext) => {
@@ -104,6 +104,7 @@ test('isSeriesCandidate accepts token-boundary prefixes and rejects substring-in
   assert.ok(isSeriesCandidate('Love Island Česko & Slovensko', loveIslandIdentity));
   assert.ok(!isSeriesCandidate('Loveisland Extra', loveIslandIdentity));
   assert.ok(!isSeriesCandidate('Islanders', loveIslandIdentity));
+  assert.ok(!isSeriesCandidate('Love Islanders', loveIslandIdentity), 'the identity name ends inside a word of the title');
   assert.ok(!isSeriesCandidate('Totally Unrelated Show', loveIslandIdentity));
 });
 

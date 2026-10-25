@@ -129,7 +129,9 @@ test('the index survives a restart, and titles that could not be read are retrie
   const first = new PrimaIndex(database, { pause: async () => {} });
   await list(first);
   await first.close();
-  assert.deepEqual((await list(new PrimaIndex(database, { pause: async () => {} }))).map(p => p.titled), [false]);
+  const restarted = new PrimaIndex(database, { pause: async () => {} });
+  assert.deepEqual((await list(restarted)).map(p => p.titled), [false]);
+  await restarted.close(); // its background title pass must not outlive the database
 
   site.titles.set(missing.uri, 'Flaky online ke zhlédnutí | prima+');
   const second = new PrimaIndex(database, { pause: async () => {} });

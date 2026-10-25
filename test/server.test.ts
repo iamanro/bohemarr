@@ -32,7 +32,6 @@ test('every endpoint but health and login needs the API key or the login cookie'
     ['GET', '/v1/providers', {}],
     ['GET', '/v1/jobs', {}],
     ['GET', '/API/v2/torrents/info', {}],
-    ['GET', '/api/v2/../v1/providers', {}],
   ] as const) {
     const response = await app.inject({ method, url, headers });
     assert.ok([401, 403].includes(response.statusCode), `${method} ${url} ${JSON.stringify(headers)} answered ${response.statusCode}`);
@@ -56,7 +55,10 @@ test('every endpoint but health and login needs the API key or the login cookie'
 test('the settings API needs the API key, hides secrets and saves only settings Bohemarr can start with', async t => {
   await using dir = await mkdtempDisposable(join(tmpdir(), 'bohemarr-settings-'));
   const local = { ...config, dataDir: dir.path, downloadsDir: join(dir.path, 'downloads') };
-  const saved = { DATA_DIR: process.env.DATA_DIR, DOWNLOADS_DIR: process.env.DOWNLOADS_DIR, API_KEY: process.env.API_KEY };
+  // Settings the test saves must not already come from the environment, which wins over the UI.
+  const ambient = ['SONARR_URL', 'SONARR_API_KEY', 'ONEPLAY_USERNAME'].flatMap(name => [name, `${name}_FILE`]);
+  const saved = Object.fromEntries(['DATA_DIR', 'DOWNLOADS_DIR', 'API_KEY', ...ambient].map(name => [name, process.env[name]]));
+  for (const name of ambient) delete process.env[name];
   Object.assign(process.env, { DATA_DIR: local.dataDir, DOWNLOADS_DIR: local.downloadsDir, API_KEY: config.apiKey });
   const store = new Store(':memory:');
   const app = await createServer(local, store, new Queue(store, local, new Map(), async () => ''), new Map());
@@ -67,7 +69,6 @@ test('the settings API needs the API key, hides secrets and saves only settings 
   const headers = { 'x-api-key': config.apiKey };
 
   assert.equal((await app.inject('/v1/settings')).statusCode, 401);
-  assert.equal((await app.inject('/ui/../v1/settings')).statusCode, 401);
   assert.equal((await app.inject({ method: 'POST', url: '/v1/restart' })).statusCode, 401);
   assert.equal((await app.inject({ method: 'PUT', url: '/v1/settings', payload: { ONEPLAY_PASSWORD: 'x' } })).statusCode, 401);
 
@@ -110,4 +111,24 @@ test('the UI searches as Torznab does and downloads a found Release as the Job a
   const added = await download({ release: 'film' });
   assert.equal(added.json().id, infoHash);
   assert.equal(store.job(infoHash)?.category, 'movies');
+});
+
+test('a path that climbs out of /ui/ over a real connection never reaches the API unauthenticated', async t => {
+  const { request } = await import('node:http');
+  const store = new Store(':memory:');
+  const app = await createServer(config, store, new Queue(store, config, new Map(), async () => ''), new Map());
+  t.after(async () => { await app.close(); store.close(); });
+  await app.listen({ host: '127.0.0.1', port: 0 });
+  const { port } = app.server.address() as { port: number };
+  // app.inject normalizes dot segments; a socket sends the path as written, as an attacker would.
+  for (const path of ['/ui/../v1/settings', '/ui/%2e%2e/v1/settings', '/ui/..%2fv1/settings']) {
+    const { status, body } = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      request({ host: '127.0.0.1', port, path }, response => {
+        let body = '';
+        response.on('data', chunk => { body += chunk; });
+        response.on('end', () => resolve({ status: response.statusCode ?? 0, body }));
+      }).on('error', reject).end();
+    });
+    assert.ok(!body.includes('publicUrl'), `${path} answered ${status} with the settings`);
+  }
 });

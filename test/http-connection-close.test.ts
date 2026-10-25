@@ -4,10 +4,11 @@ import { once } from 'node:events';
 import { createServer } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
-// Loaded as in the service: provider dependencies may install their own HTTP stack as fetch's dispatcher.
+// A canary for the runtime, not for this repository's code: Bohemarr downloads through Bun's fetch, and the image
+// builds on the floating oven/bun:1.4 tag. Loaded as in the service, in case a dependency ever replaces fetch.
 import '../src/providers/index.ts';
 
-test('a response whose connection closes before its body is read still arrives whole (nodejs/undici#5360)', async () => {
+test("the runtime's fetch delivers a whole body whose connection closed before it was read (nodejs/undici#5360)", async () => {
   // 64 KiB is the body high-water mark: the parser pauses with the socket drained, then FIN arrives.
   const body = Buffer.alloc(64 * 1024, 0x61);
   const server = createServer(socket => {

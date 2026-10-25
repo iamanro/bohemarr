@@ -71,6 +71,8 @@ test('each ČT episode plays its own IDEC, and episodes that cannot be played ar
   // Without seasons upstream the show is one season: Sonarr's S01E03 is its third episode.
   const exact = await searchCatalogue(provider, { q: 'Most', kind: 'tv', season: 1, episode: 3, limit: 10, offset: 0 }, new AbortController().signal);
   assert.deepEqual(exact.map(release => [release.title, release.season, release.episode]), [['Díl 3', 1, 3]]);
+  assert.deepEqual(await searchCatalogue(provider, { q: 'Most', kind: 'tv', season: 1, episode: 2, limit: 10, offset: 0 }, new AbortController().signal), [],
+    'the unplayable episode 2 is not offered for an exact episode search either');
   const whole = await searchCatalogue(provider, { q: 'Most', kind: 'tv', season: 1, limit: 10, offset: 0 }, new AbortController().signal);
   assert.deepEqual(whole.map(release => [release.title, release.season, release.episode]), [['Díl 3', 1, 3], ['Díl 1', 1, 1]]);
   assert.deepEqual(await searchCatalogue(provider, { q: 'Most', kind: 'tv', season: 2, episode: 1, limit: 10, offset: 0 }, new AbortController().signal), []);
@@ -107,7 +109,7 @@ test('a Déčko show URL searches the API at its page limit instead of asking fo
   });
   const provider = createCeskaTelevizeProvider({ enabled: true })!;
   const release = { id: 'd1', provider: 'ceskatelevize', title: 'Kouzelná školka', url: 'https://decko.ceskatelevize.cz/kouzelna-skolka', kind: 'tv' as const };
-  const sources = await provider.resolve(release, new AbortController().signal).catch(() => []);
+  const sources = await provider.resolve(release, new AbortController().signal);
   assert.deepEqual(sources, []);
   assert.deepEqual(limits, [40], 'one search page at the limit the API accepts');
 });

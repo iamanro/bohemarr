@@ -36,23 +36,35 @@ test('pause wins against a late downloader completion and cancellation removes f
   const f = await fixture();
   await using dir = f.dir;
   using store = f.store;
-  const entered = Promise.withResolvers<void>();
+  let entered = Promise.withResolvers<void>();
+  let finished = 0;
   await using queue = new Queue(f.store, f.config, f.providers, async (_sources, directory, _title, signal, progress) => {
     entered.resolve();
     await once(signal, 'abort');
+    await new Promise(resolve => setTimeout(resolve, 20)); // a slow worker: anything not awaiting it finishes first
+    await mkdir(directory, { recursive: true });
     const file = join(directory, 'late.mp4');
     await writeFile(file, 'late result');
+    finished++;
     progress({ bytes: 11, progress: 100 });
     return file;
   });
   const job = queue.add('job-one', release, 'tv');
   await entered.promise;
   await queue.pause(job.id);
+  await access(join(job.storage, 'late.mp4')); // the worker had finished when pause resolved
   assert.equal(f.store.job(job.id)?.status, 'Paused');
-  assert.notEqual(f.store.job(job.id)?.progress, 100);
+  assert.equal(f.store.job(job.id)?.bytes, 0);
   await queue.remove(job.id, true);
   assert.equal(f.store.job(job.id), undefined);
   await assert.rejects(access(job.storage), { code: 'ENOENT' });
+
+  entered = Promise.withResolvers<void>();
+  const running = queue.add('job-two', { ...release, id: 'episode-two', episode: 2 }, 'tv');
+  await entered.promise;
+  await queue.remove(running.id, true);
+  assert.equal(finished, 2, 'remove resolved only after its worker wrote its late file');
+  await assert.rejects(access(running.storage), { code: 'ENOENT' });
 });
 
 test('removal accepts a persisted old release folder but never deletes a sibling job', async () => {

@@ -180,6 +180,8 @@ test('Prima binds a TVDB series by programme year and Czech origin, then expands
   const bindings = new SeriesBindings(store.database);
   const costaRica = await bindings.search(provider, query, { ...identity, tvdbId: identity.tvdbId + 1, country: 'CRI' }, signal);
   assert.deepEqual(costaRica, { releases: [], unbound: 'country-mismatch' }, 'ČR is not ISO CR (Costa Rica)');
+  const otherYear = await bindings.search(provider, query, { ...identity, tvdbId: identity.tvdbId + 2, year: 2010 }, signal);
+  assert.deepEqual(otherYear, { releases: [], unbound: 'year-mismatch' }, 'the same name from another year does not bind');
 
   const { releases, unbound } = await bindings.search(provider, query, identity, signal);
   assert.equal(unbound, undefined);
@@ -206,6 +208,9 @@ test('CNN Prima lists a programme newest first, although offset 0 is read last',
   const database = new DatabaseSync(':memory:');
   const provider = createPrimaProviders({ iprima: { enabled: true } }, database)[0]!;
   t.after(async () => { await provider.close?.(); database.close(); });
-  const releases = await searchCatalogue(provider, { q: 'Byznys', kind: 'tv', limit: 2, offset: 0 }, new AbortController().signal);
-  assert.deepEqual(releases.map(release => release.url), ['https://cnn.iprima.cz/videa/19-12-2024', 'https://cnn.iprima.cz/videa/12-12-2024']);
+  const releases = await searchCatalogue(provider, { q: 'Byznys', kind: 'tv', limit: 4, offset: 0 }, new AbortController().signal);
+  assert.deepEqual(releases.map(release => [release.url, release.episode]), [
+    ['https://cnn.iprima.cz/videa/19-12-2024', 4], ['https://cnn.iprima.cz/videa/12-12-2024', 3],
+    ['https://cnn.iprima.cz/videa/15-3-2023', 2], ['https://cnn.iprima.cz/videa/8-3-2023', 1],
+  ], 'both pages listed, numbered from the oldest episode');
 });

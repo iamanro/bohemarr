@@ -198,7 +198,8 @@ test('a naming problem after upload still seeds, and only failures before upload
     assert.equal(pending.status, 'Pending');
     assert.equal(pending.attempts, 1);
     assert.match(pending.error, /provider_unavailable/);
-    assert.ok(pending.retryAt! - before >= 5 * 60_000 - 1000);
+    const after = Date.now();
+    assert.ok(pending.retryAt! >= before + 5 * 60_000 && pending.retryAt! <= after + 5 * 60_000, 'five minutes, not more or less');
   });
 });
 

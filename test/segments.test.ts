@@ -44,6 +44,11 @@ test('byte-range segments must return precisely the requested bytes', async () =
     requests.push(request.headers.range || '');
     const body = Buffer.from('abcdefgh');
     const start = Number(request.headers.range?.match(/bytes=(\d+)-/)?.[1]);
+    if (request.url === '/ignores-range') return void response.writeHead(200, { 'Content-Length': 8 }).end(body);
+    if (request.url === '/wrong-start') return void response.writeHead(206, { 'Content-Length': 4, 'Content-Range': 'bytes 0-3/8' }).end(body.subarray(0, 4));
+    if (request.url === '/too-long') {
+      return void response.writeHead(206, { 'Content-Length': 5, 'Content-Range': `bytes ${start}-${start + 4}/8` }).end(body.subarray(start, start + 5));
+    }
     response.writeHead(206, { 'Content-Length': 4, 'Content-Range': `bytes ${start}-${start + 3}/8` });
     response.end(body.subarray(start, start + 4));
   });
@@ -57,6 +62,12 @@ test('byte-range segments must return precisely the requested bytes', async () =
     await downloadSegmentsConcat([{ url, range: { start: 4, length: 4 } }, { url, range: { start: 0, length: 4 } }], undefined, output, AbortSignal.timeout(5000));
     assert.equal((await readFile(output)).toString(), 'efghabcd');
     assert.deepEqual(requests, ['bytes=4-7', 'bytes=0-3']);
+    const base = url.replace('/segments', '');
+    const fetchOne = (path: string) =>
+      downloadSegmentsConcat([{ url: base + path, range: { start: 2, length: 4 } }], undefined, output, AbortSignal.timeout(5000));
+    await assert.rejects(fetchOne('/ignores-range'), /not honored/, 'a 200 for a ranged request is refused');
+    await assert.rejects(fetchOne('/wrong-start'), /mismatch/, 'a 206 starting elsewhere is refused');
+    await assert.rejects(fetchOne('/too-long'), /length mismatch/, 'a 206 with more bytes than asked is refused');
   } finally {
     server.closeAllConnections();
   }

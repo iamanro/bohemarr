@@ -15,6 +15,7 @@ test('a file name yields the episode, year, resolution and language of its Relea
   assert.deepEqual(release, { ...release, title: 'Most S01E03 CZ 1080p WEB-DL', series: 'Most', kind: 'tv', season: 1, episode: 3, height: 1080, language: 'CZ', size: 123 });
   assert.equal(fileRelease('webshare', 'u', 'Matrix (1999) 4K.mkv', { q: '' }).kind, 'movie');
   assert.equal(fileRelease('webshare', 'u', 'Matrix (1999) 4K.mkv', { q: '' }).height, 2160);
+  assert.equal(fileRelease('webshare', 'u', 'Matrix (1999) 4K.mkv', { q: '' }).year, 1999);
 });
 
 test('Webshare: an episode search asks upstream for S01E03 and resolves anonymously without a token', async t => {
@@ -44,6 +45,6 @@ test('Přehraj.to: search hits carry the file size, and the player sources are r
     <div class="video__tag video__tag--size">2.68 GB</div><h3 class="video__title">Matrix (1999)</h3></a>`;
   const [release] = parsePrehrajtoSearch(html, { q: 'matrix', kind: 'movie' });
   assert.deepEqual([release!.url, release!.year, release!.size, release!.sizeEstimated], ['https://prehrajto.cz/matrix-1999/85e1', 1999, 2877628088, true]);
-  const sources = parsePrehrajtoSources(`var sources = [ { file: "https://cdn/a.mp4?x=1", label: '720p' } , { file: "https://cdn/b.mp4", label: '1080p' } ]; var tracks = [];`);
+  const sources = parsePrehrajtoSources(`var sources = [ { file: "https://cdn/a.mp4?x=1", label: '720p' } , { file: "https://cdn/b.mp4", label: '1080p' } ]; var tracks = [ { file: "https://cdn/sub.vtt", label: 'cs' } ];`);
   assert.deepEqual(sources.map(source => [source.url, source.height]), [['https://cdn/a.mp4?x=1', 720], ['https://cdn/b.mp4', 1080]]);
 });

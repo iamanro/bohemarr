@@ -94,8 +94,9 @@ function dashManifestExact(fileUrl: string, initRange: string, mediaRanges: stri
 }
 
 function dashManifestLive(): string {
+  // A duration lets the parser finish, so it is the live check, not a parse error, that rejects it.
   return `<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic">
-  <Period><AdaptationSet contentType="video" mimeType="video/mp4">
+  <Period duration="PT10S"><AdaptationSet contentType="video" mimeType="video/mp4">
     <Representation id="v0" bandwidth="1000000" width="1920" height="1080" mimeType="video/mp4">
       <SegmentTemplate media="s-$Number$.m4s" duration="1" timescale="1" startNumber="1"/>
     </Representation>
@@ -226,7 +227,7 @@ test('DASH: a live manifest is rejected', async t => {
   t.after(() => server.close());
 
   const source: MediaSource = { url: `${base}/manifest.mpd`, type: 'dash' };
-  await assert.rejects(inspectMediaSources(baseConfig(directory.path), [source], new AbortController().signal));
+  await assert.rejects(inspectMediaSources(baseConfig(directory.path), [source], new AbortController().signal), /live streams/);
 });
 
 test('HLS: the linked Czech audio group is preferred and BANDWIDTH (already combined AV) is not double-counted', async t => {
@@ -302,7 +303,8 @@ test('a direct file source gets an exact Content-Length size, and a larger unins
   t.after(() => server.close());
 
   // audioLanguage pinned so the "no avoidable probing" path doesn't re-probe this video-only file for language.
-  const lowFile: MediaSource = { url: `${base}/low.mp4`, type: 'file', height: 480, audioLanguage: 'en' };
+  // A higher bandwidth than the manifest's, so only the height comparison can rank the manifest first.
+  const lowFile: MediaSource = { url: `${base}/low.mp4`, type: 'file', height: 480, audioLanguage: 'en', bandwidth: 50_000_000 };
   const dashSource: MediaSource = { url: `${base}/manifest.mpd`, type: 'dash' };
 
   const fileOnly = await inspectMediaSources(baseConfig(directory.path), [lowFile], new AbortController().signal);
@@ -317,9 +319,11 @@ test('a direct file source gets an exact Content-Length size, and a larger unins
 
 test('a HEAD error response body is never mistaken for the file size', async t => {
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-meta-'));
+  const methods: string[] = [];
   const server = createServer((request, response) => {
     // A real server returning a 403 error page - its Content-Length describes the error page,
     // not the media - and (since the status isn't 405/501) no Range fallback should be tried.
+    methods.push(request.method ?? '');
     const body = Buffer.from('Forbidden');
     response.writeHead(403, { 'Content-Length': body.length });
     response.end(request.method === 'HEAD' ? undefined : body);
@@ -334,4 +338,5 @@ test('a HEAD error response body is never mistaken for the file size', async t =
   assert.equal(metadata.height, 1080);
   assert.equal(metadata.size, undefined);
   assert.equal(metadata.sizeEstimated, undefined);
+  assert.deepEqual(methods, ['HEAD'], 'no ranged GET after a 403');
 });

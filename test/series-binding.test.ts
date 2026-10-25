@@ -134,7 +134,11 @@ test('a plain text search stamps Releases of bound Programs and leaves others al
 test('a provider without metadata is searched by the identity title and never labelled with it', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const plain = provider(() => [], { seriesCandidates: undefined });
+    const unrelated = episode('other', { series: 'Other Show', title: 'Other - S01E01' }); // matches an empty query, not the identity title
+    const plain = provider(() => [], {
+      seriesCandidates: undefined,
+      catalogue: fakeCatalogue(bound => bound ? [] : [episode(correct.id), episode(foreign.id), unrelated]),
+    });
     const { releases, unbound } = await bindings.search(plain, query, identity, signal);
     assert.equal(unbound, undefined);
     assert.deepEqual(releases.map(r => [r.id, r.tvdbId]), [['src-correct-ep1', undefined], ['src-foreign-ep1', undefined]]);
@@ -214,7 +218,7 @@ test('a cached exact episode response is never returned to an already-aborted si
     await bindings.search(prov, episodeQuery, identity, signal); // populates the cache
     const controller = new AbortController();
     controller.abort();
-    await assert.rejects(bindings.search(prov, episodeQuery, identity, controller.signal));
+    await assert.rejects(bindings.search(prov, episodeQuery, identity, controller.signal), { name: 'AbortError' });
   });
 });
 
@@ -226,7 +230,7 @@ test('an exact episode expansion that succeeds after its signal aborted is rejec
     const aborting = provider(() => [correct], {
       catalogue: fakeCatalogue(bound => { if (bound) controller.abort(); return bound ? [episode(correct.id)] : []; }),
     });
-    await assert.rejects(bindings.search(aborting, episodeQuery, identity, controller.signal));
+    await assert.rejects(bindings.search(aborting, episodeQuery, identity, controller.signal), { name: 'AbortError' });
     const recovered = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode(correct.id, { id: 'recovered' })] : []) });
     const { releases } = await bindings.search(recovered, episodeQuery, identity, signal);
     assert.deepEqual(releases.map(r => r.id), ['recovered']); // nothing from the aborted attempt was cached
@@ -301,14 +305,25 @@ test('a browsing (non-exact-episode) bound search is never served from or writte
   });
 });
 
-test('an aborted or failing exact episode expansion never populates the cache', async () => {
+test('a failing exact episode expansion never populates the cache', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
     const failing = provider(() => [correct], { catalogue: fakeCatalogue(() => { throw new Error('catalogue failed'); }) });
-    await assert.rejects(bindings.search(failing, episodeQuery, identity, signal));
+    await assert.rejects(bindings.search(failing, episodeQuery, identity, signal), /catalogue failed/);
     const recovered = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode(correct.id)] : []) });
     const { releases } = await bindings.search(recovered, episodeQuery, identity, signal);
     assert.deepEqual(releases.map(r => r.id), ['src-correct-ep1']);
+  });
+});
+
+test('writing an exact episode cache entry removes the entries that have expired', async () => {
+  await withStore(async store => {
+    const now = 1_000_000_000_000;
+    const bindings = new SeriesBindings(store.database, failingLookup, () => now);
+    // Expired, and inserted after the start-up sweep, so only the write can remove it.
+    store.database.prepare('INSERT INTO series_release_cache VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('oneplay', 'old', 1, 9, 9, 0, 50, now - 7 * 60 * 60_000, '[]');
+    await bindings.search(provider(() => [correct]), episodeQuery, identity, signal);
+    assert.deepEqual(store.database.prepare('SELECT program_id FROM series_release_cache').all().map(row => row.program_id), [correct.id]);
   });
 });
 

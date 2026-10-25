@@ -86,10 +86,13 @@ test('different episode searches and a restart reuse the complete Stream episode
   const restarted = createStreamCzProvider({}, database, timing)!;
   assert.deepEqual(await read(restarted, 48), first);
   assert.equal(site.episodeRequests, 1, 'different episode and restart must not refetch the same programme');
+  // Expired, and inserted after the start-up sweep, so only the next write can remove it.
+  database.prepare('INSERT INTO stream_episode_cache VALUES (?, ?, ?)').run('gone', now - 10 * 60 * 1000, '[]');
   now++;
   const refreshed = await read(restarted, 49);
   assert.deepEqual(refreshed.map(r => r.episode), [49, 48, 45]);
   assert.equal(site.episodeRequests, 2);
+  assert.equal(database.prepare("SELECT count(*) AS n FROM stream_episode_cache WHERE program_id = 'gone'").get()!.n, 0, 'the write swept the expired listing');
 });
 
 test('a partially consumed Stream episode listing never hides later episodes', async t => {
@@ -198,13 +201,14 @@ test('an aborted discovery never publishes a partial snapshot', async t => {
   const controller = new AbortController();
 
   const partial: unknown[] = [];
+  // Aborted on the last programme: the walk is otherwise complete, so only the abort check keeps it from being cached.
   await assert.rejects(async () => {
     for await (const program of provider.catalogue.programs({ q: '' }, controller.signal)) {
       partial.push(program);
-      controller.abort(new Error('caller stopped'));
+      if ((program as { id: string }).id === 'p2') controller.abort(new Error('caller stopped'));
     }
-  });
-  assert.equal(partial.length, 1);
+  }, /caller stopped/);
+  assert.equal(partial.length, 2);
 
   // Nothing was cached: a fresh, unaborted call re-discovers everything, including what was seen before the abort.
   const complete = await list(provider, { q: '' });

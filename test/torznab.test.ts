@@ -103,7 +103,7 @@ test('movie searches advertise and return Radarr TMDB IDs', async () => {
   const feed = await torznab.search({ t: 'movie', q: 'Wrong title', tmdbid: '1032863' }, new AbortController().signal);
   assert.match(feed, /<torznab:attr name="tmdbid" value="1032863"\/>/);
   for (const bad of ['0', '-5', '1.5', 'abc', '1e9999999']) {
-    await assert.rejects(torznab.search({ t: 'movie', q: 'Film', tmdbid: bad }, new AbortController().signal));
+    await assert.rejects(torznab.search({ t: 'movie', q: 'Film', tmdbid: bad }, new AbortController().signal), /Invalid tmdbid/);
   }
   await assert.rejects(torznab.search({ t: 'tvsearch', q: 'Film', tmdbid: '1032863' }, new AbortController().signal), /Invalid tmdbid/);
 });
@@ -133,7 +133,7 @@ test('invalid tvdbid values are rejected before any TVDB lookup', async () => {
   const { store, indexer: torznab } = indexer(lookups);
   using dispose = store;
   for (const bad of ['0', '-5', '1.5', 'abc', '1e9999999']) {
-    await assert.rejects(torznab.search({ t: 'tvsearch', q: '', tvdbid: bad }, new AbortController().signal));
+    await assert.rejects(torznab.search({ t: 'tvsearch', q: '', tvdbid: bad }, new AbortController().signal), /Invalid tvdbid/);
   }
   await assert.rejects(torznab.search({ t: 'search', q: '', tvdbid: '12345' }, new AbortController().signal), /Invalid tvdbid/);
   assert.deepEqual(lookups, []);
@@ -174,7 +174,7 @@ test('RSS lists the newest Releases of series Sonarr searched by TVDB ID, dated 
   assert.equal(torznab.parseTaskDescriptor(torznab.taskDescriptor('ep-2').content).release.tvdbId, 12345);
 
   // A newly available episode leads the next listing; earlier Releases keep their first-listed date.
-  published = [episode(3), ...published];
+  published = [...published, episode(3)]; // last in the provider's order: only its first-listed date puts it first
   t.mock.timers.tick(5 * 60 * 1000);
   assert.equal((await rss()).length, 2, 'one listing serves a whole RSS sync');
   t.mock.timers.tick(6 * 60 * 1000);
@@ -188,7 +188,9 @@ test('RSS lists the newest Releases of series Sonarr searched by TVDB ID, dated 
 test('series searched by TVDB ID before the RSS feed existed are watched after the upgrade', async () => {
   const store = new Store(':memory:');
   using dispose = store;
-  const { provider } = indexer();
+  const spare = indexer(); // only its provider is needed
+  using spareStore = spare.store;
+  const { provider } = spare;
   const bindings = new SeriesBindings(store.database, async () => identity);
   await bindings.search(provider, { q: '', kind: 'tv', season: 1, episode: 1, limit: 5, offset: 0 }, identity, new AbortController().signal);
   const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), bindings);
@@ -231,6 +233,7 @@ test('a provider that runs out of time fails alone, and the others still answer'
   const hanging: Provider = {
     id: 'novaplus', name: 'Nova', resolve: async () => [],
     catalogue: {
+      // oxlint-disable-next-line require-yield -- a catalogue that never lists anything: it hangs until the search aborts
       async *programs(_query, signal) { await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); },
       async *releases() {},
     },
