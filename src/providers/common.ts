@@ -123,7 +123,7 @@ export async function* empty(): AsyncGenerator<never> {}
 
 /**
  * Extracts a brace-balanced substring starting at the first occurrence of
- * `open` at or after `fromIndex`, honoring JS/​JSON string literals so that
+ * `open` at or after `fromIndex`, honoring JS/JSON string literals so that
  * braces inside strings are not counted. Mirrors `Utils.bracketSubstring`; `''` when the
  * opening bracket or its match is missing.
  */
@@ -216,6 +216,7 @@ export function releaseTitle(release: Release): string {
 }
 
 export function sanitizeFilename(title: string): string {
+  // oxlint-disable-next-line no-control-regex -- control characters are exactly what a file name must not contain
   const cleaned = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').trim();
   return cleaned.length && !/^\.+$/.test(cleaned) ? cleaned : 'download';
 }

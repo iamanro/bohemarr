@@ -1,5 +1,7 @@
 # Dependencies and build output
 /node_modules/
+# Output of an old tsc build; nothing builds it any more.
+/dist/
 
 # Local runtime state: private configuration, API key, database, downloads
 /data/

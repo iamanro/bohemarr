@@ -115,7 +115,7 @@ async function getDocument(ref: string, idToken: string, signal: AbortSignal): P
       headers: { Authorization: `Bearer ${idToken}` },
     });
   } catch (err) {
-    if (err instanceof Error && /^HTTP 404/.test(err.message)) return null;
+    if (err instanceof Error && err.message.startsWith('HTTP 404')) return null;
     throw err;
   }
 }
