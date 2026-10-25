@@ -1,9 +1,20 @@
-.git
-data
-downloads
-.env
-.env.*
-compose.override.yaml
-*.log
+# An allowlist: the build context holds only what the Dockerfile copies, so secrets, local state and
+# anything added later never leave this machine. Add a path here when the Dockerfile starts copying it.
+*
+!package.json
+!bun.lock
+!tsconfig.json
+!.prettierrc.json
+!.oxlintrc.json
+!LICENSE
+!LICENSES
+!src
+!test
+!web
+
+# Within the allowed paths: what each install or build recreates, and local clutter
 **/node_modules
-**/dist
+web/dist
+**/*.tsbuildinfo
+**/*.log
+**/.DS_Store
