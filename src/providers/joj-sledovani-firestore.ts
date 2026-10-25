@@ -155,7 +155,7 @@ async function queryMovies(idToken: string, signal: AbortSignal): Promise<Firest
     idToken,
     signal,
   );
-  return docs.filter((doc) => {
+  return docs.filter(doc => {
     const fields = doc.fields ?? {};
     if (fields.seasonNumber || fields.episodeNumber) return false;
     return (fields.contentType?.stringValue ?? 'FILM') === 'FILM';
@@ -278,7 +278,7 @@ function jojSessionSource(username: string, password: string): SessionSource<str
         headers: { 'Content-Type': 'application/json', Referer: 'https://play.joj.sk/' },
         body,
       });
-      const json = await response.json().catch(() => ({})) as { idToken?: string; expiresIn?: string; error?: { message?: string } };
+      const json = (await response.json().catch(() => ({}))) as { idToken?: string; expiresIn?: string; error?: { message?: string } };
       if (!json.idToken) {
         throw new Error(`jojplay: login failed${json.error?.message ? ` (${json.error.message})` : ''}`);
       }
@@ -333,8 +333,7 @@ async function fetchSourceUrl(videoId: string, session: AccountSession<string>, 
  * which is stable across requests; JOJ Play never binds Programs via `programId`, so no
  * further identity constraint applies. */
 type JojProgram =
-  | (Program & { kind: 'movie'; doc: FirestoreDocument })
-  | (Program & { kind: 'tv'; tagSeriesRef: string; seasons: number[] });
+  (Program & { kind: 'movie'; doc: FirestoreDocument }) | (Program & { kind: 'tv'; tagSeriesRef: string; seasons: number[] });
 
 async function* jojMoviePrograms(idToken: string, signal: AbortSignal): AsyncGenerator<JojProgram> {
   for (const doc of await queryMovies(idToken, signal)) {
@@ -367,14 +366,19 @@ async function* jojPrograms(session: AccountSession<string>, query: CatalogueQue
 /** Ports `API.getEpisodes`: a movie Program yields its single Release; a series Program yields
  * its seasons newest-first (narrowed to `query.season` when given), each season's episodes
  * already newest-first from `querySeasonEpisodes`'s Firestore ordering. */
-async function* jojReleases(session: AccountSession<string>, program: JojProgram, query: CatalogueQuery, signal: AbortSignal): AsyncGenerator<Release> {
+async function* jojReleases(
+  session: AccountSession<string>,
+  program: JojProgram,
+  query: CatalogueQuery,
+  signal: AbortSignal,
+): AsyncGenerator<Release> {
   if (program.kind === 'movie') {
     const release = movieToRelease(program.doc);
     if (release) yield release;
     return;
   }
   const idToken = await session.run(async token => token, signal);
-  const seasons = query.season === undefined ? program.seasons : program.seasons.filter((season) => season === query.season);
+  const seasons = query.season === undefined ? program.seasons : program.seasons.filter(season => season === query.season);
   for (const season of seasons) {
     for (const doc of await querySeasonEpisodes(program.tagSeriesRef, season, idToken, signal)) {
       const release = episodeToRelease(program.title, season, doc);
@@ -417,7 +421,7 @@ export function createJojPlayProvider(username: string, password: string): Provi
     id: 'jojplay',
     name: 'JOJ Play',
     catalogue: {
-      programs: (query, signal) => query.q.trim() ? each(allPrograms(signal)) : jojPrograms(session, query, signal),
+      programs: (query, signal) => (query.q.trim() ? each(allPrograms(signal)) : jojPrograms(session, query, signal)),
       releases: (program, query, signal) => jojReleases(session, program as JojProgram, query, signal),
     },
     resolve: (release, signal) => jojResolve(session, release, signal),

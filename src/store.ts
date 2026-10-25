@@ -70,7 +70,9 @@ export class Store {
       CREATE TABLE IF NOT EXISTS job_releases (job_id TEXT PRIMARY KEY, release TEXT NOT NULL);`);
     this.migrate();
     this.db.prepare('DELETE FROM releases WHERE saved_at < ?').run(Date.now() - RELEASE_RETENTION_MS);
-    this.insertRelease = this.db.prepare('INSERT INTO releases (id, payload, saved_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, saved_at=excluded.saved_at');
+    this.insertRelease = this.db.prepare(
+      'INSERT INTO releases (id, payload, saved_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, saved_at=excluded.saved_at',
+    );
     this.selectRelease = this.db.prepare('SELECT payload FROM releases WHERE id=?');
     this.selectJobs = this.db.prepare('SELECT payload FROM jobs');
     this.selectJob = this.db.prepare('SELECT payload FROM jobs WHERE id=?');
@@ -90,7 +92,8 @@ export class Store {
     for (let version = applied; version < MIGRATIONS.length; version++) {
       this.transaction(() => {
         this.db.exec(MIGRATIONS[version]!);
-        this.db.prepare("INSERT INTO settings VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+        this.db
+          .prepare("INSERT INTO settings VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
           .run(String(version + 1));
       });
     }
@@ -116,17 +119,19 @@ export class Store {
 
   release(id: string): Release | undefined {
     const row = this.selectRelease.get(id);
-    return row ? JSON.parse(String(row.payload)) as Release : undefined;
+    return row ? (JSON.parse(String(row.payload)) as Release) : undefined;
   }
 
   jobs(): Job[] {
-    return this.selectJobs.all().map(row => JSON.parse(String(row.payload)) as Job)
+    return this.selectJobs
+      .all()
+      .map(row => JSON.parse(String(row.payload)) as Job)
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   }
 
   job(id: string): Job | undefined {
     const row = this.selectJob.get(id);
-    return row ? JSON.parse(String(row.payload)) as Job : undefined;
+    return row ? (JSON.parse(String(row.payload)) as Job) : undefined;
   }
 
   saveJob(job: Job): void {
@@ -137,7 +142,7 @@ export class Store {
   /** The Release a Job downloaded, also after the Job itself was removed. */
   jobRelease(id: string): Release | undefined {
     const row = this.selectJobRelease.get(id);
-    return row ? JSON.parse(String(row.release)) as Release : undefined;
+    return row ? (JSON.parse(String(row.release)) as Release) : undefined;
   }
 
   updateJob(id: string, update: Partial<Job>): Job | undefined {

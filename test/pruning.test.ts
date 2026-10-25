@@ -32,8 +32,24 @@ test('expired cache rows are removed when their module starts', () => {
   const clock = () => now;
   const count = (table: string): number => Number(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n);
 
-  const bindings = new SeriesBindings(db, async () => { throw new Error('offline'); }, clock);
-  db.prepare('INSERT INTO series_release_cache VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run('p', 'prog', 1, 1, 1, 0, 5, now - 7 * 60 * 60_000, '[]');
+  const bindings = new SeriesBindings(
+    db,
+    async () => {
+      throw new Error('offline');
+    },
+    clock,
+  );
+  db.prepare('INSERT INTO series_release_cache VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+    'p',
+    'prog',
+    1,
+    1,
+    1,
+    0,
+    5,
+    now - 7 * 60 * 60_000,
+    '[]',
+  );
   new SeriesFeed(db, bindings, new Map(), clock);
   db.prepare('INSERT INTO release_first_seen VALUES (?, ?)').run('stale', now - 91 * DAY);
   db.prepare('INSERT INTO release_first_seen VALUES (?, ?)').run('recent', now - DAY);
@@ -41,10 +57,22 @@ test('expired cache rows are removed when their module starts', () => {
   db.prepare('INSERT INTO stream_episode_cache VALUES (?, ?, ?)').run('stale', now - 10 * 60_000, '[]');
 
   // The next start of each module sweeps what has expired.
-  new SeriesBindings(db, async () => { throw new Error('offline'); }, clock);
+  new SeriesBindings(
+    db,
+    async () => {
+      throw new Error('offline');
+    },
+    clock,
+  );
   new SeriesFeed(db, bindings, new Map(), clock);
   createStreamCzProvider({}, db, { now: clock });
   assert.equal(count('series_release_cache'), 0, 'a six-hour-old exact episode cache entry is gone');
-  assert.deepEqual(db.prepare('SELECT release_id FROM release_first_seen').all().map(row => row.release_id), ['recent']);
+  assert.deepEqual(
+    db
+      .prepare('SELECT release_id FROM release_first_seen')
+      .all()
+      .map(row => row.release_id),
+    ['recent'],
+  );
   assert.equal(count('stream_episode_cache'), 0, 'a ten-minute-old Stream.cz episode listing is gone');
 });

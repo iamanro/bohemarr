@@ -14,7 +14,13 @@ test('a failed mux leaves no hidden temp file in the job directory', async () =>
   await chmod(ffmpeg, 0o755);
   const finalPath = join(directory.path, 'Movie.mp4');
   await assert.rejects(
-    muxToFile({ ffmpeg, ffprobe: 'ffprobe' } as Config, [{ url: 'https://cdn.example/v.m3u8', kind: 'video' }], finalPath, AbortSignal.timeout(5000), () => {}),
+    muxToFile(
+      { ffmpeg, ffprobe: 'ffprobe' } as Config,
+      [{ url: 'https://cdn.example/v.m3u8', kind: 'video' }],
+      finalPath,
+      AbortSignal.timeout(5000),
+      () => {},
+    ),
     /exited with code 1/,
   );
   assert.deepEqual(await readdir(directory.path), ['ffmpeg'], 'neither .Movie.tmp.mp4 nor Movie.mp4 is left behind');

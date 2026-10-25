@@ -18,7 +18,18 @@
  */
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
-import type { Catalogue, CatalogueQuery, License, MediaKind, MediaSource, Provider, ProviderConfig, Release, SeriesIdentity, ProgramMetadata } from '../types.ts';
+import type {
+  Catalogue,
+  CatalogueQuery,
+  License,
+  MediaKind,
+  MediaSource,
+  Provider,
+  ProviderConfig,
+  Release,
+  SeriesIdentity,
+  ProgramMetadata,
+} from '../types.ts';
 import { isSeriesCandidate } from '../series-identity.ts';
 import { at, cached, fetchJson, fetchText, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { extractPlayIds, get, Nuxt, PrimaAuthError, PrimaMessageError, PrimaRpc } from './prima-common.ts';
@@ -73,14 +84,16 @@ export function createPrimaProviders(configs: Record<string, ProviderConfig>, da
     releases: (program: PrimaProgram, _query: CatalogueQuery, signal: AbortSignal) => releases(program, auth, signal),
   };
 
-  return [{
-    id: PROVIDER_ID,
-    name: 'iPrima',
-    catalogue,
-    seriesCandidates: auth.hasCredentials() ? (identity, signal) => seriesCandidates(index, identity, signal) : undefined,
-    resolve: (release: Release, signal: AbortSignal) => resolve(release, signal, auth),
-    close: () => index.close(),
-  }];
+  return [
+    {
+      id: PROVIDER_ID,
+      name: 'iPrima',
+      catalogue,
+      seriesCandidates: auth.hasCredentials() ? (identity, signal) => seriesCandidates(index, identity, signal) : undefined,
+      resolve: (release: Release, signal: AbortSignal) => resolve(release, signal, auth),
+      close: () => index.close(),
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -111,10 +124,13 @@ async function* releases(program: PrimaProgram, auth: PrimaAuthenticator, signal
   if (program.kind === 'movie' && program.site === 'www') {
     const title = await primaPlusTitle(program.uri, signal);
     const year = Number(get<unknown>(title, 'additionals.year', undefined));
-    named = { ...program, title: get<string>(title, 'title', program.title).trim(),
-      year: Number.isSafeInteger(year) && year > 0 ? year : undefined };
+    named = {
+      ...program,
+      title: get<string>(title, 'title', program.title).trim(),
+      year: Number.isSafeInteger(year) && year > 0 ? year : undefined,
+    };
   } else if (program.titled === false) {
-    named = { ...program, title: await pageTitle(program.uri, signal) ?? program.title };
+    named = { ...program, title: (await pageTitle(program.uri, signal)) ?? program.title };
   }
   for await (const episode of episodesForSite(named.site, named, auth, signal)) yield buildRelease(named, episode);
 }
@@ -144,9 +160,14 @@ async function* programsForSite(site: Site, index: PrimaIndex, lists: SiteLists,
     case 'www':
       for await (const program of index.programs(signal)) yield { ...program, id: program.uri, site: 'www' };
       return;
-    case 'zoom': yield* await lists.zoom(signal); return;
-    case 'cnn': yield* await lists.cnn(signal); return;
-    default: return; // fresh/zeny/cool never exposed program listings upstream (Features.MEDIA only)
+    case 'zoom':
+      yield* await lists.zoom(signal);
+      return;
+    case 'cnn':
+      yield* await lists.cnn(signal);
+      return;
+    default:
+      return; // fresh/zeny/cool never exposed program listings upstream (Features.MEDIA only)
   }
 }
 
@@ -172,7 +193,7 @@ async function* zoomPrograms(signal: AbortSignal): AsyncGenerator<PrimaProgram> 
     for (const el of articles) {
       const $item = $(el);
       const srcset = $item.find('img[srcset]').attr('srcset');
-      const isActive = Boolean(srcset) && srcset!.split(',').some((part) => !part.includes('fallback-image.jpg'));
+      const isActive = Boolean(srcset) && srcset!.split(',').some(part => !part.includes('fallback-image.jpg'));
       if (!isActive) continue;
 
       const link = $item.find('.card-small-heading a').first();
@@ -204,13 +225,23 @@ async function* cnnPrograms(signal: AbortSignal): AsyncGenerator<PrimaProgram> {
 // ---------------------------------------------------------------------------------------------
 
 async function* episodesForSite(
-  site: Site, program: PrimaProgram, auth: PrimaAuthenticator, signal: AbortSignal,
+  site: Site,
+  program: PrimaProgram,
+  auth: PrimaAuthenticator,
+  signal: AbortSignal,
 ): AsyncGenerator<PrimaEpisode> {
   switch (site) {
-    case 'www': yield* primaPlusEpisodes(program, auth, signal); return;
-    case 'zoom': yield* await zoomEpisodes(program, signal); return;
-    case 'cnn': yield* cnnEpisodes(program, signal); return;
-    default: return;
+    case 'www':
+      yield* primaPlusEpisodes(program, auth, signal);
+      return;
+    case 'zoom':
+      yield* await zoomEpisodes(program, signal);
+      return;
+    case 'cnn':
+      yield* cnnEpisodes(program, signal);
+      return;
+    default:
+      return;
   }
 }
 
@@ -233,16 +264,23 @@ async function seriesCandidates(index: PrimaIndex, identity: SeriesIdentity, sig
     if (get<string>(title, 'type', '') !== 'series') continue;
     const year = get<number>(title, 'year', 0);
     candidates.push({
-      id: program.uri, title: get(title, 'title', '').trim(), aliases: [],
+      id: program.uri,
+      title: get(title, 'title', '').trim(),
+      aliases: [],
       year: Number.isSafeInteger(year) && year > 0 ? year : undefined,
-      countries: get<unknown[]>(title, 'countries', []).map(country => get<string>(country, 'label', '')).filter(Boolean),
+      countries: get<unknown[]>(title, 'countries', [])
+        .map(country => get<string>(country, 'label', ''))
+        .filter(Boolean),
     });
   }
   return candidates;
 }
 
 async function* primaPlusEpisodes(program: PrimaProgram, auth: PrimaAuthenticator, signal: AbortSignal): AsyncGenerator<PrimaEpisode> {
-  if (program.kind === 'movie') { yield { uri: program.uri, title: null }; return; }
+  if (program.kind === 'movie') {
+    yield { uri: program.uri, title: null };
+    return;
+  }
 
   const programId = await auth.run(async (session, signal) => {
     const headers = auth.headers(session);
@@ -261,19 +299,15 @@ async function* primaPlusEpisodes(program: PrimaProgram, auth: PrimaAuthenticato
   // Each season's episodes already arrive newest-first (requested `ordering: desc`); sorting
   // seasons newest-first too, and fetching lazily, yields the whole Program newest-first without
   // fetching a season the caller never asks for.
-  const seasons = (await auth.run(
-    (session, signal) => listSeasons(programId, session.accessToken, signal), signal,
-  )).sort((a, b) => b.number - a.number);
+  const seasons = (await auth.run((session, signal) => listSeasons(programId, session.accessToken, signal), signal)).sort(
+    (a, b) => b.number - a.number,
+  );
   for (const season of seasons) {
-    yield* await auth.run(
-      (session, signal) => listEpisodesForSeason(program, season.id, session.accessToken, signal), signal,
-    );
+    yield* await auth.run((session, signal) => listEpisodesForSeason(program, season.id, session.accessToken, signal), signal);
   }
 }
 
-async function listSeasons(
-  programId: string, accessToken: string, signal: AbortSignal,
-): Promise<Array<{ id: string; number: number }>> {
+async function listSeasons(programId: string, accessToken: string, signal: AbortSignal): Promise<Array<{ id: string; number: number }>> {
   const result = await PrimaRpc.request(
     'vdm.frontend.season.list.hbbtv',
     { _accessToken: accessToken, id: programId, pager: { limit: 999, offset: 0 } },
@@ -282,14 +316,17 @@ async function listSeasons(
   if (PrimaRpc.isError(result)) {
     throw new PrimaMessageError(get(result, 'error.message', 'Unable to list iPrima seasons'));
   }
-  return get<unknown[]>(result, 'data', []).map((s) => ({
+  return get<unknown[]>(result, 'data', []).map(s => ({
     id: get<string>(s, 'id', ''),
     number: get<number>(s, 'seasonNumber', 0),
   }));
 }
 
 async function listEpisodesForSeason(
-  program: PrimaProgram, seasonId: string, accessToken: string, signal: AbortSignal,
+  program: PrimaProgram,
+  seasonId: string,
+  accessToken: string,
+  signal: AbortSignal,
 ): Promise<PrimaEpisode[]> {
   const result = await PrimaRpc.request(
     'vdm.frontend.episodes.list.hbbtv',
@@ -343,9 +380,25 @@ const CNN_SNIPPET_REF_RE = /new\s+InfiniteCarousel\([^,]+,\s*'\/snippet\/episode
 const CNN_EPISODE_NAME_ONLY_RE = /^\d+\.\s+epizoda/i;
 const CNN_DASH_PREFIX_RE = /^\s*-\s*/;
 const CZECH_MONTH_NUMBERS: Record<string, number> = {
-  ledna: 1, unora: 2, února: 2, brezna: 3, března: 3, dubna: 4, kvetna: 5, května: 5,
-  cervna: 6, června: 6, cervence: 7, července: 7, srpna: 8, zari: 9, září: 9,
-  rijna: 10, října: 10, listopadu: 11, prosince: 12,
+  ledna: 1,
+  unora: 2,
+  února: 2,
+  brezna: 3,
+  března: 3,
+  dubna: 4,
+  kvetna: 5,
+  května: 5,
+  cervna: 6,
+  června: 6,
+  cervence: 7,
+  července: 7,
+  srpna: 8,
+  zari: 9,
+  září: 9,
+  rijna: 10,
+  října: 10,
+  listopadu: 11,
+  prosince: 12,
 };
 
 async function* cnnEpisodes(program: PrimaProgram, signal: AbortSignal): AsyncGenerator<PrimaEpisode> {
@@ -370,10 +423,14 @@ async function* cnnEpisodes(program: PrimaProgram, signal: AbortSignal): AsyncGe
   // portability, trading a little bandwidth for not depending on HEAD support.
   let lo = 0;
   let hi = limit;
-  while ((await contentLengthAt(hi)) > 0) { lo = hi; hi *= 2; }
+  while ((await contentLengthAt(hi)) > 0) {
+    lo = hi;
+    hi *= 2;
+  }
   while (hi - lo > limit) {
     const mid = lo + Math.floor((hi - lo) / 2);
-    if ((await contentLengthAt(mid)) <= 0) hi = mid; else lo = mid;
+    if ((await contentLengthAt(mid)) <= 0) hi = mid;
+    else lo = mid;
   }
 
   // Offset 0 is the newest page. Untitled episodes are numbered from the oldest one, so every page
@@ -388,9 +445,7 @@ async function* cnnEpisodes(program: PrimaProgram, signal: AbortSignal): AsyncGe
   yield* episodes.reverse();
 }
 
-function parseCnnEpisodeItem(
-  $: cheerio.CheerioAPI, el: AnyNode, program: PrimaProgram, indexes: Map<number, number>,
-): PrimaEpisode {
+function parseCnnEpisodeItem($: cheerio.CheerioAPI, el: AnyNode, program: PrimaProgram, indexes: Map<number, number>): PrimaEpisode {
   const $item = $(el);
   const link = $item.find('h3 > a').first();
   const uri = new URL(link.attr('href') ?? '', program.uri).href;
@@ -409,11 +464,15 @@ function parseCnnEpisodeItem(
   const quotedTitle = quoteIgnoringPunctuation(program.title);
   const titleWithNumberRe = new RegExp(`${quotedTitle}\\s+\\((\\d+\\.?)\\)`, 'iu');
   const subheadingRe = new RegExp(
-    `^${quotedTitle}(?:\\s+\\(?(?:\\d{1,2}\\.\\s*\\d{1,2}\\.\\s*\\d{4}(?:\\s+\\d{2}:\\d{2})?|\\d+\\.?)\\)?)?$`, 'iu',
+    `^${quotedTitle}(?:\\s+\\(?(?:\\d{1,2}\\.\\s*\\d{1,2}\\.\\s*\\d{4}(?:\\s+\\d{2}:\\d{2})?|\\d+\\.?)\\)?)?$`,
+    'iu',
   );
 
   let match = titleWithNumberRe.exec(title);
-  if (match) { numEpisode = parseInt(match[1]!, 10); title = ''; }
+  if (match) {
+    numEpisode = parseInt(match[1]!, 10);
+    title = '';
+  }
 
   const subheading = $item.find('p + h3').first();
   if (subheading.length > 0) {
@@ -500,7 +559,8 @@ async function resolve(release: Release, signal: AbortSignal, auth: PrimaAuthent
   if (!subdomain) throw new Error(`${release.url} is not an iprima.cz URL`);
 
   switch (subdomain.toLowerCase()) {
-    case 'www': return resolvePrimaPlus(release, signal, auth);
+    case 'www':
+      return resolvePrimaPlus(release, signal, auth);
     case 'zoom':
     case 'cnn':
     case 'fresh':
@@ -514,11 +574,13 @@ async function resolve(release: Release, signal: AbortSignal, auth: PrimaAuthent
 
 function extractInlineScripts(html: string): string[] {
   const $ = cheerio.load(html);
-  return $('script:not([src])').toArray().map((el) => $(el).html() ?? '');
+  return $('script:not([src])')
+    .toArray()
+    .map(el => $(el).html() ?? '');
 }
 
 function collectStreamInfos(data: unknown): unknown[] {
-  if (Array.isArray(data)) return data.flatMap((c) => get<unknown[]>(c, 'streamInfos', []));
+  if (Array.isArray(data)) return data.flatMap(c => get<unknown[]>(c, 'streamInfos', []));
   return get<unknown[]>(data, 'streamInfos', []);
 }
 
@@ -532,12 +594,11 @@ async function resolveDefault(release: Release, signal: AbortSignal, auth: Prima
     const sources: MediaSource[] = [];
     const refusals: string[] = [];
     for (const playId of playIds) {
-      const data = await fetchJson<unknown>(
-        `https://api.play-backend.iprima.cz/api/v1/products/play/ids-${playId}`, signal, { headers },
-      );
+      const data = await fetchJson<unknown>(`https://api.play-backend.iprima.cz/api/v1/products/play/ids-${playId}`, signal, { headers });
       for (const item of Array.isArray(data) ? data : [data]) {
         const code = get<string>(item, 'errorResult.errorCode', '');
-        if (code) refusals.push(get<string>(item, 'errorResult.subcode', '') ? `${code}/${get<string>(item, 'errorResult.subcode', '')}` : code);
+        if (code)
+          refusals.push(get<string>(item, 'errorResult.subcode', '') ? `${code}/${get<string>(item, 'errorResult.subcode', '')}` : code);
       }
       for (const streamInfo of collectStreamInfos(data)) {
         const url = get<string>(streamInfo, 'url', '');
@@ -548,7 +609,10 @@ async function resolveDefault(release: Release, signal: AbortSignal, auth: Prima
     }
 
     // PLAY_ADMIT_INVALID/CATCHUP: the public sites also list titles that only a Prima+ account may play.
-    if (sources.length === 0 && refusals.length) throw new PrimaMessageError(`iPrima refuses playback of ${release.url}: ${refusals.join(', ')}${auth.hasCredentials() ? '' : ' (a Prima+ account may be needed)'}`);
+    if (sources.length === 0 && refusals.length)
+      throw new PrimaMessageError(
+        `iPrima refuses playback of ${release.url}: ${refusals.join(', ')}${auth.hasCredentials() ? '' : ' (a Prima+ account may be needed)'}`,
+      );
     if (sources.length === 0) throw new Error(`iPrima returned no stream URLs for ${release.url}`);
     return sources;
   };
@@ -573,7 +637,10 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
 
       let nuxtData: Record<string, unknown> | null = null;
       for (const value of Object.values(nuxt.data())) {
-        if (at(value, 'playId') !== undefined || at(value, 'content') !== undefined) { nuxtData = value as Record<string, unknown>; break; }
+        if (at(value, 'playId') !== undefined || at(value, 'content') !== undefined) {
+          nuxtData = value as Record<string, unknown>;
+          break;
+        }
       }
       if (!nuxtData) throw new Error(`Unable to extract Prima+ media information for ${release.url}`);
       if (at(nuxtData, 'content') !== undefined) nuxtData = get(nuxtData, 'content', {} as Record<string, unknown>);
@@ -581,12 +648,10 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
       const playId = get<string | null>(nuxtData, 'playId', null);
       if (!playId) throw new Error(`Unable to extract Prima+ play ID for ${release.url}`);
 
-      const data = await fetchJson<unknown>(
-        `https://api.play-backend.iprima.cz/api/v1/products/play/ids-${playId}`, signal, { headers },
-      );
+      const data = await fetchJson<unknown>(`https://api.play-backend.iprima.cz/api/v1/products/play/ids-${playId}`, signal, { headers });
 
       const errorInfo = Array.isArray(data)
-        ? data.map((c) => get(c, 'errorResult', null)).find((e) => e) ?? null
+        ? (data.map(c => get(c, 'errorResult', null)).find(e => e) ?? null)
         : get(data, 'errorResult', null);
       if (errorInfo) {
         const code = get<string>(errorInfo, 'errorCode', 'unknown');
@@ -625,7 +690,7 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
       if (at(streamInfo, 'drmInfo') !== undefined) {
         if (type !== 'dash') continue; // Widevine over HLS is not supported, matching upstream
         const modular = get<unknown[]>(streamInfo, 'drmInfo.modularDrmInfos', []);
-        const widevine = modular.find((m) => get<string>(m, 'keySystem', '') === 'com.widevine.alpha');
+        const widevine = modular.find(m => get<string>(m, 'keySystem', '') === 'com.widevine.alpha');
         const token = widevine ? get<string | null>(widevine, 'token', null) : null;
         if (token) {
           drm = { url: AXDRM_LICENSE_URL, headers: { Referer: REFERER, 'X-AxDRM-Message': token } };

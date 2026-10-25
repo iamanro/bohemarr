@@ -19,8 +19,10 @@ interface ProgressAccumulator {
 }
 
 function applyProgressLine(
-  accumulator: ProgressAccumulator, line: string,
-  onProgress: (progress: DownloadProgress) => void, durationSeconds: number | undefined,
+  accumulator: ProgressAccumulator,
+  line: string,
+  onProgress: (progress: DownloadProgress) => void,
+  durationSeconds: number | undefined,
 ): void {
   const separator = line.indexOf('=');
   if (separator < 0) return;
@@ -47,8 +49,12 @@ function applyProgressLine(
  * stream-copying video/audio and converting subtitles only when the container requires it.
  */
 export async function ffmpegMux(
-  config: Config, inputs: MuxInput[], outputPath: string, signal: AbortSignal,
-  onProgress: (progress: DownloadProgress) => void, durationSeconds?: number,
+  config: Config,
+  inputs: MuxInput[],
+  outputPath: string,
+  signal: AbortSignal,
+  onProgress: (progress: DownloadProgress) => void,
+  durationSeconds?: number,
 ): Promise<void> {
   const args: string[] = ['-y', '-hide_banner', '-loglevel', 'error', '-xerror'];
   let videoIndex = -1;
@@ -93,8 +99,12 @@ export async function ffmpegMux(
  * it into place. A mux or validation failure removes the temp file; nothing resumes from it.
  */
 export async function muxToFile(
-  config: Config, inputs: MuxInput[], finalPath: string, signal: AbortSignal,
-  onProgress: (progress: DownloadProgress) => void, durationSeconds?: number,
+  config: Config,
+  inputs: MuxInput[],
+  finalPath: string,
+  signal: AbortSignal,
+  onProgress: (progress: DownloadProgress) => void,
+  durationSeconds?: number,
 ): Promise<string> {
   const extension = extname(finalPath);
   const tempPath = join(dirname(finalPath), `.${basename(finalPath, extension)}.tmp${extension}`);

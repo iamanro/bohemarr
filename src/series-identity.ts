@@ -18,7 +18,7 @@ const COUNTRY_LOCALES = ['en', 'cs', 'sk'];
  */
 const COUNTRY_SYNONYMS: Record<string, string> = {
   'velka britanie': 'GB', // cs: common alternate to the official "Spojené království"
-  'cr': 'CZ', // Prima's "ČR"; ASCII "CR" is resolved as the Costa Rica ISO code before this fallback.
+  cr: 'CZ', // Prima's "ČR"; ASCII "CR" is resolved as the Costa Rica ISO code before this fallback.
 };
 
 function normalizeCountryToAlpha2(raw: string | undefined): string | undefined {
@@ -32,12 +32,20 @@ function normalizeCountryToAlpha2(raw: string | undefined): string | undefined {
     const code = countries.getSimpleAlpha2Code(trimmed, locale);
     if (code) return code;
   }
-  const key = trimmed.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  const key = trimmed
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return COUNTRY_SYNONYMS[key];
 }
 
 function normalizeForTokens(value: string): string[] {
-  const stripped = value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const stripped = value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
   const spaced = stripped.replace(/[()]/g, ' ').replace(/&/g, ' & ');
   return spaced.split(/[^a-z0-9&]+/).filter(Boolean);
 }
@@ -154,9 +162,7 @@ export function selectProgram(identity: SeriesIdentity, candidates: ProgramMetad
   if (!named.length) return { reason: 'no-candidate' };
   const dated = named.filter(candidate => candidate.year === identity.year);
   if (!dated.length) return { reason: 'year-mismatch' };
-  const located = dated.filter(candidate => candidate.countries
-    .map(normalizeCountryToAlpha2)
-    .includes(identityCountry));
+  const located = dated.filter(candidate => candidate.countries.map(normalizeCountryToAlpha2).includes(identityCountry));
   if (!located.length) return { reason: 'country-mismatch' };
   return located.length === 1 ? { program: located[0]! } : { reason: 'ambiguous' };
 }
@@ -182,7 +188,7 @@ function positiveId(value: unknown): value is number {
 async function loadTvmazeNames(id: number, tvdbId: number, signal: AbortSignal): Promise<string[]> {
   const response = await fetch(`https://api.tvmaze.com/shows/${id}`, { signal });
   if (!response.ok) throw new Error(`TVmaze lookup for tvdb ${tvdbId} failed with status ${response.status}`);
-  const show = await response.json() as { id?: unknown; name?: unknown; externals?: { thetvdb?: unknown } };
+  const show = (await response.json()) as { id?: unknown; name?: unknown; externals?: { thetvdb?: unknown } };
   if (show.id !== id || show.externals?.thetvdb !== tvdbId) {
     throw new Error(`Mismatched TVmaze metadata for tvdb ${tvdbId}`);
   }
@@ -257,9 +263,7 @@ export async function loadSeriesIdentity(tvdbId: number, signal: AbortSignal): P
     throw new Error(`Skyhook returned malformed metadata for tvdb ${tvdbId}: missing title`);
   }
 
-  const country = typeof data.originalCountry === 'string' && data.originalCountry.trim()
-    ? data.originalCountry.trim()
-    : undefined;
+  const country = typeof data.originalCountry === 'string' && data.originalCountry.trim() ? data.originalCountry.trim() : undefined;
 
   const names = positiveId(data.tvMazeId) ? await loadTvmazeNames(data.tvMazeId, tvdbId, combinedSignal) : [];
   const identity: SeriesIdentity = {

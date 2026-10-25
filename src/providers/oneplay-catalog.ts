@@ -1,6 +1,12 @@
 import type { MediaKind, MediaSource, ProgramMetadata } from '../types.ts';
 import { at, normalize, PlaybackBusy } from './common.ts';
-import { playbackCapabilities, readErrorMessage, successData, EPISODE_LIST_MAX_ITEMS_PER_PAGE, PROGRAM_LIST_MAX_ITEMS_PER_PAGE } from './oneplay-protocol.ts';
+import {
+  playbackCapabilities,
+  readErrorMessage,
+  successData,
+  EPISODE_LIST_MAX_ITEMS_PER_PAGE,
+  PROGRAM_LIST_MAX_ITEMS_PER_PAGE,
+} from './oneplay-protocol.ts';
 import type { OneplayConnectionPool } from './oneplay-pool.ts';
 
 /** Oneplay's result code when every concurrent stream the account's plan allows is in use. */
@@ -116,8 +122,8 @@ function parseCarouselTiles<T>(data: unknown, parser: (item: unknown) => T | nul
 
 /** `Oneplay.blocksFindCarousels`: layout blocks nest arbitrarily deep; walk them recursively. */
 function findCarousels(blocks: readonly unknown[]): unknown[] {
-  const direct = blocks.flatMap((block) => at<unknown[]>(block, 'carousels') ?? []);
-  const nested = blocks.flatMap((block) => findCarousels(at<unknown[]>(block, 'layout.blocks') ?? []));
+  const direct = blocks.flatMap(block => at<unknown[]>(block, 'carousels') ?? []);
+  const nested = blocks.flatMap(block => findCarousels(at<unknown[]>(block, 'layout.blocks') ?? []));
   return [...direct, ...nested];
 }
 
@@ -159,11 +165,9 @@ function getDirectEpisodes(contentData: unknown): DirectEpisode[] {
   const blocks = at<unknown[]>(contentData, 'layout.blocks');
   if (!blocks) return [];
 
-  const carousel = findCarousels(blocks).find((candidate) => {
+  const carousel = findCarousels(blocks).find(candidate => {
     const tiles = at<unknown[]>(candidate, 'tiles') ?? [];
-    return tiles.every(
-      (tile) => at<string>(tile, 'action.call') === 'content.play' || at<string>(tile, 'action.schema') === 'NoAppAction',
-    );
+    return tiles.every(tile => at<string>(tile, 'action.call') === 'content.play' || at<string>(tile, 'action.schema') === 'NoAppAction');
   });
   if (!carousel) return [];
 
@@ -196,7 +200,7 @@ interface ProgramInfo {
 
 /** `Oneplay.getProgramInfo`. */
 async function fetchProgramInfo(pool: OneplayConnectionPool, uri: string, signal: AbortSignal): Promise<ProgramInfo | null> {
-  const data = await pool.withConnection(signal, async (connection) => {
+  const data = await pool.withConnection(signal, async connection => {
     const response = await connection.request(
       'app.init',
       { payload: { reason: 'start', route: { url: uri } }, customData: { requireStartAction: true } },
@@ -222,11 +226,16 @@ async function fetchProgramInfo(pool: OneplayConnectionPool, uri: string, signal
  */
 function parseSeriesMetadata(contentData: unknown, uri: string, title: string): ProgramMetadata {
   const lists = (at<unknown[]>(contentData, 'layout.blocks') ?? [])
-    .flatMap(block => at<unknown[]>(block, 'additionalContentData.lists') ?? []).flat();
-  const values = (label: string): string[] => lists
-    .filter(entry => normalize(at<string>(entry, 'label.name') ?? '') === normalize(label))
-    .flatMap(entry => at<unknown[]>(entry, 'valueList') ?? [])
-    .flatMap(value => { const name = at<string>(value, 'name'); return name ? [name] : []; });
+    .flatMap(block => at<unknown[]>(block, 'additionalContentData.lists') ?? [])
+    .flat();
+  const values = (label: string): string[] =>
+    lists
+      .filter(entry => normalize(at<string>(entry, 'label.name') ?? '') === normalize(label))
+      .flatMap(entry => at<unknown[]>(entry, 'valueList') ?? [])
+      .flatMap(value => {
+        const name = at<string>(value, 'name');
+        return name ? [name] : [];
+      });
 
   // "Rok:" is either a single production year or a still-running range; the first year is the one
   // comparable with an authoritative first-aired date.
@@ -244,7 +253,7 @@ function parseSeriesMetadata(contentData: unknown, uri: string, title: string): 
 
 /** `Oneplay.getContentData`. */
 async function fetchContentData(pool: OneplayConnectionPool, contentId: string, signal: AbortSignal): Promise<unknown> {
-  return pool.withConnection(signal, async (connection) => {
+  return pool.withConnection(signal, async connection => {
     const response = await connection.request(
       'page.content.display',
       { payload: { contentId }, customData: { shouldBeInModal: true }, playbackCapabilities: playbackCapabilities() },
@@ -261,7 +270,7 @@ interface PlayPayload {
 
 /** `Oneplay.getPlayPayload`: walks the `app.init` start-action chain down to a playable payload. */
 async function fetchPlayPayload(pool: OneplayConnectionPool, uri: string, signal: AbortSignal): Promise<PlayPayload | null> {
-  return pool.withConnection(signal, async (connection) => {
+  return pool.withConnection(signal, async connection => {
     const initData = successData(
       await connection.request(
         'app.init',
@@ -282,7 +291,7 @@ async function fetchPlayPayload(pool: OneplayConnectionPool, uri: string, signal
         const displayData = successData(await connection.request('page.content.display', { payload: callPayload }, signal));
         const blocks = at<unknown[]>(displayData, 'layout.blocks');
         if (!blocks) return null;
-        const mainBlock = blocks.map((block) => at(block, 'mainAction.action')).find((action) => action != null);
+        const mainBlock = blocks.map(block => at(block, 'mainAction.action')).find(action => action != null);
         if (!mainBlock) return null;
         startAction = mainBlock;
         continue;
@@ -310,7 +319,7 @@ export async function fetchAllPrograms(pool: OneplayConnectionPool, signal: Abor
   };
 
   const requestPage = async (): Promise<unknown> =>
-    pool.withConnection(signal, async (connection) => successData(await connection.request('carousel.display', { payload }, signal)));
+    pool.withConnection(signal, async connection => successData(await connection.request('carousel.display', { payload }, signal)));
 
   const programs: OneplayProgram[] = [];
   let data = await requestPage();
@@ -360,9 +369,12 @@ export async function fetchEpisodesForProgram(
   const seasons = getSeasons(contentData);
 
   if (seasons.length === 0) {
-    const items = getDirectEpisodes(contentData).map(
-      (direct): OneplayEpisode => ({ uri: direct.uri, title: direct.title, season: undefined, episodeNumber: undefined }),
-    );
+    const items = getDirectEpisodes(contentData).map((direct): OneplayEpisode => ({
+      uri: direct.uri,
+      title: direct.title,
+      season: undefined,
+      episodeNumber: undefined,
+    }));
     return { kind: 'episodes', title: programInfo.title ?? '', items };
   }
 
@@ -381,7 +393,7 @@ export async function fetchEpisodesForProgram(
     let hasNext: boolean;
     do {
       paging.position = position;
-      const data = await pool.withConnection(signal, async (connection) =>
+      const data = await pool.withConnection(signal, async connection =>
         successData(await connection.request('carousel.display', { payload }, signal)),
       );
       for (const parsed of parseCarouselTiles(data, parseEpisodeItem)) {
@@ -441,7 +453,7 @@ export async function resolveMediaSources(pool: OneplayConnectionPool, uri: stri
   }
   const payload = playPayload.payload;
 
-  const data = await pool.withConnection(signal, async (connection) => {
+  const data = await pool.withConnection(signal, async connection => {
     const response = await connection.request('content.play', { payload, playbackCapabilities: playbackCapabilities() }, signal);
     // 4091 (all concurrent streams in use) is ignored elsewhere, but here it is why no stream is returned.
     if (response.status !== 'Ok' && Number(at(response.data, 'result.code')) === MAX_CONCURRENT_STREAMS) {

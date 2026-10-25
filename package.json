@@ -19,7 +19,7 @@
     "dev:web": "bun run --cwd web dev",
     "check": "tsc",
     "test": "bun --no-env-file test --isolate --timeout 60000 ./test",
-    "lint": "oxlint --deny-warnings"
+    "lint": "oxlint --deny-warnings src test web/src"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.2",

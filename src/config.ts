@@ -6,13 +6,31 @@ import { PROVIDER_IDS } from './providers/ids.ts';
 import type { ArrConfig, Config, ProviderConfig, VltavaConfig } from './types.ts';
 
 /** Provider settings that hold a single string, set as `<PROVIDER>_<FIELD>`, e.g. `ONEPLAY_PROFILE_PIN`. */
-const PROVIDER_FIELDS = ['username', 'password', 'profile', 'profilePin', 'accountId', 'deviceId', 'cookies', 'client', 'poToken', 'visitorData', 'playerId'] as const;
+const PROVIDER_FIELDS = [
+  'username',
+  'password',
+  'profile',
+  'profilePin',
+  'accountId',
+  'deviceId',
+  'cookies',
+  'client',
+  'poToken',
+  'visitorData',
+  'playerId',
+] as const;
 /** Provider settings that are lists or objects, which only config.json can hold. */
 const NESTED_PROVIDER_FIELDS = ['catalog', 'headers'];
 
 /** Settings the web UI may store in `DATA_DIR/settings.json`; never paths or commands, which only the deployment sets. */
 export const EDITABLE_SETTINGS: readonly string[] = [
-  'PROVIDERS', 'CATEGORIES', 'CONCURRENCY', 'REQUEST_RATE', 'ARR_REMOVE_COMPLETED', 'ARR_RENAME', 'VLTAVA_TOKEN',
+  'PROVIDERS',
+  'CATEGORIES',
+  'CONCURRENCY',
+  'REQUEST_RATE',
+  'ARR_REMOVE_COMPLETED',
+  'ARR_RENAME',
+  'VLTAVA_TOKEN',
   ...['SONARR', 'RADARR'].flatMap(app => ['URL', 'API_KEY', 'CATEGORY', 'ROOT_FOLDER'].map(field => `${app}_${field}`)),
   ...PROVIDER_IDS.flatMap(id => PROVIDER_FIELDS.map(field => `${id.toUpperCase()}_${constantCase(field)}`)),
 ];
@@ -105,14 +123,23 @@ function vltavaConfig(): VltavaConfig | undefined {
   const userpass = env('VLTAVA_SEEDER_USERPASS');
   if (userpass !== undefined && !userpass.includes(':')) throw new Error('VLTAVA_SEEDER_USERPASS must be username:password');
   return {
-    url, token, providers, outDir: resolve(required('VLTAVA_OUT_DIR')), link: link as VltavaConfig['link'], group,
-    anonymous: boolean('VLTAVA_ANONYMOUS', false), cli: env('VLTAVA_CLI') ?? 'vltava',
+    url,
+    token,
+    providers,
+    outDir: resolve(required('VLTAVA_OUT_DIR')),
+    link: link as VltavaConfig['link'],
+    group,
+    anonymous: boolean('VLTAVA_ANONYMOUS', false),
+    cli: env('VLTAVA_CLI') ?? 'vltava',
     seeder: { url: seederUrl, userpass },
   };
 }
 
 function list(value: string): string[] {
-  return value.split(',').map(item => item.trim()).filter(Boolean);
+  return value
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -130,12 +157,16 @@ async function readNestedProviders(file: string, required: boolean): Promise<Rec
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(`${file} must be a JSON object`);
   const misplaced: string[] = [];
   for (const key of Object.keys(parsed)) {
-    if (key !== 'providers') misplaced.push(`${key} (use ${key === 'sonarr' || key === 'radarr' ? `${key.toUpperCase()}_*` : key === 'removeCompleted' ? 'ARR_REMOVE_COMPLETED' : constantCase(key)})`);
+    if (key !== 'providers')
+      misplaced.push(
+        `${key} (use ${key === 'sonarr' || key === 'radarr' ? `${key.toUpperCase()}_*` : key === 'removeCompleted' ? 'ARR_REMOVE_COMPLETED' : constantCase(key)})`,
+      );
   }
   const providers = (parsed as Record<string, unknown>).providers ?? {};
   if (!providers || typeof providers !== 'object' || Array.isArray(providers)) throw new Error(`${file}: providers must be an object`);
   for (const [id, settings] of Object.entries(providers)) {
-    if (!(PROVIDER_IDS as readonly string[]).includes(id)) throw new Error(`${file}: unknown provider ${id}; known: ${PROVIDER_IDS.join(', ')}`);
+    if (!(PROVIDER_IDS as readonly string[]).includes(id))
+      throw new Error(`${file}: unknown provider ${id}; known: ${PROVIDER_IDS.join(', ')}`);
     if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error(`${file}: providers.${id} must be an object`);
     for (const key of Object.keys(settings)) {
       if (NESTED_PROVIDER_FIELDS.includes(key)) continue;
@@ -143,7 +174,9 @@ async function readNestedProviders(file: string, required: boolean): Promise<Rec
     }
   }
   if (misplaced.length) {
-    throw new Error(`${file} holds only providers.<id>.${NESTED_PROVIDER_FIELDS.join(' and providers.<id>.')}; move these settings to environment variables: ${misplaced.join(', ')}`);
+    throw new Error(
+      `${file} holds only providers.<id>.${NESTED_PROVIDER_FIELDS.join(' and providers.<id>.')}; move these settings to environment variables: ${misplaced.join(', ')}`,
+    );
   }
   return providers as Record<string, ProviderConfig>;
 }
@@ -153,7 +186,9 @@ export async function loadConfig(settings?: Record<string, string>): Promise<Con
   const dataDir = resolve(env('DATA_DIR') || './data');
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
   const previous = saved;
-  saved = Object.fromEntries(Object.entries(settings ?? await readSettings(dataDir)).filter(([name]) => EDITABLE_SETTINGS.includes(name)));
+  saved = Object.fromEntries(
+    Object.entries(settings ?? (await readSettings(dataDir))).filter(([name]) => EDITABLE_SETTINGS.includes(name)),
+  );
   try {
     return await readConfig(dataDir);
   } catch (error) {
@@ -184,7 +219,14 @@ async function readConfig(dataDir: string): Promise<Config> {
   const port = integer('PORT', 8787, 1, 65535);
   const publicUrl = (env('PUBLIC_URL') || `http://localhost:${port}`).replace(/\/$/, '');
   const parsedUrl = new URL(publicUrl);
-  if (!['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.username || parsedUrl.password || parsedUrl.search || parsedUrl.hash || parsedUrl.pathname !== '/') {
+  if (
+    !['http:', 'https:'].includes(parsedUrl.protocol) ||
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.search ||
+    parsedUrl.hash ||
+    parsedUrl.pathname !== '/'
+  ) {
     throw new Error('PUBLIC_URL must be an HTTP(S) origin without path, credentials, query or fragment');
   }
   const downloadsDir = resolve(env('DOWNLOADS_DIR') || './downloads');
@@ -219,18 +261,28 @@ async function readConfig(dataDir: string): Promise<Config> {
     if (!/^https?:\/\//.test(url)) throw new Error(`${prefix}_URL must be an HTTP(S) URL`);
     const category = env(`${prefix}_CATEGORY`) ?? (app === 'sonarr' ? 'tv' : 'movies');
     if (!categories.includes(category)) throw new Error(`${prefix}_CATEGORY must be one of the categories: ${category}`);
-    return [{ app, url, apiKey: key, category, rootFolder: env(`${prefix}_ROOT_FOLDER`), removeCompleted, rename: boolean('ARR_RENAME', false) }];
+    return [
+      { app, url, apiKey: key, category, rootFolder: env(`${prefix}_ROOT_FOLDER`), removeCompleted, rename: boolean('ARR_RENAME', false) },
+    ];
   });
   const vltava = vltavaConfig();
   await Promise.all(categories.map(category => mkdir(resolve(downloadsDir, category), { recursive: true })));
   return {
-    host: env('HOST') || '127.0.0.1', port, apiKey, publicUrl, dataDir, downloadsDir,
+    host: env('HOST') || '127.0.0.1',
+    port,
+    apiKey,
+    publicUrl,
+    dataDir,
+    downloadsDir,
     concurrency: integer('CONCURRENCY', 2, 1, 32),
     requestRate: integer('REQUEST_RATE', 10, 1, 100),
     ffmpeg: env('FFMPEG') || 'ffmpeg',
     ffprobe: env('FFPROBE') || 'ffprobe',
     mp4decrypt: env('MP4DECRYPT') || 'mp4decrypt',
     wvApiUrl: env('WV_API_URL') || 'https://wv.api.md.sune.app/v1/',
-    categories, providers, arrs, vltava,
+    categories,
+    providers,
+    arrs,
+    vltava,
   };
 }

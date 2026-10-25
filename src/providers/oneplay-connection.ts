@@ -105,11 +105,7 @@ export class OneplayConnection {
     return promise;
   }
 
-  private handleInitMessage(
-    json: unknown,
-    settleResolve: () => void,
-    settleReject: (error: Error) => void,
-  ): void {
+  private handleInitMessage(json: unknown, settleResolve: () => void, settleReject: (error: Error) => void): void {
     const status = at<string>(json, 'result.status');
     if (status !== 'Ok') {
       settleReject(new Error(`Oneplay connection init failed: ${status ?? 'unknown status'}`));
@@ -230,12 +226,7 @@ export class OneplayConnection {
   }
 
   /** `Connection.command`: wraps args + schema into a `{ payload: { command: {...} } }` envelope. */
-  async command(
-    path: string,
-    schema: string,
-    args: Record<string, unknown>,
-    signal: AbortSignal,
-  ): Promise<OneplayResponse> {
+  async command(path: string, schema: string, args: Record<string, unknown>, signal: AbortSignal): Promise<OneplayResponse> {
     return this.request(path, { payload: { command: { ...args, schema } } }, signal);
   }
 }
@@ -249,5 +240,8 @@ export function pushedReply(json: unknown): { requestId: string; response: Onepl
   const requestId = at<string>(response, 'context.requestId');
   if (!requestId) return undefined;
   const status = at<string>(response, 'result.status');
-  return { requestId, response: { command: at<string>(json, 'command') ?? '', status, data: status === 'Ok' ? at(response, 'data') : response } };
+  return {
+    requestId,
+    response: { command: at<string>(json, 'command') ?? '', status, data: status === 'Ok' ? at(response, 'data') : response },
+  };
 }

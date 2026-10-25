@@ -25,10 +25,19 @@ export class Indexer {
   private readonly bindings: SeriesBindings;
   private readonly movieBindings: MovieBindings;
   private readonly feed: SeriesFeed;
-  private readonly feedInspections = new Map<string, { at: number; metadata: Pick<Release, 'height' | 'size' | 'sizeEstimated' | 'language'> }>();
+  private readonly feedInspections = new Map<
+    string,
+    { at: number; metadata: Pick<Release, 'height' | 'size' | 'sizeEstimated' | 'language'> }
+  >();
   private readonly providerTimeoutMs: number;
 
-  constructor(config: Config, store: Store, providers: Map<string, Provider>, bindings: SeriesBindings, providerTimeoutMs = PROVIDER_TIMEOUT_MS) {
+  constructor(
+    config: Config,
+    store: Store,
+    providers: Map<string, Provider>,
+    bindings: SeriesBindings,
+    providerTimeoutMs = PROVIDER_TIMEOUT_MS,
+  ) {
     this.config = config;
     this.providerTimeoutMs = providerTimeoutMs;
     this.store = store;
@@ -77,8 +86,15 @@ export class Indexer {
         throw new Error('Invalid daily episode date');
       }
     }
-    const query: SearchQuery = { q: params.q || '', kind, season: airDate ? undefined : season,
-      episode: airDate ? undefined : integer('ep'), airDate, limit: offset + limit, offset: 0 };
+    const query: SearchQuery = {
+      q: params.q || '',
+      kind,
+      season: airDate ? undefined : season,
+      episode: airDate ? undefined : integer('ep'),
+      airDate,
+      limit: offset + limit,
+      offset: 0,
+    };
     const enabled = [...this.providers.values()];
     if (!enabled.length) throw new Error('No providers are enabled');
     const tvdbId = integer('tvdbid');
@@ -87,20 +103,33 @@ export class Indexer {
     if (tmdbId !== undefined && (tmdbId === 0 || params.t !== 'movie')) throw new Error('Invalid tmdbid');
     const identity = tvdbId === undefined ? undefined : await this.bindings.identity(tvdbId, signal);
     if (identity) this.feed.watch(identity);
-    if (kind === 'tv' && !query.q.trim() && !identity && tmdbId === undefined
-        && query.season === undefined && query.episode === undefined && !airDate) {
+    if (
+      kind === 'tv' &&
+      !query.q.trim() &&
+      !identity &&
+      tmdbId === undefined &&
+      query.season === undefined &&
+      query.episode === undefined &&
+      !airDate
+    ) {
       const watched = await this.feed.releases(signal);
       // Sonarr refuses to save an indexer whose RSS is empty, so an empty feed falls back to browsing.
       if (watched.length) return this.respond(watched, offset, limit, signal, true);
     }
-    const results = await Promise.allSettled(enabled.map(provider => {
-      const providerSignal = AbortSignal.any([signal, AbortSignal.timeout(this.providerTimeoutMs)]);
-      return tmdbId === undefined
-        ? this.bindings.search(provider, query, identity, providerSignal)
-        : this.movieBindings.search(provider, query, tmdbId, providerSignal).then((releases): BindingSearch => ({ releases }));
-    }));
+    const results = await Promise.allSettled(
+      enabled.map(provider => {
+        const providerSignal = AbortSignal.any([signal, AbortSignal.timeout(this.providerTimeoutMs)]);
+        return tmdbId === undefined
+          ? this.bindings.search(provider, query, identity, providerSignal)
+          : this.movieBindings.search(provider, query, tmdbId, providerSignal).then((releases): BindingSearch => ({ releases }));
+      }),
+    );
     signal.throwIfAborted();
-    const failed = results.flatMap((result, index) => result.status === 'rejected' ? [`${enabled[index]!.id}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`] : []);
+    const failed = results.flatMap((result, index) =>
+      result.status === 'rejected'
+        ? [`${enabled[index]!.id}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`]
+        : [],
+    );
     if (failed.length === enabled.length) throw new Error(`All providers failed: ${failed.join('; ')}`);
     // A partial provider failure is visible to operators, not disguised as an empty successful provider.
     for (const error of failed) console.error(`Provider search failed: ${error}`);
@@ -110,7 +139,7 @@ export class Indexer {
       }
     });
     // Release ids are scoped by provider, and each provider's page is already deduplicated.
-    const releases = results.flatMap(result => result.status === 'fulfilled' ? result.value.releases : []);
+    const releases = results.flatMap(result => (result.status === 'fulfilled' ? result.value.releases : []));
     const all = tmdbId === undefined ? releases : releases.map(release => ({ ...release, tmdbId }));
     all.sort((a, b) => (b.publishedAt || '').localeCompare(a.publishedAt || '') || a.id.localeCompare(b.id));
     return this.respond(all, offset, limit, signal, false);
@@ -120,7 +149,13 @@ export class Indexer {
    * One Torznab page of `all`. Feed pages reuse a Release's playback inspection for six hours,
    * because every RSS sync lists the same newest Releases again; searches always inspect anew.
    */
-  private async respond(all: Release[], offset: number, limit: number, signal: AbortSignal, feed: boolean): Promise<{ page: Release[]; offset: number; total: number }> {
+  private async respond(
+    all: Release[],
+    offset: number,
+    limit: number,
+    signal: AbortSignal,
+    feed: boolean,
+  ): Promise<{ page: Release[]; offset: number; total: number }> {
     const page = all.slice(offset, offset + limit).map(release => ({ ...release }));
     const now = Date.now();
     for (const [id, inspection] of this.feedInspections) if (now - inspection.at >= FEED_INSPECTION_TTL_MS) this.feedInspections.delete(id);
@@ -133,7 +168,10 @@ export class Indexer {
       }
       await this.enrich(release, signal);
       if (feed && release.height !== undefined) {
-        this.feedInspections.set(release.id, { at: now, metadata: { height: release.height, size: release.size, sizeEstimated: release.sizeEstimated, language: release.language } });
+        this.feedInspections.set(release.id, {
+          at: now,
+          metadata: { height: release.height, size: release.size, sizeEstimated: release.sizeEstimated, language: release.language },
+        });
       }
     }
     signal.throwIfAborted();
@@ -166,7 +204,7 @@ export class Indexer {
     const date = new Date(release.publishedAt || 0);
     const size = Number.isFinite(release.size) && release.size! >= 0 ? Math.floor(release.size!) : 0;
     const description = release.sizeEstimated ? `${release.title} (estimated size)` : release.title;
-    const attr = (name: string, value: unknown) => value === undefined ? '' : `<torznab:attr name="${name}" value="${xml(value)}"/>`;
+    const attr = (name: string, value: unknown) => (value === undefined ? '' : `<torznab:attr name="${name}" value="${xml(value)}"/>`);
     const infoHash = taskInfoHash(release.id, sanitizeFilename(releaseTitle(release)));
     return `<item><title>${xml(releaseTitle(release))}</title><guid isPermaLink="false">${xml(release.id)}</guid><link>${xml(url)}</link><comments>${xml(release.url)}</comments><pubDate>${xml(Number.isFinite(date.getTime()) ? date.toUTCString() : new Date(0).toUTCString())}</pubDate><category>${category}</category><description>${xml(description)}</description><enclosure url="${xml(url)}" length="${size}" type="application/x-bittorrent"/>${attr('category', category)}${attr('size', size)}${attr('infohash', infoHash)}${attr('tvdbid', release.tvdbId)}${attr('tmdbid', release.tmdbId)}${attr('season', release.season)}${attr('episode', release.episode)}</item>`;
   }

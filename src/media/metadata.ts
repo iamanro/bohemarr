@@ -87,7 +87,11 @@ function redactUrl(url: string): string {
  * beyond the ranged slice already sent). An error response's body length is never mistaken for
  * the media's size; abort/network errors propagate rather than being reported as "unknown".
  */
-async function headContentLength(url: string, headers: Record<string, string> | undefined, signal: AbortSignal): Promise<number | undefined> {
+async function headContentLength(
+  url: string,
+  headers: Record<string, string> | undefined,
+  signal: AbortSignal,
+): Promise<number | undefined> {
   const parseLength = (value: string | null): number | undefined => {
     const length = Number(value);
     return value !== null && Number.isFinite(length) && length >= 0 ? length : undefined;
@@ -129,20 +133,29 @@ async function inspectDash(source: MediaSource, signal: AbortSignal): Promise<Ca
     bandwidth = Math.max(bandwidth, video.bandwidth);
     const videoBytes = trackBytes(video);
     if (!videoBytes) bytesKnown = false;
-    else { bytes += videoBytes.bytes; sizeEstimated ||= videoBytes.estimated; }
+    else {
+      bytes += videoBytes.bytes;
+      sizeEstimated ||= videoBytes.estimated;
+    }
     if (audio) {
       language ??= audio.language;
       const audioBytes = trackBytes(audio);
       if (!audioBytes) bytesKnown = false;
-      else { bytes += audioBytes.bytes; sizeEstimated ||= audioBytes.estimated; }
+      else {
+        bytes += audioBytes.bytes;
+        sizeEstimated ||= audioBytes.estimated;
+      }
     }
   }
   const size = bytesKnown ? bytes : undefined;
 
   return {
     source: { ...source, height, bandwidth: bandwidth || undefined, audioLanguage: language },
-    height, rankBandwidth: bandwidth,
-    size, sizeEstimated: size !== undefined ? sizeEstimated : undefined, language,
+    height,
+    rankBandwidth: bandwidth,
+    size,
+    sizeEstimated: size !== undefined ? sizeEstimated : undefined,
+    language,
   };
 }
 
@@ -172,8 +185,11 @@ async function inspectHls(source: MediaSource, signal: AbortSignal): Promise<Can
 
   return {
     source: { ...source, height, bandwidth: selection.video.bandwidth, audioLanguage: language },
-    height, rankBandwidth: selection.video.bandwidth ?? 0,
-    size, sizeEstimated, language,
+    height,
+    rankBandwidth: selection.video.bandwidth ?? 0,
+    size,
+    sizeEstimated,
+    language,
   };
 }
 
@@ -200,7 +216,9 @@ async function inspectFile(config: Config, source: MediaSource, signal: AbortSig
       // Some hosts (Webshare's free links) refuse the Range requests ffprobe seeks with. The file is
       // still there to download and is validated once on disk, so it is offered with what is known.
       if (signal.aborted || videoLength === undefined) throw error;
-      console.error(`ffprobe could not read ${redactUrl(source.url)}; offering it unprobed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `ffprobe could not read ${redactUrl(source.url)}; offering it unprobed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -219,8 +237,11 @@ async function inspectFile(config: Config, source: MediaSource, signal: AbortSig
   const size = videoLength !== undefined && audioSizeKnown ? videoLength + (audioLength ?? 0) : undefined;
   return {
     source: { ...source, height, audioLanguage: language },
-    height, rankBandwidth: bandwidth ?? source.bandwidth ?? 0,
-    size, sizeEstimated: size !== undefined ? false : undefined, language,
+    height,
+    rankBandwidth: bandwidth ?? source.bandwidth ?? 0,
+    size,
+    sizeEstimated: size !== undefined ? false : undefined,
+    language,
   };
 }
 

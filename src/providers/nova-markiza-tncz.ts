@@ -18,15 +18,36 @@ const REGEX_MAYBE_DATE = /\p{L}+\s+\d+\.\s+\p{L}+/u;
 const REGEX_DATE = /^(\d+)\.\s+(\d+)\.\s+\d+$/;
 
 const CZECH_WEEKDAYS: Record<string, true> = {
-  'pondělí': true, 'úterý': true, 'středa': true, 'čtvrtek': true, 'pátek': true, 'sobota': true, 'neděle': true,
+  pondělí: true,
+  úterý: true,
+  středa: true,
+  čtvrtek: true,
+  pátek: true,
+  sobota: true,
+  neděle: true,
 };
 const CZECH_MONTHS_GENITIVE: Record<string, number> = {
-  ledna: 1, února: 2, března: 3, dubna: 4, května: 5, června: 6,
-  července: 7, srpna: 8, září: 9, října: 10, listopadu: 11, prosince: 12,
+  ledna: 1,
+  února: 2,
+  března: 3,
+  dubna: 4,
+  května: 5,
+  června: 6,
+  července: 7,
+  srpna: 8,
+  září: 9,
+  října: 10,
+  listopadu: 11,
+  prosince: 12,
 };
 
 /** The provider's stable program URL doubles as `Program.id`; TN.cz is TV-only. */
-interface Program { id: string; uri: string; title: string; kind: 'tv' }
+interface Program {
+  id: string;
+  uri: string;
+  title: string;
+  kind: 'tv';
+}
 
 /** Parses a Czech "<weekday> <day>. <month>" textual date (e.g. "středa 3. září"), matching `DATE_FORMATTER_CZECH`. */
 function parseCzechWeekdayDate(text: string): { day: number; month: number } | null {
@@ -42,7 +63,8 @@ function parseEpisodes($: CheerioAPI, program: Program): Release[] {
   const releases: Release[] = [];
   const regexProgramTitle = new RegExp(`${RegExp.escape(program.title)}(?:\\s+[-\u2013\u2014]\\s*|:\\s*|\\s+)`, 'iu');
   const regexEpisodeTitle = new RegExp(
-    `(?:\\s+[-\u2013\u2014]\\s*)?${RegExp.escape(program.title)}\\s+\\((\\d+)\\)\\s+[-\u2013\u2014]\\s*`, 'iu',
+    `(?:\\s+[-\u2013\u2014]\\s*)?${RegExp.escape(program.title)}\\s+\\((\\d+)\\)\\s+[-\u2013\u2014]\\s*`,
+    'iu',
   );
 
   for (const el of $(SEL_EPISODES).toArray()) {
@@ -70,8 +92,13 @@ function parseEpisodes($: CheerioAPI, program: Program): Release[] {
         const parsed = parseCzechWeekdayDate(maybeDateMatch[0]);
         const numDateMatch = REGEX_DATE.exec(textContent);
 
-        if (parsed && numDateMatch?.[1] && numDateMatch[2]
-            && Number(numDateMatch[1]) === parsed.day && Number(numDateMatch[2]) === parsed.month) {
+        if (
+          parsed &&
+          numDateMatch?.[1] &&
+          numDateMatch[2] &&
+          Number(numDateMatch[1]) === parsed.day &&
+          Number(numDateMatch[2]) === parsed.month
+        ) {
           title = title.slice(0, maybeDateMatch.index) + title.slice(maybeDateMatch.index + maybeDateMatch[0].length);
         }
       }
@@ -80,8 +107,13 @@ function parseEpisodes($: CheerioAPI, program: Program): Release[] {
     }
 
     releases.push({
-      id: releaseId('tncz', uri), provider: 'tncz', title: title.trim(), url: uri,
-      kind: 'tv', series: program.title, episode: numEpisode > 0 ? numEpisode : undefined,
+      id: releaseId('tncz', uri),
+      provider: 'tncz',
+      title: title.trim(),
+      url: uri,
+      kind: 'tv',
+      series: program.title,
+      episode: numEpisode > 0 ? numEpisode : undefined,
     });
   }
 
@@ -127,8 +159,9 @@ async function* listEpisodes(program: Program, signal: AbortSignal): AsyncGenera
   const limit = 20;
 
   for (let page = 2; ; page++) {
-    const url = `https://tn.nova.cz/api/v1/episodes/more?channel=${channel}&limit=${limit}&page=${page}`
-      + `&filter=%7B%22show%22%3A%22${show}%22%7D&content=${content}`;
+    const url =
+      `https://tn.nova.cz/api/v1/episodes/more?channel=${channel}&limit=${limit}&page=${page}` +
+      `&filter=%7B%22show%22%3A%22${show}%22%7D&content=${content}`;
     $ = cheerio.load(await fetchText(url, signal));
     yield* parseEpisodes($, program);
     if ($(SEL_EPISODES_LOAD_MORE).length === 0) break;

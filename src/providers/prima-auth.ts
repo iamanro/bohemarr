@@ -69,8 +69,8 @@ export class PrimaAuthenticator {
 
     const source: SessionSource<PrimaAccountSession> = {
       label: 'iprima',
-      login: this.hasCredentials() ? (signal) => this.login(signal) : undefined,
-      refresh: (session) => this.refresh(session),
+      login: this.hasCredentials() ? signal => this.login(signal) : undefined,
+      refresh: session => this.refresh(session),
     };
     this.session = new AccountSession(source, now);
   }
@@ -167,7 +167,7 @@ export class PrimaAuthenticator {
 
     const profilesNode = findByKey(nuxt.state(), 'profiles');
     const rawProfiles = Array.isArray(profilesNode) ? profilesNode : [];
-    const profiles: Profile[] = rawProfiles.map((entry) => ({
+    const profiles: Profile[] = rawProfiles.map(entry => ({
       id: get(entry, 'ulid', ''),
       name: get(entry, 'name', ''),
     }));
@@ -177,7 +177,7 @@ export class PrimaAuthenticator {
     const wanted = this.profileOverride;
     if (!wanted || wanted.length === 0 || wanted.toLowerCase() === 'auto') return profiles[0]!;
 
-    return profiles.find((p) => p.id.toLowerCase() === wanted.toLowerCase()) ?? profiles[0]!;
+    return profiles.find(p => p.id.toLowerCase() === wanted.toLowerCase()) ?? profiles[0]!;
   }
 
   private profileTokenSecret(body: string): string {

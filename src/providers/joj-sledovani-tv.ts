@@ -97,7 +97,16 @@ async function createPairing(
 ): Promise<{ deviceId: string; pairingPassword: string }> {
   const result = await apiRequest(
     'api/create-pairing',
-    { type: DEVICE_TYPE, product: DEVICE_PRODUCT, serial: DEVICE_SERIAL, username, password, lang: APP_LANG, unit: 'default', checkLimit: '1' },
+    {
+      type: DEVICE_TYPE,
+      product: DEVICE_PRODUCT,
+      serial: DEVICE_SERIAL,
+      username,
+      password,
+      lang: APP_LANG,
+      unit: 'default',
+      checkLimit: '1',
+    },
     undefined,
     signal,
   );
@@ -123,7 +132,15 @@ async function deviceLogin(deviceId: string, pairingPassword: string, signal: Ab
 async function recordMediaSource(session: Session, recordId: string, signal: AbortSignal): Promise<Record<string, unknown>> {
   const result = await apiRequest(
     'api/record-timeshift',
-    { format: 'm3u8', radioFormat: 'm3u8', recordId, drm: 'widevine', capabilities: APP_CAPABILITIES, quality: QUALITY, PHPSESSID: session.sessionId },
+    {
+      format: 'm3u8',
+      radioFormat: 'm3u8',
+      recordId,
+      drm: 'widevine',
+      capabilities: APP_CAPABILITIES,
+      quality: QUALITY,
+      PHPSESSID: session.sessionId,
+    },
     session.sessionId,
     signal,
   );
@@ -134,7 +151,16 @@ async function recordMediaSource(session: Session, recordId: string, signal: Abo
 async function eventMediaSource(session: Session, eventId: string, signal: AbortSignal): Promise<Record<string, unknown>> {
   const result = await apiRequest(
     'api/event-timeshift',
-    { format: 'm3u8', radioFormat: 'm3u8', eventId, drm: 'widevine', capabilities: APP_CAPABILITIES, quality: QUALITY, overrun: '1', PHPSESSID: session.sessionId },
+    {
+      format: 'm3u8',
+      radioFormat: 'm3u8',
+      eventId,
+      drm: 'widevine',
+      capabilities: APP_CAPABILITIES,
+      quality: QUALITY,
+      overrun: '1',
+      PHPSESSID: session.sessionId,
+    },
     session.sessionId,
     signal,
   );
@@ -184,7 +210,7 @@ class StoredSession {
 
   read(): Session | undefined {
     const row = this.select.get();
-    return row ? JSON.parse(String(row.payload)) as Session : undefined;
+    return row ? (JSON.parse(String(row.payload)) as Session) : undefined;
   }
 
   write(session: Session): void {
@@ -203,14 +229,16 @@ function sledovaniSessionSource(config: ProviderConfig, stored: StoredSession | 
   return {
     label: 'sledovanitv',
     ...(seed ? { seed: { session: seed } } : {}),
-    ...(username && password ? {
-      async login(signal: AbortSignal) {
-        const pairing = await createPairing(username, password, signal);
-        const session = await deviceLogin(pairing.deviceId, pairing.pairingPassword, signal);
-        stored?.write(session);
-        return { session };
-      },
-    } : {}),
+    ...(username && password
+      ? {
+          async login(signal: AbortSignal) {
+            const pairing = await createPairing(username, password, signal);
+            const session = await deviceLogin(pairing.deviceId, pairing.pairingPassword, signal);
+            stored?.write(session);
+            return { session };
+          },
+        }
+      : {}),
   };
 }
 
@@ -313,7 +341,7 @@ function deobfuscateLicensePassword(a: readonly bigint[]): string {
     const oi = o + i;
     let x = (((b[oi] as number) & m) - ((i ^ w) & m)) & m;
     const rot = (i + v) & 7;
-    x = (((x >>> rot) | (x << (8 - rot))) & m);
+    x = ((x >>> rot) | (x << (8 - rot))) & m;
     b[oi] = (x ^ ((u + i * 31) & m)) & 0xff;
   }
 
@@ -321,7 +349,12 @@ function deobfuscateLicensePassword(a: readonly bigint[]): string {
 }
 
 const LICENSE_PASSWORD = deobfuscateLicensePassword([
-  0x19660dn, 0x3c6ef35fn, 0x5c06bd1601abc49en, 0xe27b269cb54276cfn, 0x9b2a1bb63733ed6n, 0x405d34000000002bn,
+  0x19660dn,
+  0x3c6ef35fn,
+  0x5c06bd1601abc49en,
+  0xe27b269cb54276cfn,
+  0x9b2a1bb63733ed6n,
+  0x405d34000000002bn,
 ]);
 const LICENSE_URL_BASE = 'https://drm.srv.czcloud.i.mtvreg.com/license/prod/widevine';
 
@@ -353,7 +386,7 @@ async function sledovaniResolve(account: AccountSession<Session>, release: Relea
   };
 
   let session!: Session;
-  const streamUrl = await account.run(async (activeSession) => {
+  const streamUrl = await account.run(async activeSession => {
     session = activeSession;
     return fetchStreamUrl(activeSession);
   }, signal);

@@ -8,7 +8,12 @@ import { SessionRejected } from '../src/providers/account-session.ts';
 
 const signingKey = 'test-profile-signing-key';
 const profilePage = `<script id="__NUXT_DATA__">${JSON.stringify([
-  { state: 1 }, { profiles: 2 }, [3], { ulid: 4, name: 5 }, 'test-profile', 'Default',
+  { state: 1 },
+  { profiles: 2 },
+  [3],
+  { ulid: 4, name: 5 },
+  'test-profile',
+  'Default',
 ])}</script><script>window.__NUXT__.config={public:{profileTokenSecret:'${signingKey}'}};</script>`;
 
 // Model the account boundary: login registers a device session, authenticated pages
@@ -63,10 +68,16 @@ test('Prima playback uses the current login device and authenticated profile con
   const first = authorizePlayback(await auth.run(async session => auth.headers(session), signal), sessions);
 
   let rejectedOnce = false;
-  const second = authorizePlayback(await auth.run(async session => {
-    if (!rejectedOnce) { rejectedOnce = true; throw new SessionRejected('expired'); }
-    return auth.headers(session);
-  }, signal), sessions);
+  const second = authorizePlayback(
+    await auth.run(async session => {
+      if (!rejectedOnce) {
+        rejectedOnce = true;
+        throw new SessionRejected('expired');
+      }
+      return auth.headers(session);
+    }, signal),
+    sessions,
+  );
 
   assert.notEqual(second, first, 'relogin must not reuse the previous device session');
 });
@@ -81,7 +92,10 @@ test('Prima preserves an explicitly configured device while signing for the curr
 test('Prima rejects a login without the device session ID', async t => {
   t.mock.method(globalThis, 'fetch', async () => Response.json({ accessToken: { value: 'test-token' } }));
   const auth = new PrimaAuthenticator({ username: 'test@example.invalid', password: 'test-password' });
-  await assert.rejects(auth.run(async session => session, new AbortController().signal), /session ID/i);
+  await assert.rejects(
+    auth.run(async session => session, new AbortController().signal),
+    /session ID/i,
+  );
 });
 
 test('Prima re-signs the expiring profile-select token without logging in again', async t => {

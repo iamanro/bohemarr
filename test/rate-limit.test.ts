@@ -4,16 +4,24 @@ import { fetchResponse, setRequestRate } from '../src/providers/common.ts';
 
 test('requests to one host are spaced by the rate, while another host goes at once', async t => {
   const started: Array<[string, number]> = [];
-  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => { started.push([new URL(String(input)).hostname, Date.now()]); return new Response(''); });
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
+    started.push([new URL(String(input)).hostname, Date.now()]);
+    return new Response('');
+  });
   setRequestRate(20); // 50 ms apart
   try {
     const signal = AbortSignal.timeout(5000);
     const begin = Date.now();
     await Promise.all([
-      fetchResponse('https://a.example/1', signal), fetchResponse('https://a.example/2', signal), fetchResponse('https://a.example/3', signal),
+      fetchResponse('https://a.example/1', signal),
+      fetchResponse('https://a.example/2', signal),
+      fetchResponse('https://a.example/3', signal),
       fetchResponse('https://b.example/1', signal),
     ]);
-    const a = started.filter(([host]) => host === 'a.example').map(([, at]) => at - begin).sort((x, y) => x - y);
+    const a = started
+      .filter(([host]) => host === 'a.example')
+      .map(([, at]) => at - begin)
+      .sort((x, y) => x - y);
     assert.ok(a[2]! >= 95, `third request to a.example waited two slots, got ${a[2]} ms`);
     assert.ok(started.find(([host]) => host === 'b.example')![1] - begin < 40, 'b.example did not wait for a.example');
     // A fresh host whose next slot is taken just now, so the aborted caller is certain to be waiting.

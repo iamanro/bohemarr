@@ -39,8 +39,17 @@ export class Queue {
     if (!this.providers.has(release.provider)) throw new Error(`Provider is not enabled: ${release.provider}`);
     const now = Date.now();
     const job: Job = {
-      id, release, category, status: paused ? 'Paused' : 'Queued', bytes: 0, totalBytes: release.size || 0,
-      progress: 0, storage: resolve(this.config.downloadsDir, category, id, sanitizeFilename(releaseTitle(release))), error: '', createdAt: now, updatedAt: now,
+      id,
+      release,
+      category,
+      status: paused ? 'Paused' : 'Queued',
+      bytes: 0,
+      totalBytes: release.size || 0,
+      progress: 0,
+      storage: resolve(this.config.downloadsDir, category, id, sanitizeFilename(releaseTitle(release))),
+      error: '',
+      createdAt: now,
+      updatedAt: now,
     };
     this.store.saveJob(job);
     this.wake();
@@ -89,11 +98,19 @@ export class Queue {
       });
       signal.throwIfAborted();
       const child = relative(job.storage, file);
-      if (!child || child === '..' || child.startsWith(`..${sep}`) || isAbsolute(child)) throw new Error('Downloader returned a path outside its job directory');
+      if (!child || child === '..' || child.startsWith(`..${sep}`) || isAbsolute(child))
+        throw new Error('Downloader returned a path outside its job directory');
       if (this.store.job(job.id)?.status === 'Downloading') {
         const result = await stat(file);
         if (!result.isFile() || result.size === 0) throw new Error('Downloader produced no media file');
-        this.store.updateJob(job.id, { status: 'Completed', progress: 100, bytes: result.size, totalBytes: result.size, error: '', finishedAt: Date.now() });
+        this.store.updateJob(job.id, {
+          status: 'Completed',
+          progress: 100,
+          bytes: result.size,
+          totalBytes: result.size,
+          error: '',
+          finishedAt: Date.now(),
+        });
       }
     } catch (error) {
       const current = this.store.job(job.id);
@@ -132,7 +149,14 @@ export class Queue {
   retry(id: string): Job {
     const job = this.requireJob(id);
     if (job.status !== 'Failed') throw new Error('Only a failed job can be retried');
-    const updated = this.store.updateJob(id, { status: 'Queued', error: '', progress: 0, finishedAt: undefined, retryAt: undefined, busySince: undefined })!;
+    const updated = this.store.updateJob(id, {
+      status: 'Queued',
+      error: '',
+      progress: 0,
+      finishedAt: undefined,
+      retryAt: undefined,
+      busySince: undefined,
+    })!;
     this.wake();
     return updated;
   }
@@ -148,7 +172,8 @@ export class Queue {
     if (deleteFiles) {
       const expected = resolve(this.config.downloadsDir, job.category, job.id);
       const child = relative(expected, job.storage);
-      if (child.startsWith(`..${sep}`) || child === '..' || isAbsolute(child)) throw new Error('Refusing to remove a directory outside this job');
+      if (child.startsWith(`..${sep}`) || child === '..' || isAbsolute(child))
+        throw new Error('Refusing to remove a directory outside this job');
       await rm(expected, { recursive: true, force: true });
     }
     this.store.removeJob(id);

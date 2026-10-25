@@ -26,11 +26,10 @@ export async function urlResolverRelease(
   if (!isCompatible(original)) return undefined;
   const normalized = options.normalizeUrl ? options.normalizeUrl(original) : original;
   const parsed = new URL(normalized);
-  const title = options.title ? options.title(normalized) : (basenameNoExt(parsed.pathname) || parsed.hostname);
+  const title = options.title ? options.title(normalized) : basenameNoExt(parsed.pathname) || parsed.hostname;
   const kind: MediaKind = query.kind ?? 'movie';
   return { id: releaseId(id, normalized), provider: id, title, url: normalized, kind };
 }
-
 
 const REGEX_STVR_URI = /^https?:\/\/(?:www\.)?stvr\.sk\/((?:radio|televizia)\/archiv|deti\/(?:rozhlas|televizia))\/\d+\/\d+\/?$/;
 
@@ -46,10 +45,14 @@ async function resolveStvr(url: string, signal: AbortSignal): Promise<MediaSourc
   switch (match[1]) {
     case 'televizia/archiv':
     case 'deti/televizia':
-      mediaKind = 'video'; endpoint = 'archive5f'; break;
+      mediaKind = 'video';
+      endpoint = 'archive5f';
+      break;
     case 'radio/archiv':
     case 'deti/rozhlas':
-      mediaKind = 'audio'; endpoint = 'audio5f'; break;
+      mediaKind = 'audio';
+      endpoint = 'audio5f';
+      break;
     default:
       throw new Error('STVR: unsupported URL');
   }
@@ -61,9 +64,8 @@ async function resolveStvr(url: string, signal: AbortSignal): Promise<MediaSourc
 
   const playlistUrl = `https://www.stvr.sk/json/${endpoint}.json?id=${numericId}&=&b=chrome&p=win&f=0&d=1`;
   const payload = await fetchJson<Record<string, unknown>>(playlistUrl, signal);
-  const playlist = (mediaKind === 'audio'
-    ? (payload.playlist as Record<string, unknown>[] | undefined)?.[0]
-    : payload.clip) as { sources?: { type: string; src: string }[] } | undefined;
+  const playlist = (mediaKind === 'audio' ? (payload.playlist as Record<string, unknown>[] | undefined)?.[0] : payload.clip) as
+    { sources?: { type: string; src: string }[] } | undefined;
   if (!playlist?.sources) throw new Error('STVR: playlist response is missing sources');
 
   const sources: MediaSource[] = [];
@@ -110,27 +112,47 @@ async function resolveHtml5(url: string, config: ProviderConfig, signal: AbortSi
 
 /** A Catalogue that lists nothing and resolves only a URL naming the provider's own host. */
 function urlCatalogue(id: string, isCompatible: (url: string) => boolean, options?: Parameters<typeof urlResolverRelease>[4]): Catalogue {
-  return { async *programs() {}, async *releases() {}, releaseForUrl: (url, query) => urlResolverRelease(id, url, query, isCompatible, options) };
+  return {
+    async *programs() {},
+    async *releases() {},
+    releaseForUrl: (url, query) => urlResolverRelease(id, url, query, isCompatible, options),
+  };
 }
 
 const ANY_HTTP = (candidate: string): boolean => /^https?:\/\//i.test(candidate);
 
 export function createStvrProvider(): Provider {
-  return { id: 'stvr', name: 'STVR (RTVS)', catalogue: urlCatalogue('stvr', candidate => REGEX_STVR_URI.test(candidate)), resolve: (release, signal) => resolveStvr(release.url, signal) };
+  return {
+    id: 'stvr',
+    name: 'STVR (RTVS)',
+    catalogue: urlCatalogue('stvr', candidate => REGEX_STVR_URI.test(candidate)),
+    resolve: (release, signal) => resolveStvr(release.url, signal),
+  };
 }
 
 export function createHtml5Provider(config: ProviderConfig): Provider {
-  return { id: 'html5', name: 'HTML5', catalogue: urlCatalogue('html5', ANY_HTTP), resolve: (release, signal) => resolveHtml5(release.url, config, signal) };
+  return {
+    id: 'html5',
+    name: 'HTML5',
+    catalogue: urlCatalogue('html5', ANY_HTTP),
+    resolve: (release, signal) => resolveHtml5(release.url, config, signal),
+  };
 }
 
 export function createDirectProvider(config: ProviderConfig): Provider {
   return {
-    id: 'direct', name: 'Direct', catalogue: urlCatalogue('direct', ANY_HTTP),
-    resolve: (release) => Promise.resolve([{ url: release.url, type: mediaType(release.url), headers: config.headers } satisfies MediaSource]),
+    id: 'direct',
+    name: 'Direct',
+    catalogue: urlCatalogue('direct', ANY_HTTP),
+    resolve: release =>
+      Promise.resolve([{ url: release.url, type: mediaType(release.url), headers: config.headers } satisfies MediaSource]),
   };
 }
 
 export function createYouTubeProvider(config: ProviderConfig): Provider {
-  const catalogue = urlCatalogue('youtube', isYouTubeUrl, { normalizeUrl: maybeTransformYouTubeUrl, title: (u) => new URL(u).searchParams.get('v') ?? 'YouTube video' });
+  const catalogue = urlCatalogue('youtube', isYouTubeUrl, {
+    normalizeUrl: maybeTransformYouTubeUrl,
+    title: u => new URL(u).searchParams.get('v') ?? 'YouTube video',
+  });
   return { id: 'youtube', name: 'YouTube', catalogue, resolve: (release, signal) => resolveYouTube(release.url, signal, config) };
 }

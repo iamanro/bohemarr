@@ -7,7 +7,17 @@ import type { Catalogue, Program, Release, SearchQuery } from '../src/types.ts';
 const signal = new AbortController().signal;
 
 function episode(program: string, n: number, overrides: Partial<Release> = {}): Release {
-  return { id: `${program}-${n}`, provider: 'p', title: `Episode ${n}`, series: program, kind: 'tv', season: 1, episode: n, url: `https://p.test/${program}/${n}`, ...overrides };
+  return {
+    id: `${program}-${n}`,
+    provider: 'p',
+    title: `Episode ${n}`,
+    series: program,
+    kind: 'tv',
+    season: 1,
+    episode: n,
+    url: `https://p.test/${program}/${n}`,
+    ...overrides,
+  };
 }
 
 function query(overrides: Partial<SearchQuery> = {}): SearchQuery {
@@ -18,7 +28,9 @@ function query(overrides: Partial<SearchQuery> = {}): SearchQuery {
 function catalogue(listing: Record<string, Release[] | (() => AsyncIterable<Release>)>, extra: Partial<Catalogue> = {}) {
   const expanded: string[] = [];
   const value: Catalogue = {
-    async *programs() { for (const title of Object.keys(listing)) yield { id: title, title }; },
+    async *programs() {
+      for (const title of Object.keys(listing)) yield { id: title, title };
+    },
     async *releases(program: Program) {
       expanded.push(program.id);
       const source = listing[program.id]!;
@@ -29,7 +41,8 @@ function catalogue(listing: Record<string, Release[] | (() => AsyncIterable<Rele
   return { value, expanded };
 }
 
-const search = (value: Catalogue, q: SearchQuery, entries?: Release[]) => searchCatalogue({ id: 'p', catalogue: value, entries }, q, signal);
+const search = (value: Catalogue, q: SearchQuery, entries?: Release[]) =>
+  searchCatalogue({ id: 'p', catalogue: value, entries }, q, signal);
 const ids = (releases: Release[]) => releases.map(release => release.id);
 
 test('movie searches separate the production year from title lookup and reject conflicting or unknown years', async () => {
@@ -43,7 +56,9 @@ test('movie searches separate the production year from title lookup and reject c
     async *programs(hint) {
       for (const film of films) if (film.title.includes(hint.q)) yield { id: film.id, title: film.title, kind: 'movie' };
     },
-    async *releases(program) { yield films.find(film => film.id === program.id)!; },
+    async *releases(program) {
+      yield films.find(film => film.id === program.id)!;
+    },
   };
   for (const q of ['Anděl Páně 2005', 'Anděl Páně (2005)']) {
     assert.deepEqual(ids(await search(value, query({ q, kind: 'movie' }))), ['original']);
@@ -86,7 +101,9 @@ test('text search expands only Programs with every query word, else any word', a
 
 test('the any-word fallback ignores short words, so a foreign title expands no unrelated Program', async () => {
   const { value, expanded } = catalogue({
-    'Ulice': [episode('Ulice', 1)], 'Specialisté': [episode('Specialisté', 1)], 'Most!': [episode('Most!', 1)],
+    Ulice: [episode('Ulice', 1)],
+    Specialisté: [episode('Specialisté', 1)],
+    'Most!': [episode('Most!', 1)],
     'Život s Lucií': [episode('Život s Lucií', 1)], // shares only the one-letter word "s" with the query
   });
   assert.deepEqual(ids(await search(value, query({ q: "Grey's Anatomy" }))), []);
@@ -100,11 +117,13 @@ test('text search expands at most 40 Programs', async () => {
   assert.equal(expanded.length, 40);
 });
 
-test('browsing returns each Program\'s newest matching Release and stops once the page is full', async () => {
+test("browsing returns each Program's newest matching Release and stops once the page is full", async () => {
   const { value, expanded } = catalogue({
     A: [episode('A', 3), episode('A', 2)],
     B: [episode('B', 9, { season: 2 }), episode('B', 1)],
-    C: () => { throw new Error('must not be expanded'); },
+    C: () => {
+      throw new Error('must not be expanded');
+    },
   });
   assert.deepEqual(ids(await search(value, query({ limit: 2 }))), ['A-3', 'B-9']);
   assert.deepEqual(expanded, ['A', 'B']);
@@ -112,10 +131,19 @@ test('browsing returns each Program\'s newest matching Release and stops once th
 });
 
 test('browsing skips Programs whose known kind cannot match', async () => {
-  const { value, expanded } = catalogue({}, {
-    async *programs() { yield { id: 'film', title: 'Film', kind: 'movie' }; yield { id: 'show', title: 'Show', kind: 'tv' }; },
-    async *releases(program: Program) { expanded.push(program.id); yield episode(program.id, 1); },
-  });
+  const { value, expanded } = catalogue(
+    {},
+    {
+      async *programs() {
+        yield { id: 'film', title: 'Film', kind: 'movie' };
+        yield { id: 'show', title: 'Show', kind: 'tv' };
+      },
+      async *releases(program: Program) {
+        expanded.push(program.id);
+        yield episode(program.id, 1);
+      },
+    },
+  );
   await search(value, query({ kind: 'tv' }));
   assert.deepEqual(expanded, ['show']);
 });
@@ -125,25 +153,32 @@ test('concurrent expansion keeps catalogue order and never overshoots the page',
   let peak = 0;
   // A finishes only after B has finished, so completion order is the reverse of catalogue order.
   const aMayFinish = Promise.withResolvers<void>();
-  const tracked = (program: string, before: () => Promise<void> | void) => async function* () {
-    inFlight++; peak = Math.max(peak, inFlight);
-    await before();
-    inFlight--;
-    yield episode(program, 1);
-  };
-  const { value, expanded } = catalogue({
-    A: tracked('A', () => aMayFinish.promise),
-    B: tracked('B', () => aMayFinish.resolve()),
-    C: tracked('C', () => {}),
-    D: tracked('D', () => {}),
-  }, { concurrency: 2 });
+  const tracked = (program: string, before: () => Promise<void> | void) =>
+    async function* () {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await before();
+      inFlight--;
+      yield episode(program, 1);
+    };
+  const { value, expanded } = catalogue(
+    {
+      A: tracked('A', () => aMayFinish.promise),
+      B: tracked('B', () => aMayFinish.resolve()),
+      C: tracked('C', () => {}),
+      D: tracked('D', () => {}),
+    },
+    { concurrency: 2 },
+  );
   assert.deepEqual(ids(await search(value, query({ limit: 2 }))), ['A-1', 'B-1']);
   assert.equal(peak, 2);
   assert.deepEqual(expanded, ['A', 'B']);
 });
 
 test('a failing Program is skipped; the search fails only when nothing was found', async () => {
-  const broken = () => { throw new Error('upstream 500'); };
+  const broken = () => {
+    throw new Error('upstream 500');
+  };
   const partial = catalogue({ A: broken, B: [episode('B', 1)] });
   assert.deepEqual(ids(await search(partial.value, query())), ['B-1']);
   const all = catalogue({ A: broken, B: broken });
@@ -154,21 +189,41 @@ test('a failing Program is skipped; the search fails only when nothing was found
 
 test('abort rejects instead of returning a partial page', async () => {
   const controller = new AbortController();
-  const { value } = catalogue({ A: async function* () { controller.abort(); yield episode('A', 1); }, B: [episode('B', 1)] });
+  const { value } = catalogue({
+    A: async function* () {
+      controller.abort();
+      yield episode('A', 1);
+    },
+    B: [episode('B', 1)],
+  });
   await assert.rejects(searchCatalogue({ id: 'p', catalogue: value }, query(), controller.signal), { name: 'AbortError' });
 });
 
 test('static entries come first and count toward the page', async () => {
-  const entry: Release = { id: 'entry', provider: 'p', title: 'Configured', series: 'Configured', kind: 'tv', season: 1, episode: 1, url: 'https://p.test/entry' };
+  const entry: Release = {
+    id: 'entry',
+    provider: 'p',
+    title: 'Configured',
+    series: 'Configured',
+    kind: 'tv',
+    season: 1,
+    episode: 1,
+    url: 'https://p.test/entry',
+  };
   const { value, expanded } = catalogue({ A: [episode('A', 1)] });
   assert.deepEqual(ids(await search(value, query({ limit: 1 }), [entry])), ['entry']);
   assert.deepEqual(expanded, []);
 });
 
 test('a URL query only consults releaseForUrl and still applies kind/season filters', async () => {
-  const { value, expanded } = catalogue({ A: [episode('A', 1)] }, {
-    async releaseForUrl(url: URL, hint) { return { id: 'u', provider: 'p', title: 'Clip', url: url.href, kind: hint.kind ?? 'movie' }; },
-  });
+  const { value, expanded } = catalogue(
+    { A: [episode('A', 1)] },
+    {
+      async releaseForUrl(url: URL, hint) {
+        return { id: 'u', provider: 'p', title: 'Clip', url: url.href, kind: hint.kind ?? 'movie' };
+      },
+    },
+  );
   assert.deepEqual(ids(await search(value, query({ q: 'https://p.test/clip' }))), ['u']);
   assert.deepEqual(await search(value, query({ q: 'https://p.test/clip', season: 1 })), []);
   assert.deepEqual(expanded, []);
@@ -176,9 +231,14 @@ test('a URL query only consults releaseForUrl and still applies kind/season filt
 });
 
 test('a bound Program expands only that Program', async () => {
-  const { value, expanded } = catalogue({ A: [episode('A', 2), episode('A', 1)], B: [episode('B', 1)] }, {
-    async program(id: string) { return id === 'missing' ? undefined : { id, title: id }; },
-  });
+  const { value, expanded } = catalogue(
+    { A: [episode('A', 2), episode('A', 1)], B: [episode('B', 1)] },
+    {
+      async program(id: string) {
+        return id === 'missing' ? undefined : { id, title: id };
+      },
+    },
+  );
   assert.deepEqual(ids(await search(value, query({ programId: 'A', episode: 1 }))), ['A-1']);
   assert.deepEqual(expanded, ['A']);
   assert.deepEqual(await search(value, query({ programId: 'missing' })), []);

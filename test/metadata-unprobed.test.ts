@@ -26,7 +26,10 @@ test('a direct file ffprobe cannot read remotely is offered when its size is kno
     assert.equal(metadata.source.url, url);
     assert.deepEqual([metadata.size, metadata.sizeEstimated, metadata.height], [734003235, false, undefined]);
     const unknown = url.replace('Matrix.avi', 'unknown.avi');
-    await assert.rejects(inspectMediaSources({ ffprobe } as Config, [{ url: unknown, type: 'file' }], AbortSignal.timeout(5000)), /Input\/output error/);
+    await assert.rejects(
+      inspectMediaSources({ ffprobe } as Config, [{ url: unknown, type: 'file' }], AbortSignal.timeout(5000)),
+      /Input\/output error/,
+    );
   } finally {
     server.closeAllConnections();
   }

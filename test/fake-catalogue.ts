@@ -1,6 +1,8 @@
 import type { Catalogue, Program, Release } from '../src/types.ts';
 
-interface FakeProgram extends Program { bound: boolean }
+interface FakeProgram extends Program {
+  bound: boolean;
+}
 
 /**
  * An in-memory Catalogue: `listing()` is the provider's unbound catalogue (one Program per
@@ -8,14 +10,20 @@ interface FakeProgram extends Program { bound: boolean }
  */
 export function fakeCatalogue(listing: (boundProgramId?: string) => Release[]): Catalogue<FakeProgram> {
   const programOf = (release: Release): FakeProgram => ({
-    id: release.programId ?? release.id, title: release.series ?? release.title, kind: release.kind, bound: false,
+    id: release.programId ?? release.id,
+    title: release.series ?? release.title,
+    kind: release.kind,
+    bound: false,
   });
   return {
     async *programs() {
       const seen = new Set<string>();
       for (const release of listing()) {
         const program = programOf(release);
-        if (!seen.has(program.id)) { seen.add(program.id); yield program; }
+        if (!seen.has(program.id)) {
+          seen.add(program.id);
+          yield program;
+        }
       }
     },
     async program(id) {

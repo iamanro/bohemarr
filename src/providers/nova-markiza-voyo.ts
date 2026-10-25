@@ -22,15 +22,24 @@ const DRM_REFERER = 'https://media.cms.markiza.sk/';
 const ITEMS_PER_PAGE = 64;
 
 const CATEGORIES: Array<{ categoryId: string; pageId: number; kind: MediaKind }> = [
-  { categoryId: 'voyo-4', pageId: 17, kind: 'tv' },    // TV_SHOWS
-  { categoryId: 'voyo-3', pageId: 16, kind: 'tv' },    // TV_SERIES
+  { categoryId: 'voyo-4', pageId: 17, kind: 'tv' }, // TV_SHOWS
+  { categoryId: 'voyo-3', pageId: 16, kind: 'tv' }, // TV_SERIES
   { categoryId: 'voyo-5', pageId: 18, kind: 'movie' }, // MOVIES
-  { categoryId: 'voyo-7', pageId: 20, kind: 'tv' },    // KIDS
+  { categoryId: 'voyo-7', pageId: 20, kind: 'tv' }, // KIDS
 ];
 
 /** The provider's stable program URL doubles as `Program.id`. */
-interface VoyoProgram { id: string; uri: string; title: string; programId: string; kind: MediaKind }
-interface VoyoSeason { id: string; number?: number }
+interface VoyoProgram {
+  id: string;
+  uri: string;
+  title: string;
+  programId: string;
+  kind: MediaKind;
+}
+interface VoyoSeason {
+  id: string;
+  number?: number;
+}
 
 // ---------------------------------------------------------------- Auth ----
 
@@ -54,11 +63,14 @@ async function loginVoyo(username: string, password: string, signal: AbortSignal
   });
 
   const location = response.headers.get('location');
-  const landedOnProfile = (response.status === 302 || response.status === 303) && !!location
-    && new URL(location, LOGIN_URL).toString() === REDIRECT_URL;
+  const landedOnProfile =
+    (response.status === 302 || response.status === 303) && !!location && new URL(location, LOGIN_URL).toString() === REDIRECT_URL;
   if (!landedOnProfile) throw new Error('markizavoyo: incorrect credentials (login did not redirect to profile)');
 
-  const votoken = response.headers.getSetCookie().map(c => c.split(';')[0]).find(c => c?.startsWith('votoken='));
+  const votoken = response.headers
+    .getSetCookie()
+    .map(c => c.split(';')[0])
+    .find(c => c?.startsWith('votoken='));
   if (!votoken) throw new Error('markizavoyo: login succeeded but the server did not issue a votoken cookie');
   return votoken.slice('votoken='.length);
 }
@@ -70,13 +82,19 @@ function voyoSessionSource(config: ProviderConfig): SessionSource<string> {
   return {
     label: 'markizavoyo',
     ...(votoken ? { seed: { session: votoken } } : {}),
-    ...(username && password ? { login: (signal: AbortSignal) => loginVoyo(username, password, signal).then(session => ({ session })) } : {}),
+    ...(username && password
+      ? { login: (signal: AbortSignal) => loginVoyo(username, password, signal).then(session => ({ session })) }
+      : {}),
   };
 }
 
 async function bypassAgeRestriction(token: string, signal: AbortSignal): Promise<boolean> {
   const body = new URLSearchParams({
-    birth_day: '1', birth_month: '1', birth_year: '2000', save: 'Uložiť', _do: 'content232-userAgeForm-form-submit',
+    birth_day: '1',
+    birth_month: '1',
+    birth_year: '2000',
+    save: 'Uložiť',
+    _do: 'content232-userAgeForm-form-submit',
   });
   const response = await fetchResponse(AGE_RESTRICTION_URL, signal, {
     method: 'POST',
@@ -86,7 +104,11 @@ async function bypassAgeRestriction(token: string, signal: AbortSignal): Promise
   return response.status === 200;
 }
 
-interface VoyoError { success: boolean; event?: string; type?: string }
+interface VoyoError {
+  success: boolean;
+  event?: string;
+  type?: string;
+}
 
 /** Ported from `checkForError`: VOYO renders an error page (body.error) with an embedded `klebetnica({...})` payload. */
 function checkForError($: CheerioAPI): VoyoError {
@@ -137,11 +159,21 @@ async function apiRequest(action: string, args: Record<string, string | number>,
 
 /** Ported from `parsePrograms`/`listPrograms`: one paginated `.row > .i` catalog page. */
 async function listProgramsPage(
-  category: (typeof CATEGORIES)[number], page: number, signal: AbortSignal,
+  category: (typeof CATEGORIES)[number],
+  page: number,
+  signal: AbortSignal,
 ): Promise<{ programs: VoyoProgram[]; hasMore: boolean }> {
-  const html = await apiRequest('shows/genres', {
-    category: category.categoryId, pageId: category.pageId, sort: 'title__asc', limit: ITEMS_PER_PAGE, page,
-  }, signal);
+  const html = await apiRequest(
+    'shows/genres',
+    {
+      category: category.categoryId,
+      pageId: category.pageId,
+      sort: 'title__asc',
+      limit: ITEMS_PER_PAGE,
+      page,
+    },
+    signal,
+  );
 
   const $ = cheerio.load(html);
   const programs: VoyoProgram[] = [];
@@ -162,9 +194,7 @@ async function listProgramsPage(
 }
 
 /** Lazily walks a category's program pages, so callers can stop once they have enough matches. */
-async function* iterateCategoryPrograms(
-  category: (typeof CATEGORIES)[number], signal: AbortSignal,
-): AsyncGenerator<VoyoProgram> {
+async function* iterateCategoryPrograms(category: (typeof CATEGORIES)[number], signal: AbortSignal): AsyncGenerator<VoyoProgram> {
   for (let page = 1; ; page++) {
     const { programs, hasMore } = await listProgramsPage(category, page, signal);
     yield* programs;
@@ -172,9 +202,7 @@ async function* iterateCategoryPrograms(
   }
 }
 
-async function* iteratePrograms(
-  categories: readonly (typeof CATEGORIES)[number][], signal: AbortSignal,
-): AsyncGenerator<VoyoProgram> {
+async function* iteratePrograms(categories: readonly (typeof CATEGORIES)[number][], signal: AbortSignal): AsyncGenerator<VoyoProgram> {
   for (const category of categories) yield* iterateCategoryPrograms(category, signal);
 }
 
@@ -194,7 +222,10 @@ function programSeasons($: CheerioAPI): VoyoSeason[] {
     const $el = $(el);
     const id = $el.attr('data-season-id');
     if (!id) continue;
-    const textNode = $el.contents().toArray().find(node => node.type === 'text');
+    const textNode = $el
+      .contents()
+      .toArray()
+      .find(node => node.type === 'text');
     const numberMatch = /\d+/.exec(textNode ? $(textNode).text() : $el.text());
     seasons.push({ id, number: numberMatch ? Number(numberMatch[0]) : undefined });
   }
@@ -214,10 +245,19 @@ async function* listEpisodesInSeason(program: VoyoProgram, season: VoyoSeason, s
   const pages: Release[][] = [];
 
   for (let offset = 0; ; offset += ITEMS_PER_PAGE) {
-    const html = await apiRequest('show/content', {
-      showId: program.programId, type: 'episodes', season: season.id,
-      orderDirection: 'asc', offset, count: ITEMS_PER_PAGE, url: path,
-    }, signal);
+    const html = await apiRequest(
+      'show/content',
+      {
+        showId: program.programId,
+        type: 'episodes',
+        season: season.id,
+        orderDirection: 'asc',
+        offset,
+        count: ITEMS_PER_PAGE,
+        url: path,
+      },
+      signal,
+    );
     if (!html.trim()) break;
 
     const $ = cheerio.load(html);
@@ -235,8 +275,14 @@ async function* listEpisodesInSeason(program: VoyoProgram, season: VoyoSeason, s
       if (title.toLowerCase() === `${numEpisode}. díl`.toLowerCase()) title = '';
 
       pageReleases.push({
-        id: releaseId('markizavoyo', uri), provider: 'markizavoyo', title, url: uri,
-        kind: 'tv', series: program.title, season: season.number, episode: numEpisode,
+        id: releaseId('markizavoyo', uri),
+        provider: 'markizavoyo',
+        title,
+        url: uri,
+        kind: 'tv',
+        series: program.title,
+        season: season.number,
+        episode: numEpisode,
         data: { programId: program.programId, seasonId: season.id },
       });
     }
@@ -260,8 +306,12 @@ async function* listEpisodesForProgram(program: VoyoProgram, signal: AbortSignal
     const uri = `${program.uri}#player-fullscreen`;
     const title = detail('h1.title').first().text().trim();
     yield {
-      id: releaseId('markizavoyo', uri), provider: 'markizavoyo', title: title || program.title, url: uri,
-      kind: 'movie', data: { programId: program.programId },
+      id: releaseId('markizavoyo', uri),
+      provider: 'markizavoyo',
+      title: title || program.title,
+      url: uri,
+      kind: 'movie',
+      data: { programId: program.programId },
     };
     return;
   }
@@ -283,7 +333,10 @@ async function resolveMedia(release: Release, session: AccountSession<string>, s
   let settings: unknown = null;
   for (const el of embedDoc('script:not([src])').toArray()) {
     const result = readInlineObject(embedDoc(el).html() ?? '', 'player:');
-    if (result) { settings = result; break; }
+    if (result) {
+      settings = result;
+      break;
+    }
   }
   if (!settings) return [];
 
@@ -304,9 +357,10 @@ export function createMarkizaVoyoProvider(config: ProviderConfig): Provider {
   const catalogue: Catalogue<VoyoProgram> = {
     // A category's `kind` is fixed, so a requested kind skips whole categories upstream instead
     // of fetching every category page just to discard the wrong-kind programs afterwards.
-    programs: (query: CatalogueQuery, signal: AbortSignal) => query.q.trim()
-      ? each(allPrograms(signal))
-      : iteratePrograms(query.kind ? CATEGORIES.filter(c => c.kind === query.kind) : CATEGORIES, signal),
+    programs: (query: CatalogueQuery, signal: AbortSignal) =>
+      query.q.trim()
+        ? each(allPrograms(signal))
+        : iteratePrograms(query.kind ? CATEGORIES.filter(c => c.kind === query.kind) : CATEGORIES, signal),
     releases: (program: VoyoProgram, _query: CatalogueQuery, signal: AbortSignal) => listEpisodesForProgram(program, signal),
   };
 

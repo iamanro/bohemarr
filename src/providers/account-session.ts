@@ -82,17 +82,24 @@ export class AccountSession<S> {
     const obtain = async (): Promise<SessionGrant<S>> => {
       if (refreshing) return source.refresh!(expiring!.session, controller.signal);
       if (!source.login) {
-        throw new Error(afterRejection || expiring
-          ? `${source.label}: the configured session is no longer accepted and no username/password is configured`
-          : `${source.label}: no username/password is configured`);
+        throw new Error(
+          afterRejection || expiring
+            ? `${source.label}: the configured session is no longer accepted and no username/password is configured`
+            : `${source.label}: no username/password is configured`,
+        );
       }
       return source.login(controller.signal);
     };
     const pending: Pending<S> = {
-      controller, waiters: 0, refreshing,
+      controller,
+      waiters: 0,
+      refreshing,
       grant: obtain().then(
         grant => {
-          if (this.pending === pending) { this.pending = undefined; this.current = grant; }
+          if (this.pending === pending) {
+            this.pending = undefined;
+            this.current = grant;
+          }
           return grant;
         },
         (error: unknown) => {

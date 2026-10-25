@@ -65,9 +65,12 @@ COPY --from=ffmpeg /out/bin/ /usr/local/bin/
 COPY --from=bento4 /bento4/build/mp4decrypt /usr/local/bin/mp4decrypt
 COPY package.json bun.lock tsconfig.json ./
 RUN bun install --frozen-lockfile
+COPY .prettierrc.json .oxlintrc.json ./
+COPY web/.prettierrc.json ./web/
+COPY web/src/ ./web/src/
 COPY src/ ./src/
 COPY test/ ./test/
-RUN bun run check && bun run test
+RUN bun run check && bun fmt --check . && bun run lint && bun run test
 
 FROM oven/bun:1.4-slim
 LABEL org.opencontainers.image.title="Bohemarr" \

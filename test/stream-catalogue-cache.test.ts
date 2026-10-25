@@ -9,8 +9,18 @@ const API_URL = 'https://api.stream.cz/graphql';
 const CATEGORIES_URL = 'https://www.stream.cz/videa/filmy';
 const HOUR = 60 * 60 * 1000;
 
-interface Program { id: string; name: string; urlName: string }
-interface Category { id: string; name: string; urlName: string; kind?: 'movie'; programs: Program[] }
+interface Program {
+  id: string;
+  name: string;
+  urlName: string;
+}
+interface Category {
+  id: string;
+  name: string;
+  urlName: string;
+  kind?: 'movie';
+  programs: Program[];
+}
 
 /** A fake Stream.cz: one page of programs per category, counting categories/programs requests. */
 function streamcz(t: TestContext) {
@@ -24,9 +34,7 @@ function streamcz(t: TestContext) {
     const url = String(input instanceof Request ? input.url : input);
     if (url === CATEGORIES_URL) {
       categoriesRequests++;
-      const navCategories = categories
-        .filter(c => c.kind !== 'movie')
-        .map(c => ({ id: c.id, name: c.name, urlName: c.urlName }));
+      const navCategories = categories.filter(c => c.kind !== 'movie').map(c => ({ id: c.id, name: c.name, urlName: c.urlName }));
       const channel = categories.find(c => c.kind === 'movie');
       const state = {
         page: { navigationCategories: { data: navCategories } },
@@ -39,21 +47,41 @@ function streamcz(t: TestContext) {
       if (body.variables.last !== undefined) {
         episodeRequests++;
         const edges = (episodes.get(body.variables.id) ?? []).map(node => ({ node }));
-        return Response.json({ data: { tagData: { allEpisodesConnection: {
-          pageInfo: { startCursor: null, hasPreviousPage: false }, edges,
-        } } } });
+        return Response.json({
+          data: {
+            tagData: {
+              allEpisodesConnection: {
+                pageInfo: { startCursor: null, hasPreviousPage: false },
+                edges,
+              },
+            },
+          },
+        });
       }
       programsRequests++;
       const category = categories.find(c => c.id === body.variables.id);
       const edges = (category?.programs ?? []).map(p => ({ node: { id: p.id, name: p.name, urlName: p.urlName } }));
       return Response.json({
-        data: { childTagsData: { directTagsConnection: { totalCount: edges.length, pageInfo: { endCursor: null, hasNextPage: false }, edges } } },
+        data: {
+          childTagsData: { directTagsConnection: { totalCount: edges.length, pageInfo: { endCursor: null, hasNextPage: false }, edges } },
+        },
       });
     }
     throw new Error(`Unexpected request: ${url}`);
   });
-  return { categories, episodes, get categoriesRequests() { return categoriesRequests; },
-    get programsRequests() { return programsRequests; }, get episodeRequests() { return episodeRequests; } };
+  return {
+    categories,
+    episodes,
+    get categoriesRequests() {
+      return categoriesRequests;
+    },
+    get programsRequests() {
+      return programsRequests;
+    },
+    get episodeRequests() {
+      return episodeRequests;
+    },
+  };
 }
 
 async function list(provider: Provider, query: CatalogueQuery, signal = new AbortController().signal) {
@@ -62,9 +90,12 @@ async function list(provider: Provider, query: CatalogueQuery, signal = new Abor
 
 test('different episode searches and a restart reuse the complete Stream episode listing until five minutes', async t => {
   const site = streamcz(t);
-  site.categories.push({ id: 'shows', name: 'Shows', urlName: 'shows', programs: [
-    { id: 'love', name: 'Love Island', urlName: 'love-island' },
-  ] });
+  site.categories.push({
+    id: 'shows',
+    name: 'Shows',
+    urlName: 'shows',
+    programs: [{ id: 'love', name: 'Love Island', urlName: 'love-island' }],
+  });
   site.episodes.set('love', [
     { id: 'e45', name: 'Episode 45', namePrefix: 'S4:E45', urlName: 'episode-45' },
     { id: 'e48', name: 'Episode 48', namePrefix: 'S4:E48', urlName: 'episode-48' },
@@ -74,13 +105,16 @@ test('different episode searches and a restart reuse the complete Stream episode
   const timing = { now: () => now };
   const provider = createStreamCzProvider({}, database, timing)!;
   const [program] = await list(provider, { q: '', kind: 'tv' });
-  const read = (source: Provider, episode: number) => Array.fromAsync(source.catalogue.releases(
-    program!, { q: '', kind: 'tv', season: 4, episode }, new AbortController().signal));
+  const read = (source: Provider, episode: number) =>
+    Array.fromAsync(source.catalogue.releases(program!, { q: '', kind: 'tv', season: 4, episode }, new AbortController().signal));
   const first = await read(provider, 45);
-  assert.deepEqual(first.map(r => [r.episode, r.url]), [
-    [48, 'https://www.stream.cz/love-island/episode-48'],
-    [45, 'https://www.stream.cz/love-island/episode-45'],
-  ]);
+  assert.deepEqual(
+    first.map(r => [r.episode, r.url]),
+    [
+      [48, 'https://www.stream.cz/love-island/episode-48'],
+      [45, 'https://www.stream.cz/love-island/episode-45'],
+    ],
+  );
   site.episodes.get('love')!.push({ id: 'e49', name: 'Episode 49', namePrefix: 'S4:E49', urlName: 'episode-49' });
   now = 5 * 60 * 1000 - 1;
   const restarted = createStreamCzProvider({}, database, timing)!;
@@ -90,16 +124,26 @@ test('different episode searches and a restart reuse the complete Stream episode
   database.prepare('INSERT INTO stream_episode_cache VALUES (?, ?, ?)').run('gone', now - 10 * 60 * 1000, '[]');
   now++;
   const refreshed = await read(restarted, 49);
-  assert.deepEqual(refreshed.map(r => r.episode), [49, 48, 45]);
+  assert.deepEqual(
+    refreshed.map(r => r.episode),
+    [49, 48, 45],
+  );
   assert.equal(site.episodeRequests, 2);
-  assert.equal(database.prepare("SELECT count(*) AS n FROM stream_episode_cache WHERE program_id = 'gone'").get()!.n, 0, 'the write swept the expired listing');
+  assert.equal(
+    database.prepare("SELECT count(*) AS n FROM stream_episode_cache WHERE program_id = 'gone'").get()!.n,
+    0,
+    'the write swept the expired listing',
+  );
 });
 
 test('a partially consumed Stream episode listing never hides later episodes', async t => {
   const site = streamcz(t);
-  site.categories.push({ id: 'shows', name: 'Shows', urlName: 'shows', programs: [
-    { id: 'love', name: 'Love Island', urlName: 'love-island' },
-  ] });
+  site.categories.push({
+    id: 'shows',
+    name: 'Shows',
+    urlName: 'shows',
+    programs: [{ id: 'love', name: 'Love Island', urlName: 'love-island' }],
+  });
   site.episodes.set('love', [
     { id: 'e45', name: 'Episode 45', namePrefix: 'S4:E45', urlName: 'episode-45' },
     { id: 'e48', name: 'Episode 48', namePrefix: 'S4:E48', urlName: 'episode-48' },
@@ -109,16 +153,24 @@ test('a partially consumed Stream episode listing never hides later episodes', a
   const [program] = await list(provider, { q: '', kind: 'tv' });
   const episodes = () => provider.catalogue.releases(program!, { q: '' }, new AbortController().signal);
   for await (const _release of episodes()) break;
-  assert.deepEqual((await Array.fromAsync(episodes())).map(r => r.episode), [48, 45]);
+  assert.deepEqual(
+    (await Array.fromAsync(episodes())).map(r => r.episode),
+    [48, 45],
+  );
   assert.equal(site.episodeRequests, 2);
 });
 
 test('an aborted final episode yield cannot publish a snapshot or cross programme identities', async t => {
   const site = streamcz(t);
-  site.categories.push({ id: 'shows', name: 'Shows', urlName: 'shows', programs: [
-    { id: 'first', name: 'First Show', urlName: 'first-show' },
-    { id: 'second', name: 'Second Show', urlName: 'second-show' },
-  ] });
+  site.categories.push({
+    id: 'shows',
+    name: 'Shows',
+    urlName: 'shows',
+    programs: [
+      { id: 'first', name: 'First Show', urlName: 'first-show' },
+      { id: 'second', name: 'Second Show', urlName: 'second-show' },
+    ],
+  });
   site.episodes.set('first', [{ id: 'one', name: 'First', namePrefix: 'S4:E45', urlName: 'one' }]);
   site.episodes.set('second', [{ id: 'two', name: 'Second', namePrefix: 'S4:E48', urlName: 'two' }]);
   using database = new DatabaseSync(':memory:');
@@ -130,17 +182,28 @@ test('an aborted final episode yield cannot publish a snapshot or cross programm
       controller.abort(new Error('cancel final yield'));
     }
   }, /cancel final yield/);
-  const read = (program: NonNullable<typeof first>) => Array.fromAsync(provider.catalogue.releases(
-    program, { q: '' }, new AbortController().signal));
-  assert.deepEqual((await read(first!)).map(r => [r.series, r.episode]), [['First Show', 45]]);
-  assert.deepEqual((await read(second!)).map(r => [r.series, r.episode]), [['Second Show', 48]]);
+  const read = (program: NonNullable<typeof first>) =>
+    Array.fromAsync(provider.catalogue.releases(program, { q: '' }, new AbortController().signal));
+  assert.deepEqual(
+    (await read(first!)).map(r => [r.series, r.episode]),
+    [['First Show', 45]],
+  );
+  assert.deepEqual(
+    (await read(second!)).map(r => [r.series, r.episode]),
+    [['Second Show', 48]],
+  );
   assert.equal(site.episodeRequests, 3);
   await assert.rejects(Array.fromAsync(provider.catalogue.releases(first!, { q: '' }, controller.signal)), /cancel final yield/);
 });
 
 test('a fresh Stream.cz programme snapshot is served from SQLite without a catalogue request', async t => {
   const site = streamcz(t);
-  site.categories.push({ id: 'cat-serialy', name: 'Seriály', urlName: 'serialy', programs: [{ id: 'p1', name: 'Ano, šéfe!', urlName: 'ano-sefe' }] });
+  site.categories.push({
+    id: 'cat-serialy',
+    name: 'Seriály',
+    urlName: 'serialy',
+    programs: [{ id: 'p1', name: 'Ano, šéfe!', urlName: 'ano-sefe' }],
+  });
   using database = new DatabaseSync(':memory:');
   let now = 0;
   const provider = createStreamCzProvider({ enabled: true }, database, { now: () => now })!;
@@ -161,7 +224,12 @@ test('a fresh Stream.cz programme snapshot is served from SQLite without a catal
 
 test('a snapshot older than six hours is rediscovered', async t => {
   const site = streamcz(t);
-  site.categories.push({ id: 'cat-serialy', name: 'Seriály', urlName: 'serialy', programs: [{ id: 'p1', name: 'First', urlName: 'first' }] });
+  site.categories.push({
+    id: 'cat-serialy',
+    name: 'Seriály',
+    urlName: 'serialy',
+    programs: [{ id: 'p1', name: 'First', urlName: 'first' }],
+  });
   using database = new DatabaseSync(':memory:');
   let now = 0;
   const provider = createStreamCzProvider({ enabled: true }, database, { now: () => now })!;
@@ -177,7 +245,12 @@ test('a snapshot older than six hours is rediscovered', async t => {
 
 test('the snapshot survives a restart on the same database', async t => {
   const site = streamcz(t);
-  site.categories.push({ id: 'cat-serialy', name: 'Seriály', urlName: 'serialy', programs: [{ id: 'p1', name: 'First', urlName: 'first' }] });
+  site.categories.push({
+    id: 'cat-serialy',
+    name: 'Seriály',
+    urlName: 'serialy',
+    programs: [{ id: 'p1', name: 'First', urlName: 'first' }],
+  });
   using database = new DatabaseSync(':memory:');
   const first = createStreamCzProvider({ enabled: true }, database)!;
   await list(first, { q: '' });
@@ -236,19 +309,34 @@ test('the same programme id under different kinds is cached as distinct rows, no
   const site = streamcz(t);
   site.categories.push(
     { id: 'cat-serialy', name: 'Seriály', urlName: 'serialy', programs: [{ id: 'shared', name: 'Shared (show)', urlName: 'shared-show' }] },
-    { id: 'cat-filmy', name: 'Filmy', urlName: 'filmy', kind: 'movie', programs: [{ id: 'shared', name: 'Shared (movie)', urlName: 'shared-movie' }] },
+    {
+      id: 'cat-filmy',
+      name: 'Filmy',
+      urlName: 'filmy',
+      kind: 'movie',
+      programs: [{ id: 'shared', name: 'Shared (movie)', urlName: 'shared-movie' }],
+    },
   );
   using database = new DatabaseSync(':memory:');
   const provider = createStreamCzProvider({ enabled: true }, database)!;
 
   const all = await list(provider, { q: '' });
-  assert.deepEqual(all.map(p => [p.id, p.kind]).sort(), [['shared', 'movie'], ['shared', 'tv']]);
+  assert.deepEqual(all.map(p => [p.id, p.kind]).sort(), [
+    ['shared', 'movie'],
+    ['shared', 'tv'],
+  ]);
 
   // 'tv' and 'movie' scopes are cached and served independently of the 'all' scope.
   const tv = await list(provider, { q: '', kind: 'tv' });
-  assert.deepEqual(tv.map(p => [p.id, p.kind]), [['shared', 'tv']]);
+  assert.deepEqual(
+    tv.map(p => [p.id, p.kind]),
+    [['shared', 'tv']],
+  );
   const movies = await list(provider, { q: '', kind: 'movie' });
-  assert.deepEqual(movies.map(p => [p.id, p.kind]), [['shared', 'movie']]);
+  assert.deepEqual(
+    movies.map(p => [p.id, p.kind]),
+    [['shared', 'movie']],
+  );
   assert.equal(site.categoriesRequests, 3);
 });
 
@@ -269,10 +357,15 @@ test('an authoritative empty programme list for a scope is cached, not treated a
 
 test('cached programmes stop when the consumer cancels between yields', async t => {
   const site = streamcz(t);
-  site.categories.push({ id: 'shows', name: 'Shows', urlName: 'shows', programs: [
-    { id: 'first', name: 'First', urlName: 'first' },
-    { id: 'second', name: 'Second', urlName: 'second' },
-  ] });
+  site.categories.push({
+    id: 'shows',
+    name: 'Shows',
+    urlName: 'shows',
+    programs: [
+      { id: 'first', name: 'First', urlName: 'first' },
+      { id: 'second', name: 'Second', urlName: 'second' },
+    ],
+  });
   using database = new DatabaseSync(':memory:');
   const provider = createStreamCzProvider({}, database)!;
   await list(provider, { q: '', kind: 'tv' });
@@ -290,9 +383,7 @@ test('cached programmes stop when the consumer cancels between yields', async t 
 for (const failure of ['missing-state', 'incomplete-connection'] as const) {
   test(`${failure} cannot poison the catalogue cache with an empty snapshot`, async t => {
     const site = streamcz(t);
-    site.categories.push({ id: 'shows', name: 'Shows', urlName: 'shows', programs: [
-      { id: 'first', name: 'First', urlName: 'first' },
-    ] });
+    site.categories.push({ id: 'shows', name: 'Shows', urlName: 'shows', programs: [{ id: 'first', name: 'First', urlName: 'first' }] });
     const upstream = globalThis.fetch;
     let broken = true;
     t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
@@ -305,8 +396,6 @@ for (const failure of ['missing-state', 'incomplete-connection'] as const) {
     const provider = createStreamCzProvider({}, database)!;
     await assert.rejects(list(provider, { q: '', kind: 'tv' }), /Stream.cz returned/);
     broken = false;
-    assert.deepEqual(await list(provider, { q: '', kind: 'tv' }), [
-      { id: 'first', title: 'First', kind: 'tv', urlName: 'first' },
-    ]);
+    assert.deepEqual(await list(provider, { q: '', kind: 'tv' }), [{ id: 'first', title: 'First', kind: 'tv', urlName: 'first' }]);
   });
 }

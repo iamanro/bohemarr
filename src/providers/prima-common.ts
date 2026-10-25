@@ -136,9 +136,15 @@ export class Nuxt {
     return resolve(0);
   }
 
-  root(): Record<string, unknown> { return this.rootValue; }
-  data(): Record<string, unknown> { return get(this.rootValue, 'data', {} as Record<string, unknown>); }
-  state(): Record<string, unknown> { return get(this.rootValue, 'state', {} as Record<string, unknown>); }
+  root(): Record<string, unknown> {
+    return this.rootValue;
+  }
+  data(): Record<string, unknown> {
+    return get(this.rootValue, 'data', {} as Record<string, unknown>);
+  }
+  state(): Record<string, unknown> {
+    return get(this.rootValue, 'state', {} as Record<string, unknown>);
+  }
 }
 
 /** Recursively searches a decoded Nuxt tree for the value stored under object key `name`. */
@@ -162,11 +168,7 @@ export function findByKey(node: unknown, name: string): unknown {
 export class PrimaRpc {
   private static readonly ENDPOINT = 'https://gateway-api.prod.iprima.cz/json-rpc/';
 
-  static async request(
-    method: string,
-    params: Record<string, unknown>,
-    signal: AbortSignal,
-  ): Promise<Record<string, unknown>> {
+  static async request(method: string, params: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>> {
     const body = JSON.stringify({
       id: 'web-1',
       jsonrpc: '2.0',
@@ -194,8 +196,7 @@ export class PrimaRpc {
 }
 
 /** Ports `IPrimaHelper.PlayIdExtractor`. */
-const PLAYER_INIT_RE =
-  /['"]DOMContentLoaded['"],[^{]+\{(?:(?!initPlayerLauncher)[\s\S])+initPlayerLauncher\(\d+,\s*['"]([^'"]+)['"]/;
+const PLAYER_INIT_RE = /['"]DOMContentLoaded['"],[^{]+\{(?:(?!initPlayerLauncher)[\s\S])+initPlayerLauncher\(\d+,\s*['"]([^'"]+)['"]/;
 
 export function extractPlayIds(html: string, $scripts: string[]): string[] {
   for (const content of $scripts) {

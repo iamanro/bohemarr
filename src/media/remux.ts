@@ -16,7 +16,11 @@ import { fetchResponse } from '../providers/common.ts';
  * highest quality or requested-language one.
  */
 async function downloadClearDash(
-  config: Config, source: MediaSource, outputDir: string, safeTitle: string, signal: AbortSignal,
+  config: Config,
+  source: MediaSource,
+  outputDir: string,
+  safeTitle: string,
+  signal: AbortSignal,
   onProgress: (progress: DownloadProgress) => void,
 ): Promise<string> {
   const response = await fetchResponse(source.url, signal, { headers: source.headers });
@@ -24,11 +28,27 @@ async function downloadClearDash(
   const manifest = parseManifest(await response.text(), response.url);
   if (manifest.live) throw new Error('An ongoing DASH live stream cannot be imported');
   const periods = selectVideoAndAudio(manifest, undefined, source.audioLanguage ?? DEFAULT_AUDIO_LANGUAGE);
-  return muxPeriods(config, source, periods, source.subtitles?.length ? 'mkv' : 'mp4', async (track, workDir, label, trackSignal, onBytes) => {
-    const path = join(workDir, `${label}.mp4`);
-    await downloadSegmentsConcat(track.initSegment ? [track.initSegment, ...track.mediaSegments] : track.mediaSegments, source.headers, path, trackSignal, onBytes);
-    return path;
-  }, outputDir, safeTitle, signal, onProgress);
+  return muxPeriods(
+    config,
+    source,
+    periods,
+    source.subtitles?.length ? 'mkv' : 'mp4',
+    async (track, workDir, label, trackSignal, onBytes) => {
+      const path = join(workDir, `${label}.mp4`);
+      await downloadSegmentsConcat(
+        track.initSegment ? [track.initSegment, ...track.mediaSegments] : track.mediaSegments,
+        source.headers,
+        path,
+        trackSignal,
+        onBytes,
+      );
+      return path;
+    },
+    outputDir,
+    safeTitle,
+    signal,
+    onProgress,
+  );
 }
 
 /**
@@ -38,7 +58,11 @@ async function downloadClearDash(
  * are what's actually downloaded.
  */
 async function downloadClearHls(
-  config: Config, source: MediaSource, outputDir: string, safeTitle: string, signal: AbortSignal,
+  config: Config,
+  source: MediaSource,
+  outputDir: string,
+  safeTitle: string,
+  signal: AbortSignal,
   onProgress: (progress: DownloadProgress) => void,
 ): Promise<string> {
   const selection = await resolveHlsTracks(source.url, source.headers, undefined, source.audioLanguage ?? DEFAULT_AUDIO_LANGUAGE, signal);
@@ -46,21 +70,34 @@ async function downloadClearHls(
 
   const inputs: MuxInput[] = [{ url: selection.videoPlaylistUrl, headers: source.headers, kind: 'video' }];
   if (selection.audioPlaylistUrl) inputs.push({ url: selection.audioPlaylistUrl, headers: source.headers, kind: 'audio' });
-  for (const subtitle of source.subtitles ?? []) inputs.push({ url: subtitle.url, headers: subtitle.headers, kind: 'subtitle', language: subtitle.language });
+  for (const subtitle of source.subtitles ?? [])
+    inputs.push({ url: subtitle.url, headers: subtitle.headers, kind: 'subtitle', language: subtitle.language });
   const ext = source.subtitles?.length ? 'mkv' : 'mp4';
-  return muxToFile(config, inputs, join(outputDir, `${safeTitle}.${ext}`), signal, onProgress, selection.video.durationSeconds || undefined);
+  return muxToFile(
+    config,
+    inputs,
+    join(outputDir, `${safeTitle}.${ext}`),
+    signal,
+    onProgress,
+    selection.video.durationSeconds || undefined,
+  );
 }
 
 /** Clear adaptive streams and separate file tracks share the same explicit stream-selection path. */
 export async function downloadRemux(
-  config: Config, source: MediaSource, outputDir: string, safeTitle: string, signal: AbortSignal,
+  config: Config,
+  source: MediaSource,
+  outputDir: string,
+  safeTitle: string,
+  signal: AbortSignal,
   onProgress: (progress: DownloadProgress) => void,
 ): Promise<string> {
   if (source.type === 'dash') return downloadClearDash(config, source, outputDir, safeTitle, signal, onProgress);
   if (source.type === 'hls') return downloadClearHls(config, source, outputDir, safeTitle, signal, onProgress);
 
   const media = await probeMedia(config, source.url, source.headers, signal);
-  const video = media.streams.filter(stream => stream.codec_type === 'video' && (!source.height || (stream.height || 0) <= source.height))
+  const video = media.streams
+    .filter(stream => stream.codec_type === 'video' && (!source.height || (stream.height || 0) <= source.height))
     .sort((a, b) => (b.height || 0) - (a.height || 0) || Number(b.bit_rate || 0) - Number(a.bit_rate || 0))[0];
   if (!video) throw new Error('Source contains no video matching the requested quality');
   const inputs: MuxInput[] = [{ url: source.url, headers: source.headers, kind: 'video', streamIndex: video.index }];

@@ -62,8 +62,14 @@ export class OneplayConnectionPool {
         const index = this.waitQueue.indexOf(wake);
         if (index !== -1) this.waitQueue.splice(index, 1);
       };
-      const wake = (): void => { cleanup(); resolve(); };
-      const onAbort = (): void => { cleanup(); reject(signal.reason); };
+      const wake = (): void => {
+        cleanup();
+        resolve();
+      };
+      const onAbort = (): void => {
+        cleanup();
+        reject(signal.reason);
+      };
       this.waitQueue.push(wake);
       signal.addEventListener('abort', onAbort, { once: true });
       if (signal.aborted) onAbort();

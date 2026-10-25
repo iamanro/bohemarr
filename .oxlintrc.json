@@ -3,7 +3,10 @@
   "plugins": ["typescript", "unicorn", "oxc", "react"],
   "ignorePatterns": ["web/src/components/ui/**"],
   "rules": {
-    "no-unused-vars": ["warn", { "ignoreUsingDeclarations": true, "varsIgnorePattern": "^_", "argsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }],
+    "no-unused-vars": [
+      "warn",
+      { "ignoreUsingDeclarations": true, "varsIgnorePattern": "^_", "argsIgnorePattern": "^_", "caughtErrorsIgnorePattern": "^_" }
+    ],
     "unicorn/no-new-array": "off"
   }
 }

@@ -8,7 +8,10 @@ const root = 'https://www.iprima.cz';
 const signal = new AbortController().signal;
 const HOUR = 60 * 60 * 1000;
 
-interface Listing { uri: string; lastmod: string }
+interface Listing {
+  uri: string;
+  lastmod: string;
+}
 
 /** A fake iPrima: mutable sitemaps and page titles, counting sitemap and page requests. */
 function iprima(t: TestContext) {
@@ -23,12 +26,17 @@ function iprima(t: TestContext) {
     `<urlset>${entries.map(e => `<url><loc>${e.uri}</loc><lastmod>${e.lastmod}</lastmod></url>`).join('')}</urlset>`;
   t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
     const url = String(input);
-    if (url === `${root}/sitemap-series.xml`) { site.sitemapRequests++; return new Response(sitemap(site.series)); }
+    if (url === `${root}/sitemap-series.xml`) {
+      site.sitemapRequests++;
+      return new Response(sitemap(site.series));
+    }
     if (url === `${root}/sitemap-movie.xml`) return new Response(sitemap(site.movies));
     site.pageRequests.push(url);
     const title = site.titles.get(url);
     if (title === undefined) return new Response('not found', { status: 404 });
-    return new Response(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${'x'.repeat(100_000)}</body></html>`);
+    return new Response(
+      `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${'x'.repeat(100_000)}</body></html>`,
+    );
   });
   return site;
 }
@@ -53,7 +61,13 @@ test('the first listing reads the sitemaps; titles come from the pages in the ba
     { uri: `${root}/serialy/ano-sefe`, kind: 'tv', title: 'ano sefe', titled: false },
   ]);
   await index.idle();
-  assert.deepEqual((await list(index)).map(p => [p.title, p.titled]), [['Táta je doma', true], ['Ano, šéfe!', true]]);
+  assert.deepEqual(
+    (await list(index)).map(p => [p.title, p.titled]),
+    [
+      ['Táta je doma', true],
+      ['Ano, šéfe!', true],
+    ],
+  );
 });
 
 test('page titles keep entities decoded and names that contain "online"', async t => {
@@ -67,7 +81,10 @@ test('page titles keep entities decoded and names that contain "online"', async 
   t.after(() => index.close());
   await list(index);
   await index.idle();
-  assert.deepEqual((await list(index)).map(p => p.title), ['Tom & Jerry', 'Lov online predátorů']);
+  assert.deepEqual(
+    (await list(index)).map(p => p.title),
+    ['Tom & Jerry', 'Lov online predátorů'],
+  );
 });
 
 test('the index is served from SQLite until it is six hours old, then refreshed', async t => {
@@ -86,14 +103,23 @@ test('the index is served from SQLite until it is six hours old, then refreshed'
   site.series.splice(0, 1, { uri: `${root}/serialy/second`, lastmod: '2026-09-02T00:00:00+00:00' });
   site.titles.set(`${root}/serialy/second`, 'Second online ke zhlédnutí | prima+');
   now = 6 * HOUR - 1;
-  assert.deepEqual((await list(index)).map(p => p.title), ['First']);
+  assert.deepEqual(
+    (await list(index)).map(p => p.title),
+    ['First'],
+  );
   assert.equal(site.sitemapRequests, 1);
 
   // Once stale, the listing is still answered immediately while the refresh runs behind it.
   now = 6 * HOUR;
-  assert.deepEqual((await list(index)).map(p => p.title), ['First']);
+  assert.deepEqual(
+    (await list(index)).map(p => p.title),
+    ['First'],
+  );
   await index.idle();
-  assert.deepEqual((await list(index)).map(p => p.title), ['Second']);
+  assert.deepEqual(
+    (await list(index)).map(p => p.title),
+    ['Second'],
+  );
   assert.equal(site.sitemapRequests, 2);
 });
 
@@ -118,7 +144,10 @@ test('a changed lastmod re-reads only that title; unchanged pages are not reques
   await list(index);
   await index.idle();
   assert.deepEqual(site.pageRequests, [renamed.uri]);
-  assert.deepEqual((await list(index)).map(p => p.title), ['New name', 'Stable']);
+  assert.deepEqual(
+    (await list(index)).map(p => p.title),
+    ['New name', 'Stable'],
+  );
 });
 
 test('the index survives a restart, and titles that could not be read are retried by the next process', async t => {
@@ -130,7 +159,10 @@ test('the index survives a restart, and titles that could not be read are retrie
   await list(first);
   await first.close();
   const restarted = new PrimaIndex(database, { pause: async () => {} });
-  assert.deepEqual((await list(restarted)).map(p => p.titled), [false]);
+  assert.deepEqual(
+    (await list(restarted)).map(p => p.titled),
+    [false],
+  );
   await restarted.close(); // its background title pass must not outlive the database
 
   site.titles.set(missing.uri, 'Flaky online ke zhlédnutí | prima+');
@@ -139,7 +171,10 @@ test('the index survives a restart, and titles that could not be read are retrie
   await list(second);
   await second.idle();
   assert.equal(site.sitemapRequests, 1, 'a fresh stored index is not re-fetched after a restart');
-  assert.deepEqual((await list(second)).map(p => p.title), ['Flaky']);
+  assert.deepEqual(
+    (await list(second)).map(p => p.title),
+    ['Flaky'],
+  );
 });
 
 test('titles are read one page at a time with a pause between pages, and a CDN refusal stops the pass', async t => {
@@ -158,12 +193,23 @@ test('titles are read one page at a time with a pause between pages, and a CDN r
     return fetchMock(input);
   });
   using database = new DatabaseSync(':memory:');
-  const index = new PrimaIndex(database, { pause: async ms => { events.push(`pause ${ms}`); } });
+  const index = new PrimaIndex(database, {
+    pause: async ms => {
+      events.push(`pause ${ms}`);
+    },
+  });
   t.after(() => index.close());
   await list(index);
   await index.idle();
   assert.deepEqual(events, ['GET c', 'pause 1000', 'GET b']);
-  assert.deepEqual((await list(index)).map(p => [p.title, p.titled]), [['C', true], ['b', false], ['a', false]]);
+  assert.deepEqual(
+    (await list(index)).map(p => [p.title, p.titled]),
+    [
+      ['C', true],
+      ['b', false],
+      ['a', false],
+    ],
+  );
 });
 
 test('the first listing fails when iPrima lists no programmes, rather than serving an empty catalogue', async t => {

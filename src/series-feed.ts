@@ -43,7 +43,11 @@ export class SeriesFeed {
 
   /** `bindings` must already have created its tables; series searched before this table existed become watched. */
   constructor(
-    db: DatabaseSync, bindings: SeriesBindings, providers: Map<string, Provider>, now: () => number = Date.now, timeoutMs = BUILD_TIMEOUT_MS,
+    db: DatabaseSync,
+    bindings: SeriesBindings,
+    providers: Map<string, Provider>,
+    now: () => number = Date.now,
+    timeoutMs = BUILD_TIMEOUT_MS,
   ) {
     this.db = db;
     this.bindings = bindings;
@@ -81,7 +85,9 @@ export class SeriesFeed {
         this.snapshot = { at: this.now(), releases };
         return releases;
       })
-      .finally(() => { this.building = undefined; });
+      .finally(() => {
+        this.building = undefined;
+      });
     return untilAborted(this.building, signal);
   }
 
@@ -95,22 +101,30 @@ export class SeriesFeed {
     let reached = 0;
     // Series are listed one at a time to avoid bursts at the providers' CDNs.
     for (const identity of identities) {
-      const results = await Promise.allSettled(providers.map(provider => this.bindings.recent(provider, identity, RELEASES_PER_SERIES, signal)));
+      const results = await Promise.allSettled(
+        providers.map(provider => this.bindings.recent(provider, identity, RELEASES_PER_SERIES, signal)),
+      );
       if (signal.aborted) break;
       reached++;
       results.forEach((result, index) => {
         if (result.status === 'rejected') {
           errors.push(result.reason);
-          console.error(`RSS feed: ${providers[index]!.id} failed for TVDB ${identity.tvdbId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
+          console.error(
+            `RSS feed: ${providers[index]!.id} failed for TVDB ${identity.tvdbId}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+          );
           return;
         }
-        result.value.forEach((release, rank) => { if (!listed.has(release.id)) listed.set(release.id, { release, rank }); });
+        result.value.forEach((release, rank) => {
+          if (!listed.has(release.id)) listed.set(release.id, { release, rank });
+        });
       });
     }
     if (reached < identities.length) {
       // The series cut off leads the next listing, unless it alone used up all the time.
       this.cursor = start + Math.max(reached, 1);
-      console.error(`RSS feed: listed ${reached} of ${identities.length} series before the deadline; the next listing continues from there`);
+      console.error(
+        `RSS feed: listed ${reached} of ${identities.length} series before the deadline; the next listing continues from there`,
+      );
       if (!listed.size) throw new Error('RSS feed: no series could be listed before the deadline');
     }
     if (errors.length && errors.length === reached * providers.length) {
@@ -125,10 +139,12 @@ export class SeriesFeed {
       this.db.exec('ROLLBACK');
       throw error;
     }
-    return [...listed.values()]
-      .map(({ release, rank }) => ({ release, rank, firstSeen: Number(this.selectFirstSeen.get(release.id)!.first_seen_at) }))
-      // Releases first listed together keep their provider's newest-first order.
-      .sort((a, b) => b.firstSeen - a.firstSeen || a.rank - b.rank || a.release.id.localeCompare(b.release.id))
-      .map(({ release, firstSeen }) => ({ ...release, publishedAt: new Date(firstSeen).toISOString() }));
+    return (
+      [...listed.values()]
+        .map(({ release, rank }) => ({ release, rank, firstSeen: Number(this.selectFirstSeen.get(release.id)!.first_seen_at) }))
+        // Releases first listed together keep their provider's newest-first order.
+        .sort((a, b) => b.firstSeen - a.firstSeen || a.rank - b.rank || a.release.id.localeCompare(b.release.id))
+        .map(({ release, firstSeen }) => ({ ...release, publishedAt: new Date(firstSeen).toISOString() }))
+    );
   }
 }

@@ -14,7 +14,10 @@ Platform.shim.eval = async data => {
 export function isYouTubeUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return ['http:', 'https:'].includes(parsed.protocol) && /^(?:(?:www|m)\.)?(?:youtube\.com|youtube-nocookie\.com|youtu\.be)$/.test(parsed.hostname);
+    return (
+      ['http:', 'https:'].includes(parsed.protocol) &&
+      /^(?:(?:www|m)\.)?(?:youtube\.com|youtube-nocookie\.com|youtu\.be)$/.test(parsed.hostname)
+    );
   } catch {
     return false;
   }
@@ -23,8 +26,10 @@ export function isYouTubeUrl(url: string): boolean {
 export function maybeTransformYouTubeUrl(url: string): string {
   if (!isYouTubeUrl(url)) throw new Error('Unsupported YouTube URL');
   const parsed = new URL(url);
-  const id = parsed.hostname === 'youtu.be' ? parsed.pathname.slice(1)
-    : parsed.pathname.match(/^\/(?:embed|shorts|live)\/([^/]+)/)?.[1] || parsed.searchParams.get('v');
+  const id =
+    parsed.hostname === 'youtu.be'
+      ? parsed.pathname.slice(1)
+      : parsed.pathname.match(/^\/(?:embed|shorts|live)\/([^/]+)/)?.[1] || parsed.searchParams.get('v');
   if (!id || !/^[\w-]{11}$/.test(id)) throw new Error('YouTube URL must identify a video');
   return `https://www.youtube.com/watch?v=${id}`;
 }
@@ -46,7 +51,9 @@ export async function resolveYouTube(url: string, signal: AbortSignal, config: P
   });
   const info = await youtube.getBasicInfo(id, { client: requested });
   if (info.playability_status?.status !== 'OK') {
-    throw new Error(`YouTube playback unavailable: ${info.playability_status?.reason || info.playability_status?.status || 'unknown reason'}`);
+    throw new Error(
+      `YouTube playback unavailable: ${info.playability_status?.reason || info.playability_status?.status || 'unknown reason'}`,
+    );
   }
   if (info.basic_info.is_live) throw new Error('An ongoing YouTube live stream cannot be imported as a completed release');
   const data = info.streaming_data;
@@ -56,20 +63,33 @@ export async function resolveYouTube(url: string, signal: AbortSignal, config: P
     subtitleUrl.searchParams.set('fmt', 'vtt');
     return { url: subtitleUrl.toString(), language: track.language_code };
   });
-  const formats = [...data.adaptive_formats, ...data.formats]
-    .filter(format => !format.drm_families?.length && !format.is_type_otf && (format.url || format.signature_cipher || format.cipher));
-  const audio = formats.filter(format => format.has_audio && !format.has_video)
-    .sort((a, b) => Number(b.audio_track?.audio_is_default ?? true) - Number(a.audio_track?.audio_is_default ?? true) || b.bitrate - a.bitrate)[0];
+  const formats = [...data.adaptive_formats, ...data.formats].filter(
+    format => !format.drm_families?.length && !format.is_type_otf && (format.url || format.signature_cipher || format.cipher),
+  );
+  const audio = formats
+    .filter(format => format.has_audio && !format.has_video)
+    .sort(
+      (a, b) => Number(b.audio_track?.audio_is_default ?? true) - Number(a.audio_track?.audio_is_default ?? true) || b.bitrate - a.bitrate,
+    )[0];
   const audioUrl = audio ? await audio.decipher(youtube.session.player) : undefined;
   const sources: MediaSource[] = [];
   for (const format of formats.filter(format => format.has_video)) {
     signal.throwIfAborted();
     if (!format.has_audio && !audioUrl) continue;
-    sources.push({ url: await format.decipher(youtube.session.player), type: 'file', height: format.height,
-      bandwidth: format.bitrate, audioUrl: format.has_audio ? undefined : audioUrl, subtitles });
+    sources.push({
+      url: await format.decipher(youtube.session.player),
+      type: 'file',
+      height: format.height,
+      bandwidth: format.bitrate,
+      audioUrl: format.has_audio ? undefined : audioUrl,
+      subtitles,
+    });
   }
   if (data.hls_manifest_url) sources.push({ url: data.hls_manifest_url, type: 'hls', subtitles });
   if (data.dash_manifest_url) sources.push({ url: data.dash_manifest_url, type: 'dash', subtitles });
-  if (!sources.length) throw new Error('YouTube returned no downloadable formats. Check account access and the configured client/PoToken; SABR-only responses are not direct media URLs.');
+  if (!sources.length)
+    throw new Error(
+      'YouTube returned no downloadable formats. Check account access and the configured client/PoToken; SABR-only responses are not direct media URLs.',
+    );
   return sources;
 }

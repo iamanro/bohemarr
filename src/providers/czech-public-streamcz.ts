@@ -15,10 +15,21 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 /** Bound catalogue freshness tightly for newly published episodes. */
 const EPISODE_CACHE_TTL_MS = 5 * 60 * 1000;
 
-interface CatalogNode { id: string; name: string; namePrefix: string | null; urlName: string; kind?: MediaKind }
+interface CatalogNode {
+  id: string;
+  name: string;
+  namePrefix: string | null;
+  urlName: string;
+  kind?: MediaKind;
+}
 
 /** A Stream.cz tag that lists episodes (a show or, for the `filmy` channel, individual movies). */
-interface StreamCzProgram { id: string; title: string; kind: MediaKind; urlName: string }
+interface StreamCzProgram {
+  id: string;
+  title: string;
+  kind: MediaKind;
+  urlName: string;
+}
 
 /** Clock used by the cache; tests replace it to avoid real time. */
 export interface StreamCzCacheTiming {
@@ -62,7 +73,8 @@ class StreamCzCache {
       );`);
     this.selectMeta = db.prepare('SELECT refreshed_at FROM stream_catalogue_cache_meta WHERE scope=?');
     this.upsertMeta = db.prepare(
-      'INSERT INTO stream_catalogue_cache_meta (scope, refreshed_at) VALUES (?, ?) ON CONFLICT(scope) DO UPDATE SET refreshed_at=excluded.refreshed_at');
+      'INSERT INTO stream_catalogue_cache_meta (scope, refreshed_at) VALUES (?, ?) ON CONFLICT(scope) DO UPDATE SET refreshed_at=excluded.refreshed_at',
+    );
     this.selectRows = db.prepare('SELECT program_id, title, kind, url_name FROM stream_catalogue_cache WHERE scope=? ORDER BY rowid');
     this.deleteRows = db.prepare('DELETE FROM stream_catalogue_cache WHERE scope=?');
     this.insertRow = db.prepare('INSERT INTO stream_catalogue_cache (scope, program_id, title, kind, url_name) VALUES (?, ?, ?, ?, ?)');
@@ -90,8 +102,10 @@ class StreamCzCache {
     if (!meta) return undefined;
     if (this.now() - Number(meta.refreshed_at) >= CACHE_TTL_MS) return undefined;
     return this.selectRows.all(scope).map(row => ({
-      id: String(row.program_id), title: String(row.title),
-      kind: row.kind === 'movie' ? 'movie' as const : 'tv' as const, urlName: String(row.url_name),
+      id: String(row.program_id),
+      title: String(row.title),
+      kind: row.kind === 'movie' ? ('movie' as const) : ('tv' as const),
+      urlName: String(row.url_name),
     }));
   }
 
@@ -155,9 +169,7 @@ const QUERY_EPISODES = `query LoadTag($id: ID, $last: Int, $before: String) {
   }
 }`;
 
-async function* paginateConnection(
-  connectionPath: string, run: (cursor: string) => Promise<unknown>,
-): AsyncGenerator<CatalogNode> {
+async function* paginateConnection(connectionPath: string, run: (cursor: string) => Promise<unknown>): AsyncGenerator<CatalogNode> {
   let cursor = '';
   for (;;) {
     const data = await run(cursor);
@@ -183,7 +195,8 @@ async function* paginateConnection(
 
 /** Same shape as `paginateConnection`, but walking a connection's `last`/`before` page backward. */
 async function* paginateConnectionBackward(
-  connectionPath: string, run: (cursor: string | null) => Promise<unknown>,
+  connectionPath: string,
+  run: (cursor: string | null) => Promise<unknown>,
 ): AsyncGenerator<CatalogNode> {
   let cursor: string | null = null;
   for (;;) {
@@ -212,12 +225,14 @@ async function* paginateConnectionBackward(
 
 function programsOf(categoryId: string, signal: AbortSignal): AsyncGenerator<CatalogNode> {
   return paginateConnection('data.childTagsData.directTagsConnection', cursor =>
-    graphqlRequest(QUERY_PROGRAMS, { id: categoryId, first: 24, after: cursor || null }, signal));
+    graphqlRequest(QUERY_PROGRAMS, { id: categoryId, first: 24, after: cursor || null }, signal),
+  );
 }
 
 function episodesOf(programId: string, signal: AbortSignal): AsyncGenerator<CatalogNode> {
   return paginateConnectionBackward('data.tagData.allEpisodesConnection', cursor =>
-    graphqlRequest(QUERY_EPISODES, { id: programId, last: 20, before: cursor }, signal));
+    graphqlRequest(QUERY_EPISODES, { id: programId, last: 20, before: cursor }, signal),
+  );
 }
 
 function appServerState(html: string): unknown {
@@ -235,7 +250,11 @@ function appServerState(html: string): unknown {
     if (braceIndex < 0) return;
     const objectText = bracketSubstring(content, braceIndex);
     if (!objectText) return;
-    try { result = JSON.parse(objectText); } catch { /* try the next inline script tag, if any */ }
+    try {
+      result = JSON.parse(objectText);
+    } catch {
+      /* try the next inline script tag, if any */
+    }
   });
   return result;
 }
@@ -275,8 +294,14 @@ function buildRelease(program: StreamCzProgram, episode: CatalogNode): Release {
   const { season, episode: episodeNum } = parseSeasonEpisode(episode.namePrefix);
   const kind: MediaKind = season !== undefined && episodeNum !== undefined ? 'tv' : program.kind;
   return {
-    id: releaseId('streamcz', url), provider: 'streamcz', title: episode.name,
-    url, kind, series: program.title, season, episode: episodeNum,
+    id: releaseId('streamcz', url),
+    provider: 'streamcz',
+    title: episode.name,
+    url,
+    kind,
+    series: program.title,
+    season,
+    episode: episodeNum,
   };
 }
 
@@ -417,12 +442,18 @@ export async function resolveStreamCz(url: string, signal: AbortSignal): Promise
  * endpoint, so browsing walks the same category → program → episode tree the site itself uses;
  * `database` holds a persistent snapshot of that walk (see `StreamCzCache`).
  */
-export function createStreamCzProvider(config: ProviderConfig = {}, database: DatabaseSync, timing: StreamCzCacheTiming = {}): Provider | null {
+export function createStreamCzProvider(
+  config: ProviderConfig = {},
+  database: DatabaseSync,
+  timing: StreamCzCacheTiming = {},
+): Provider | null {
   if (config.enabled === false) return null;
   return {
     id: 'streamcz',
     name: 'Stream.cz',
     catalogue: streamCzCatalogue(new StreamCzCache(database, timing)),
-    async resolve(release, signal) { return resolveStreamCz(release.url, signal); },
+    async resolve(release, signal) {
+      return resolveStreamCz(release.url, signal);
+    },
   };
 }

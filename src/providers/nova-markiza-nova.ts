@@ -4,7 +4,14 @@ import type { Catalogue, CatalogueQuery, Provider, Release } from '../types.ts';
 import * as cheerio from 'cheerio';
 import { absUrl, cached, empty, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import {
-  fetchDocument, fetchTextOrEmpty, fetchTextRetry, joinUrl, playerTracks, queryParams, readInlineObject, select,
+  fetchDocument,
+  fetchTextOrEmpty,
+  fetchTextRetry,
+  joinUrl,
+  playerTracks,
+  queryParams,
+  readInlineObject,
+  select,
 } from './nova-markiza-utils.ts';
 import { tracksToSources } from './nova-markiza-media.ts';
 
@@ -36,7 +43,12 @@ export interface NovaArchiveSite {
 }
 
 /** The provider's stable program URL doubles as `Program.id`; this archive is TV-only. */
-interface Program { id: string; uri: string; title: string; kind: 'tv' }
+interface Program {
+  id: string;
+  uri: string;
+  title: string;
+  kind: 'tv';
+}
 
 function contentIdFromLoadMore($: CheerioAPI, el: CheerioElement, base: string, fallbackToIndex0: boolean): string | undefined {
   const href = $(el).attr('data-href');
@@ -61,7 +73,11 @@ function hasEpisodeNumberInTitle($: CheerioAPI, el: CheerioElement, site: NovaAr
  * the program's start, then the built releases are reversed back to newest-first before return.
  */
 function parseEpisodeItems(
-  $: CheerioAPI, items: CheerioElement[], program: Program, startIndex: number, site: NovaArchiveSite,
+  $: CheerioAPI,
+  items: CheerioElement[],
+  program: Program,
+  startIndex: number,
+  site: NovaArchiveSite,
   allowFallbackIndex = true,
 ): { releases: Release[]; count: number } {
   const releases: Release[] = [];
@@ -74,12 +90,18 @@ function parseEpisodeItems(
     if (!el) continue;
     const $item = $(el);
 
-    if ($item.find(site.selLabelVoyo).length > 0) { count--; continue; }
+    if ($item.find(site.selLabelVoyo).length > 0) {
+      count--;
+      continue;
+    }
 
     const $link = $item.find('.title > a').first();
     const href = $link.attr('href');
     const uri = absUrl(program.uri, href);
-    if (!uri) { count--; continue; }
+    if (!uri) {
+      count--;
+      continue;
+    }
 
     let title = $link.text().trim();
     let numEpisode: number | undefined;
@@ -130,7 +152,11 @@ async function listPrograms(site: NovaArchiveSite, signal: AbortSignal): Promise
 
 /** Ported from `parseEpisodesPage`'s binary-search branch for title-less episode numbering. */
 async function walkNumberedByPosition(
-  site: NovaArchiveSite, program: Program, contentId: string, startIndex: number, signal: AbortSignal,
+  site: NovaArchiveSite,
+  program: Program,
+  contentId: string,
+  startIndex: number,
+  signal: AbortSignal,
 ): Promise<{ releases: Release[]; nextIndex: number }> {
   const step = 6;
   let lo = 0;
@@ -147,7 +173,8 @@ async function walkNumberedByPosition(
     const mid = lo + Math.floor((hi - lo) / 2);
     const $mid = cheerio.load(await fetchTextOrEmpty(site.episodeListUrl(contentId, mid), signal));
     const allVoyo = select($mid, site.selEpisodes).length === select($mid, site.selLabelVoyo).length;
-    if (allVoyo) hi = mid; else lo = mid;
+    if (allVoyo) hi = mid;
+    else lo = mid;
   }
 
   // The fallback episode number counts up from the program's oldest episode, so chunks must be
@@ -174,7 +201,11 @@ async function walkNumberedByPosition(
  * returned) without paginating further.
  */
 async function* extractEpisodesForPath(
-  site: NovaArchiveSite, program: Program, uriPath: string, indexState: { value: number }, signal: AbortSignal,
+  site: NovaArchiveSite,
+  program: Program,
+  uriPath: string,
+  indexState: { value: number },
+  signal: AbortSignal,
 ): AsyncGenerator<Release> {
   const uri = joinUrl(program.uri, uriPath);
   let html: string;
@@ -192,7 +223,10 @@ async function* extractEpisodesForPath(
 
   if (items.length > 0 && hasLoadMore && items[0] && !hasEpisodeNumberInTitle($, items[0], site)) {
     const contentId = contentIdFromLoadMore($, loadMoreEl.get(0) as CheerioElement, uri, !!site.contentParamFallback);
-    if (!contentId) { yield* parseEpisodeItems($, items, program, indexState.value, site).releases; return; }
+    if (!contentId) {
+      yield* parseEpisodeItems($, items, program, indexState.value, site).releases;
+      return;
+    }
 
     // Title-less numbering needs the full oldest→newest walk before anything can be numbered
     // (see `walkNumberedByPosition`), so this branch cannot yield before that walk completes.

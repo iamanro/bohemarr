@@ -223,6 +223,9 @@ export interface DownloadProgress {
   progress?: number;
 }
 export type DownloadMedia = (
-  sources: MediaSource[], outputDir: string, title: string,
-  signal: AbortSignal, onProgress: (progress: DownloadProgress) => void,
+  sources: MediaSource[],
+  outputDir: string,
+  title: string,
+  signal: AbortSignal,
+  onProgress: (progress: DownloadProgress) => void,
 ) => Promise<string>;

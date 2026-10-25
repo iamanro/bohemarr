@@ -10,23 +10,52 @@ import { fakeCatalogue } from './fake-catalogue.ts';
 
 const identity: SeriesIdentity = { tvdbId: 12345, title: 'Show Name', aliases: [], year: 2020, country: 'US' };
 const config: Config = {
-  host: '127.0.0.1', port: 8787, apiKey: 'a'.repeat(64), publicUrl: 'http://localhost:8787',
-  dataDir: '/unused', downloadsDir: '/unused', concurrency: 1, requestRate: 100,
-  ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'https://example.test/wv/',
-  categories: ['tv', 'movies'], providers: {}, arrs: [],
+  host: '127.0.0.1',
+  port: 8787,
+  apiKey: 'a'.repeat(64),
+  publicUrl: 'http://localhost:8787',
+  dataDir: '/unused',
+  downloadsDir: '/unused',
+  concurrency: 1,
+  requestRate: 100,
+  ffmpeg: 'ffmpeg',
+  ffprobe: 'ffprobe',
+  mp4decrypt: 'mp4decrypt',
+  wvApiUrl: 'https://example.test/wv/',
+  categories: ['tv', 'movies'],
+  providers: {},
+  arrs: [],
 };
 
 function indexer(lookups: number[] = []) {
   const store = new Store(':memory:');
   const provider: Provider = {
-    id: 'oneplay', name: 'Oneplay', resolve: async () => [],
+    id: 'oneplay',
+    name: 'Oneplay',
+    resolve: async () => [],
     seriesCandidates: async () => [{ id: 'src', title: 'Show Name', aliases: [], year: 2020, countries: ['US'] }],
-    catalogue: fakeCatalogue(bound => bound === 'src' ? [{
-      id: 'ep-1', provider: 'oneplay', title: 'Pilot', series: 'Provider Title', kind: 'tv', season: 1, episode: 1,
-      url: 'https://oneplay.test/original/stream.mp4', programId: 'src',
-    }] : []),
+    catalogue: fakeCatalogue(bound =>
+      bound === 'src'
+        ? [
+            {
+              id: 'ep-1',
+              provider: 'oneplay',
+              title: 'Pilot',
+              series: 'Provider Title',
+              kind: 'tv',
+              season: 1,
+              episode: 1,
+              url: 'https://oneplay.test/original/stream.mp4',
+              programId: 'src',
+            },
+          ]
+        : [],
+    ),
   };
-  const bindings = new SeriesBindings(store.database, async tvdbId => { lookups.push(tvdbId); return identity; });
+  const bindings = new SeriesBindings(store.database, async tvdbId => {
+    lookups.push(tvdbId);
+    return identity;
+  });
   return { store, provider, indexer: new Indexer(config, store, new Map([[provider.id, provider]]), bindings) };
 }
 
@@ -61,7 +90,9 @@ test('Torznab publishes highest available video with Czech audio and an honest A
   });
   const { store, provider, indexer: torznab } = indexer();
   using dispose = store;
-  provider.resolve = async () => [{ url: 'https://cdn.example.test/master.mpd?token=private-only', type: 'dash', headers: { 'X-Stream-Token': 'private-only' } }];
+  provider.resolve = async () => [
+    { url: 'https://cdn.example.test/master.mpd?token=private-only', type: 'dash', headers: { 'X-Stream-Token': 'private-only' } },
+  ];
   const params = { t: 'tvsearch', tvdbid: '12345', season: '1', ep: '1' };
   const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false, isArray: name => name === 'torznab:attr' });
   const item = parser.parse(await torznab.search(params, new AbortController().signal)).rss.channel.item;
@@ -87,15 +118,23 @@ test('movie searches advertise and return Radarr TMDB IDs', async () => {
     provider TEXT NOT NULL, source_id TEXT NOT NULL, source_kind TEXT NOT NULL,
     tmdb_kind TEXT NOT NULL, tmdb_id INTEGER NOT NULL, status TEXT NOT NULL
   )`);
-  store.database.prepare('INSERT INTO catalogue_tmdb_mappings VALUES (?, ?, ?, ?, ?, ?)')
+  store.database
+    .prepare('INSERT INTO catalogue_tmdb_mappings VALUES (?, ?, ?, ?, ?, ?)')
     .run('direct', 'movie-source', 'movie', 'movie', 1032863, 'matched');
   const movie: Release = {
-    id: 'movie-1', provider: 'direct', title: 'Film', kind: 'movie', year: 2026,
-    url: 'https://direct.test/film.mp4', programId: 'movie-source',
+    id: 'movie-1',
+    provider: 'direct',
+    title: 'Film',
+    kind: 'movie',
+    year: 2026,
+    url: 'https://direct.test/film.mp4',
+    programId: 'movie-source',
   };
   const provider: Provider = {
-    id: 'direct', name: 'Direct', resolve: async () => [],
-    catalogue: fakeCatalogue(bound => bound === 'movie-source' ? [movie] : []),
+    id: 'direct',
+    name: 'Direct',
+    resolve: async () => [],
+    catalogue: fakeCatalogue(bound => (bound === 'movie-source' ? [movie] : [])),
   };
   const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database));
 
@@ -115,11 +154,15 @@ test('a TMDB movie binding selects a static catalogue entry', async () => {
     provider TEXT NOT NULL, source_id TEXT NOT NULL, source_kind TEXT NOT NULL,
     tmdb_kind TEXT NOT NULL, tmdb_id INTEGER NOT NULL, status TEXT NOT NULL
   )`);
-  store.database.prepare('INSERT INTO catalogue_tmdb_mappings VALUES (?, ?, ?, ?, ?, ?)')
+  store.database
+    .prepare('INSERT INTO catalogue_tmdb_mappings VALUES (?, ?, ?, ?, ?, ?)')
     .run('direct', 'movie-1', 'movie', 'movie', 1032863, 'matched');
   const movie: Release = { id: 'movie-1', provider: 'direct', title: 'Mapped Film', kind: 'movie', url: 'https://direct.test/film.mp4' };
   const provider: Provider = {
-    id: 'direct', name: 'Direct', entries: [movie], resolve: async () => [],
+    id: 'direct',
+    name: 'Direct',
+    entries: [movie],
+    resolve: async () => [],
     catalogue: fakeCatalogue(() => [movie]),
   };
   const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database));
@@ -144,24 +187,56 @@ test('RSS lists the newest Releases of series Sonarr searched by TVDB ID, dated 
   const store = new Store(':memory:');
   using dispose = store;
   const episode = (number: number): Release => ({
-    id: `ep-${number}`, provider: 'oneplay', title: `Episode ${number}`, series: 'Provider Title', kind: 'tv',
-    season: 1, episode: number, url: `https://oneplay.test/ep-${number}`, programId: 'src',
+    id: `ep-${number}`,
+    provider: 'oneplay',
+    title: `Episode ${number}`,
+    series: 'Provider Title',
+    kind: 'tv',
+    season: 1,
+    episode: number,
+    url: `https://oneplay.test/ep-${number}`,
+    programId: 'src',
   });
   let published = [episode(2), episode(1)];
-  const browsed: Release = { id: 'other', provider: 'oneplay', title: 'Other', series: 'Unrelated', kind: 'tv', season: 1, episode: 1, url: 'https://oneplay.test/other' };
+  const browsed: Release = {
+    id: 'other',
+    provider: 'oneplay',
+    title: 'Other',
+    series: 'Unrelated',
+    kind: 'tv',
+    season: 1,
+    episode: 1,
+    url: 'https://oneplay.test/other',
+  };
   const provider: Provider = {
-    id: 'oneplay', name: 'Oneplay', resolve: async () => [],
+    id: 'oneplay',
+    name: 'Oneplay',
+    resolve: async () => [],
     seriesCandidates: async () => [{ id: 'src', title: 'Show Name', aliases: [], year: 2020, countries: ['US'] }],
-    catalogue: fakeCatalogue(bound => bound === 'src' ? published : [browsed]),
+    catalogue: fakeCatalogue(bound => (bound === 'src' ? published : [browsed])),
   };
   const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), new SeriesBindings(store.database, async () => identity));
-  const parser = new XMLParser({ ignoreAttributes: false, parseTagValue: false, isArray: name => name === 'item' || name === 'torznab:attr' });
-  const rss = async (offset = 0) => (parser.parse(await torznab.search({ t: 'tvsearch', cat: '5000', extended: '1', offset: String(offset) }, new AbortController().signal)).rss.channel.item ?? [])
-    .map((item: Record<string, any>) => ({ title: item.title, pubDate: item.pubDate,
-      tvdbId: item['torznab:attr'].find((attr: Record<string, string>) => attr['@_name'] === 'tvdbid')?.['@_value'] }));
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    parseTagValue: false,
+    isArray: name => name === 'item' || name === 'torznab:attr',
+  });
+  const rss = async (offset = 0) =>
+    (
+      parser.parse(
+        await torznab.search({ t: 'tvsearch', cat: '5000', extended: '1', offset: String(offset) }, new AbortController().signal),
+      ).rss.channel.item ?? []
+    ).map((item: Record<string, any>) => ({
+      title: item.title,
+      pubDate: item.pubDate,
+      tvdbId: item['torznab:attr'].find((attr: Record<string, string>) => attr['@_name'] === 'tvdbid')?.['@_value'],
+    }));
 
   // Nothing is watched yet: the feed is the catalogue browse page, so Sonarr can still save the indexer.
-  assert.deepEqual((await rss()).map((item: { title: string }) => item.title), ['Unrelated S01E01[WEB-DL]']);
+  assert.deepEqual(
+    (await rss()).map((item: { title: string }) => item.title),
+    ['Unrelated S01E01[WEB-DL]'],
+  );
 
   await torznab.search({ t: 'tvsearch', tvdbid: '12345', season: '1', ep: '1' }, new AbortController().signal);
   t.mock.timers.tick(11 * 60 * 1000);
@@ -178,11 +253,14 @@ test('RSS lists the newest Releases of series Sonarr searched by TVDB ID, dated 
   t.mock.timers.tick(5 * 60 * 1000);
   assert.equal((await rss()).length, 2, 'one listing serves a whole RSS sync');
   t.mock.timers.tick(6 * 60 * 1000);
-  assert.deepEqual((await rss()).map((item: { title: string; pubDate: string }) => [item.title, item.pubDate]), [
-    ['Show Name S01E03[WEB-DL]', 'Sat, 03 Oct 2026 18:22:00 GMT'],
-    ['Show Name S01E02[WEB-DL]', 'Sat, 03 Oct 2026 18:11:00 GMT'],
-    ['Show Name S01E01[WEB-DL]', 'Sat, 03 Oct 2026 18:11:00 GMT'],
-  ]);
+  assert.deepEqual(
+    (await rss()).map((item: { title: string; pubDate: string }) => [item.title, item.pubDate]),
+    [
+      ['Show Name S01E03[WEB-DL]', 'Sat, 03 Oct 2026 18:22:00 GMT'],
+      ['Show Name S01E02[WEB-DL]', 'Sat, 03 Oct 2026 18:11:00 GMT'],
+      ['Show Name S01E01[WEB-DL]', 'Sat, 03 Oct 2026 18:11:00 GMT'],
+    ],
+  );
 });
 
 test('series searched by TVDB ID before the RSS feed existed are watched after the upgrade', async () => {
@@ -192,7 +270,12 @@ test('series searched by TVDB ID before the RSS feed existed are watched after t
   using spareStore = spare.store;
   const { provider } = spare;
   const bindings = new SeriesBindings(store.database, async () => identity);
-  await bindings.search(provider, { q: '', kind: 'tv', season: 1, episode: 1, limit: 5, offset: 0 }, identity, new AbortController().signal);
+  await bindings.search(
+    provider,
+    { q: '', kind: 'tv', season: 1, episode: 1, limit: 5, offset: 0 },
+    identity,
+    new AbortController().signal,
+  );
   const torznab = new Indexer(config, store, new Map([[provider.id, provider]]), bindings);
   const feed = await torznab.search({ t: 'tvsearch', cat: '5000' }, new AbortController().signal);
   assert.match(feed, /<title>Show Name S01E01\[WEB-DL\]<\/title>/);
@@ -205,12 +288,27 @@ test('an RSS listing that runs out of time keeps what it found, and the next one
   const series = (tvdbId: number, title: string): SeriesIdentity => ({ tvdbId, title, aliases: [], year: 2020, country: 'CZ' });
   let slow = 'Beta';
   const provider: Provider = {
-    id: 'ceskatelevize', name: 'ČT', resolve: async () => [],
+    id: 'ceskatelevize',
+    name: 'ČT',
+    resolve: async () => [],
     catalogue: {
-      async *programs() { yield { id: 'Alpha', title: 'Alpha' }; yield { id: 'Beta', title: 'Beta' }; },
+      async *programs() {
+        yield { id: 'Alpha', title: 'Alpha' };
+        yield { id: 'Beta', title: 'Beta' };
+      },
       async *releases(program, _query, signal) {
-        if (program.id === slow) await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
-        yield { id: program.id, provider: 'ceskatelevize', title: 'Díl', series: program.title, kind: 'tv', season: 1, episode: 1, url: `https://ct.test/${program.id}` };
+        if (program.id === slow)
+          await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+        yield {
+          id: program.id,
+          provider: 'ceskatelevize',
+          title: 'Díl',
+          series: program.title,
+          kind: 'tv',
+          season: 1,
+          episode: 1,
+          url: `https://ct.test/${program.id}`,
+        };
       },
     },
   };
@@ -231,18 +329,44 @@ test('a provider that runs out of time fails alone, and the others still answer'
   const store = new Store(':memory:');
   using dispose = store;
   const hanging: Provider = {
-    id: 'novaplus', name: 'Nova', resolve: async () => [],
+    id: 'novaplus',
+    name: 'Nova',
+    resolve: async () => [],
     catalogue: {
       // oxlint-disable-next-line require-yield -- a catalogue that never lists anything: it hangs until the search aborts
-      async *programs(_query, signal) { await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })); },
+      async *programs(_query, signal) {
+        await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+      },
       async *releases() {},
     },
   };
   const answering: Provider = {
-    id: 'ceskatelevize', name: 'ČT', resolve: async () => [],
-    catalogue: fakeCatalogue(() => [{ id: 'ct-1', provider: 'ceskatelevize', title: 'Díl 1', series: 'Show Name', kind: 'tv', season: 1, episode: 1, url: 'https://ct.test/1' }]),
+    id: 'ceskatelevize',
+    name: 'ČT',
+    resolve: async () => [],
+    catalogue: fakeCatalogue(() => [
+      {
+        id: 'ct-1',
+        provider: 'ceskatelevize',
+        title: 'Díl 1',
+        series: 'Show Name',
+        kind: 'tv',
+        season: 1,
+        episode: 1,
+        url: 'https://ct.test/1',
+      },
+    ]),
   };
-  const torznab = new Indexer(config, store, new Map([[hanging.id, hanging], [answering.id, answering]]), new SeriesBindings(store.database), 50);
+  const torznab = new Indexer(
+    config,
+    store,
+    new Map([
+      [hanging.id, hanging],
+      [answering.id, answering],
+    ]),
+    new SeriesBindings(store.database),
+    50,
+  );
   const feed = await torznab.search({ t: 'tvsearch', q: 'Show Name', season: '1', ep: '1' }, AbortSignal.timeout(5000));
   assert.match(feed, /<title>Show Name S01E01\[WEB-DL\]<\/title>/);
 });
