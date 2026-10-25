@@ -2,8 +2,12 @@ import { hash } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { MediaSource, Release } from '../types.ts';
 
-/** Every upstream request gives up after this long, whatever the caller's own deadline. */
-export const REQUEST_TIMEOUT_MS = 45_000;
+/** A host that sends no response headers within this long has failed, whatever the caller's own deadline. */
+let requestTimeoutMs = 45_000;
+/** Tests shorten the deadline; nothing else should. */
+export function setRequestTimeout(ms: number): void {
+  requestTimeoutMs = ms;
+}
 
 /** Upstream requests per second and host; see `setRequestRate`. */
 let minSpacingMs = 0; // no limit until main.ts applies REQUEST_RATE; tests run unthrottled
@@ -24,14 +28,26 @@ async function waitForSlot(host: string, signal: AbortSignal): Promise<void> {
   if (at > now) await sleep(at - now, undefined, { signal }).catch(() => signal.throwIfAborted());
 }
 
-/** `fetch` with the request deadline and the per-host rate limit; the status is the caller's to judge. */
+/**
+ * `fetch` with the per-host rate limit and a deadline on the response headers; the status is the
+ * caller's to judge. The body is bound only to `signal` (and, for downloads, `readChunks`' idle
+ * limit), so a file may stream for as long as the caller allows.
+ */
 export async function fetchResponse(url: string | URL | Request, signal: AbortSignal, init: RequestInit = {}): Promise<Response> {
-  await waitForSlot(new URL(url instanceof Request ? url.url : url).hostname, signal);
-  return fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
+  const host = new URL(url instanceof Request ? url.url : url).hostname;
+  await waitForSlot(host, signal);
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(new Error(`${host} sent no response within ${Math.round(requestTimeoutMs / 1000)} s`)), requestTimeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.any([signal, deadline.signal]) });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
+/** A text body is small, so here the deadline covers the whole exchange. */
 export async function fetchText(url: string | URL, signal: AbortSignal, init: RequestInit = {}): Promise<string> {
-  const response = await fetchResponse(url, signal, init);
+  const response = await fetchResponse(url, AbortSignal.any([signal, AbortSignal.timeout(requestTimeoutMs)]), init);
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(url).hostname}`);
   return response.text();
 }

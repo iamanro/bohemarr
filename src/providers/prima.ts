@@ -530,10 +530,15 @@ async function resolveDefault(release: Release, signal: AbortSignal, auth: Prima
     if (playIds.length === 0) throw new Error(`No playable stream found for ${release.url}`);
 
     const sources: MediaSource[] = [];
+    const refusals: string[] = [];
     for (const playId of playIds) {
       const data = await fetchJson<unknown>(
         `https://api.play-backend.iprima.cz/api/v1/products/play/ids-${playId}`, signal, { headers },
       );
+      for (const item of Array.isArray(data) ? data : [data]) {
+        const code = get<string>(item, 'errorResult.errorCode', '');
+        if (code) refusals.push(get<string>(item, 'errorResult.subcode', '') ? `${code}/${get<string>(item, 'errorResult.subcode', '')}` : code);
+      }
       for (const streamInfo of collectStreamInfos(data)) {
         const url = get<string>(streamInfo, 'url', '');
         if (!url) continue;
@@ -542,6 +547,8 @@ async function resolveDefault(release: Release, signal: AbortSignal, auth: Prima
       }
     }
 
+    // PLAY_ADMIT_INVALID/CATCHUP: the public sites also list titles that only a Prima+ account may play.
+    if (sources.length === 0 && refusals.length) throw new PrimaMessageError(`iPrima refuses playback of ${release.url}: ${refusals.join(', ')}${auth.hasCredentials() ? '' : ' (a Prima+ account may be needed)'}`);
     if (sources.length === 0) throw new Error(`iPrima returned no stream URLs for ${release.url}`);
     return sources;
   };

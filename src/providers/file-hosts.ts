@@ -64,7 +64,7 @@ function createSession(id: string, config: ProviderConfig | undefined, login: (u
 // --------------------------------------------------------------------------------------- Webshare
 
 const WEBSHARE_API = 'https://webshare.cz/api';
-const webshareXml = new XMLParser({ parseTagValue: false, isArray: name => name === 'file' });
+const webshareXml = new XMLParser({ parseTagValue: false, isArray: name => name === 'file' || name === 'stream' });
 
 async function webshareApi(method: string, body: Record<string, string>, signal: AbortSignal): Promise<Record<string, unknown>> {
   const text = await fetchText(`${WEBSHARE_API}/${method}/`, signal, {
@@ -119,7 +119,12 @@ function createWebshareProvider(config: ProviderConfig | undefined): Provider {
   const fileLink = async (ident: string, wst: string | undefined, signal: AbortSignal): Promise<MediaSource[]> => {
     try {
       const response = await webshareApi('file_link', { ident, download_type: 'video_stream', force_https: '1', ...(wst && { wst }) }, signal);
-      return [{ url: String(response.link), type: 'file', headers: { 'User-Agent': USER_AGENT } }];
+      // Free links refuse Range requests, which ffprobe needs; file_info's height and language let the inspection skip it.
+      const info = await webshareApi('file_info', { ident, ...(wst && { wst }) }, signal).catch(() => ({}));
+      const height = Number(at(info, 'height'));
+      const language = at<string>(info, 'audio.stream.0.language') ?? at<string>(info, 'audio.stream.language');
+      return [{ url: String(response.link), type: 'file', headers: { 'User-Agent': USER_AGENT },
+        ...(height > 0 && { height }), ...(language && { audioLanguage: language }) }];
     } catch (error) {
       // Only a refused token earns a new login; a timeout or a missing file does not.
       if (wst && /WST|token|login/i.test((error as Error).message)) throw new SessionRejected((error as Error).message);

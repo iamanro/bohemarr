@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { XMLParser } from 'fast-xml-parser';
 import * as cheerio from 'cheerio';
 import type { MediaKind } from '../types.ts';
-import { untilAborted } from './common.ts';
+import { fetchResponse, fetchText, untilAborted } from './common.ts';
 
 const SITEMAPS: ReadonlyArray<{ url: string; kind: MediaKind }> = [
   { url: 'https://www.iprima.cz/sitemap-series.xml', kind: 'tv' },
@@ -15,7 +15,6 @@ const REFRESH_AFTER_MS = 6 * 60 * 60 * 1000;
 const TITLE_INTERVAL_MS = 1000;
 /** The page `<title>` sits in the first few hundred bytes; stop reading well after it. */
 const TITLE_READ_LIMIT = 16 * 1024;
-const REQUEST_TIMEOUT_MS = 45_000;
 
 /** Clock and wait used by the index; tests replace both to avoid real time. */
 export interface IndexTiming {
@@ -194,10 +193,8 @@ function logFailure(error: unknown): void {
 }
 
 async function sitemapEntries(url: string, signal: AbortSignal): Promise<Array<{ uri: string; lastmod: string }>> {
-  const response = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
-  if (!response.ok) throw new Error(`HTTP ${response.status} from ${url}`);
   const parsed = new XMLParser({ parseTagValue: false, trimValues: true, processEntities: { maxEntityCount: 1000 } })
-    .parse(await response.text()) as { urlset?: { url?: unknown } };
+    .parse(await fetchText(url, signal)) as { urlset?: { url?: unknown } };
   const urls = parsed.urlset?.url;
   const entries = Array.isArray(urls) ? urls : urls ? [urls] : [];
   return entries.flatMap(entry => {
@@ -212,7 +209,7 @@ async function sitemapEntries(url: string, signal: AbortSignal): Promise<Array<{
  * or `Táta je doma (2015) online – celý film ke zhlédnutí | prima+`. Only the page head is read.
  */
 export async function pageTitle(uri: string, signal: AbortSignal): Promise<string | undefined> {
-  const response = await fetch(uri, { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
+  const response = await fetchResponse(uri, signal);
   if (!response.ok || !response.body) throw new PageStatusError(response.status, uri);
   const decoder = new TextDecoder();
   let head = '';

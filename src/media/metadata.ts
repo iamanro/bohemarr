@@ -186,14 +186,21 @@ async function inspectFile(config: Config, source: MediaSource, signal: AbortSig
   // Only probe when something is actually still unknown: a source that already carries both a
   // height and a pinned/no-op-needed language never pays for an avoidable ffprobe round trip.
   if (height === undefined || (language === undefined && !source.audioUrl)) {
-    const probe = await probeMedia(config, source.url, source.headers, signal);
-    const video = bestStream(probe.streams, 'video');
-    height ??= video?.height;
-    const rate = Number(video?.bit_rate);
-    if (Number.isFinite(rate) && rate > 0) bandwidth = rate;
-    if (!source.audioUrl) {
-      const audio = bestStream(probe.streams, 'audio', source.audioLanguage ?? DEFAULT_AUDIO_LANGUAGE);
-      if (audio?.tags?.language) language = audio.tags.language;
+    try {
+      const probe = await probeMedia(config, source.url, source.headers, signal);
+      const video = bestStream(probe.streams, 'video');
+      height ??= video?.height;
+      const rate = Number(video?.bit_rate);
+      if (Number.isFinite(rate) && rate > 0) bandwidth = rate;
+      if (!source.audioUrl) {
+        const audio = bestStream(probe.streams, 'audio', source.audioLanguage ?? DEFAULT_AUDIO_LANGUAGE);
+        if (audio?.tags?.language) language = audio.tags.language;
+      }
+    } catch (error) {
+      // Some hosts (Webshare's free links) refuse the Range requests ffprobe seeks with. The file is
+      // still there to download and is validated once on disk, so it is offered with what is known.
+      if (signal.aborted || videoLength === undefined) throw error;
+      console.error(`ffprobe could not read ${redactUrl(source.url)}; offering it unprobed: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

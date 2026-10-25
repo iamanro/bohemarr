@@ -22,3 +22,26 @@ test('requests to one host are spaced by the rate, while another host goes at on
     setRequestRate(100);
   }
 });
+
+test('the request deadline covers the response headers, not a body that keeps streaming', async () => {
+  const { createServer } = await import('node:http');
+  const { once } = await import('node:events');
+  const { setRequestTimeout, fetchText } = await import('../src/providers/common.ts');
+  await using server = createServer((request, response) => {
+    response.writeHead(200, { 'Content-Type': 'text/plain' });
+    response.write('first ');
+    setTimeout(() => response.end('second'), 150); // the body outlives a 50 ms deadline
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/slow`;
+  setRequestTimeout(50);
+  try {
+    const response = await fetchResponse(url, AbortSignal.timeout(5000));
+    assert.equal(await response.text(), 'first second', 'a download is not cut off by the header deadline');
+    await assert.rejects(fetchText(url, AbortSignal.timeout(5000)), 'a text fetch still has to finish within the deadline');
+  } finally {
+    setRequestTimeout(45_000);
+    server.closeAllConnections();
+  }
+});

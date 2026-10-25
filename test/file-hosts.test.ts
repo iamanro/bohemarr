@@ -25,6 +25,7 @@ test('Webshare: an episode search asks upstream for S01E03 and resolves anonymou
       return new Response('<response><status>OK</status><file><ident>a1</ident><name>Most.S01E03.mkv</name><size>10</size><password>0</password></file><file><ident>a2</ident><name>Most.S01E04.mkv</name><size>10</size><password>0</password></file></response>');
     }
     if (String(input) === 'https://webshare.cz/api/file_link/') return new Response('<response><status>OK</status><link>https://dl.wsfiles.cz/x/Most.mkv</link></response>');
+    if (String(input) === 'https://webshare.cz/api/file_info/') return new Response('<response><status>OK</status><height>1080</height><audio><stream><language>CZE</language></stream></audio></response>');
     throw new Error(`unexpected fetch: ${input}`);
   });
   const provider = createFileHostProviders({}).find(provider => provider.id === 'webshare')!;
@@ -33,6 +34,7 @@ test('Webshare: an episode search asks upstream for S01E03 and resolves anonymou
   assert.deepEqual(releases.map(release => [release.url, release.episode]), [['https://webshare.cz/#/file/a1', 3]]);
   const sources = await provider.resolve(releases[0]!, signal);
   assert.equal(sources[0]!.url, 'https://dl.wsfiles.cz/x/Most.mkv');
+  assert.deepEqual([sources[0]!.height, sources[0]!.audioLanguage], [1080, 'CZE'], 'file_info spares the inspection an ffprobe the free link cannot serve');
   assert.equal(bodies[1]!.get('ident'), 'a1');
   assert.equal(bodies[1]!.has('wst'), false);
 });
