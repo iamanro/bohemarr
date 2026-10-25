@@ -45,7 +45,10 @@ async function fetchAutosalonPrograms(signal: AbortSignal): Promise<ScrapedProgr
   return programs;
 }
 
-interface AutosalonSeason { url: string; title: string }
+interface AutosalonSeason {
+  url: string;
+  title: string;
+}
 
 function parseAutosalonSeasonNumber(title: string): number | undefined {
   const match = REGEX_AUTOSALON_SEASON.exec(title);
@@ -111,8 +114,14 @@ function parseAutosalonEpisodesPage($: CheerioAPI, program: ScrapedProgram, seas
 
     const url = new URL(href, program.url).href;
     releases.push({
-      id: releaseId('tvautosalon', url), provider: 'tvautosalon', title: text || program.title,
-      url, kind: 'tv', series: program.title, season, episode,
+      id: releaseId('tvautosalon', url),
+      provider: 'tvautosalon',
+      title: text || program.title,
+      url,
+      kind: 'tv',
+      series: program.title,
+      season,
+      episode,
     });
   });
 
@@ -144,10 +153,13 @@ async function* autosalonSeasonReleases(program: ScrapedProgram, season: Autosal
 async function* autosalonReleases(program: ScrapedProgram, query: CatalogueQuery, signal: AbortSignal): AsyncGenerator<Release> {
   const seasons = await fetchAutosalonSeasons(program, signal);
   const ordered = [...seasons].sort((a, b) => (parseAutosalonSeasonNumber(b.title) ?? -1) - (parseAutosalonSeasonNumber(a.title) ?? -1));
-  const seasonsToWalk = query.season === undefined ? ordered : ordered.filter((season) => {
-    const seasonNumber = parseAutosalonSeasonNumber(season.title);
-    return seasonNumber !== undefined ? seasonNumber === query.season : ordered.length === 1;
-  });
+  const seasonsToWalk =
+    query.season === undefined
+      ? ordered
+      : ordered.filter(season => {
+          const seasonNumber = parseAutosalonSeasonNumber(season.title);
+          return seasonNumber !== undefined ? seasonNumber === query.season : ordered.length === 1;
+        });
 
   for (const season of seasonsToWalk) {
     yield* autosalonSeasonReleases(program, season, signal);
@@ -161,8 +173,9 @@ async function resolveTvAutosalon(release: Release, signal: AbortSignal): Promis
   // The site now injects the OnNetwork embed script via client-side JS (document.createElement)
   // instead of rendering a static <script> tag server-side; the URL is still present verbatim
   // as a string literal inside an inline <script> body, under the non-Seznam-referrer branch.
-  const scriptSrc = $('#video > script').first().attr('src')
-    ?? /default:\s*src\s*=\s*"(https:\/\/video\.onnetwork\.tv\/embed\.php\?[^"]+)"/.exec(html)?.[1];
+  const scriptSrc =
+    $('#video > script').first().attr('src') ??
+    /default:\s*src\s*=\s*"(https:\/\/video\.onnetwork\.tv\/embed\.php\?[^"]+)"/.exec(html)?.[1];
   if (!scriptSrc) throw new Error('TVAutosalon: unable to find embedding script on the episode page');
 
   const referer = `${new URL(release.url).origin}/`;

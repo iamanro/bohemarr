@@ -2,8 +2,18 @@
 const WIDEVINE_SYSTEM_ID = 'edef8ba979d64acea3c827dcd51d21ed';
 
 const CONTAINER_BOX_TYPES: Record<string, true> = {
-  moov: true, trak: true, mdia: true, minf: true, stbl: true, moof: true,
-  traf: true, mvex: true, edts: true, udta: true, meta: true, mfra: true,
+  moov: true,
+  trak: true,
+  mdia: true,
+  minf: true,
+  stbl: true,
+  moof: true,
+  traf: true,
+  mvex: true,
+  edts: true,
+  udta: true,
+  meta: true,
+  mfra: true,
 };
 
 function scanBoxes(buffer: Buffer, start: number, end: number, results: Buffer[]): void {

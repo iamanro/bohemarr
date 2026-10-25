@@ -14,7 +14,10 @@ test('SledovaniTV: the device a login paired is reused from the database after a
   const sessions: string[] = [];
   t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.startsWith('https://sledovanitv.cz/api/create-pairing')) { pairings++; return json({ password: 'pairing-pass', deviceId: '42' }); }
+    if (url.startsWith('https://sledovanitv.cz/api/create-pairing')) {
+      pairings++;
+      return json({ password: 'pairing-pass', deviceId: '42' });
+    }
     if (url.startsWith('https://sledovanitv.cz/api/device-login')) return json({ PHPSESSID: 'sess-1', activeProfileId: '7' });
     if (url.startsWith('https://sledovanitv.cz/api/record-timeshift')) {
       sessions.push(new URL(url).searchParams.get('PHPSESSID') ?? '');
@@ -22,7 +25,7 @@ test('SledovaniTV: the device a login paired is reused from the database after a
     }
     return new Response('not found', { status: 404 });
   });
-  const database = new DatabaseSync(':memory:');
+  using database = new DatabaseSync(':memory:');
   const release: Release = { id: 'r1', provider: 'sledovanitv', title: 'Show', url: 'https://sledovanitv.cz/home#record:1', kind: 'tv' };
   const config = { username: 'user@example.invalid', password: 'pw' };
   await createSledovaniTvProvider(config, database)!.resolve(release, signal);
@@ -37,12 +40,25 @@ test('Oneplay: a token verified within the last minute is not probed again', asy
   let token: unknown = 'token';
   const pool = {
     isAuthenticated: () => token !== null,
-    authenticate: (value: unknown) => { token = value; },
+    authenticate: (value: unknown) => {
+      token = value;
+    },
     withConnection: async (_signal: AbortSignal, fn: (connection: unknown) => Promise<unknown>) =>
-      fn({ request: async (command: string) => { commands.push(command); return { command, status: 'Ok', data: {} }; } }),
+      fn({
+        request: async (command: string) => {
+          commands.push(command);
+          return { command, status: 'Ok', data: {} };
+        },
+      }),
   } as unknown as OneplayConnectionPool;
-  const session = new OneplaySession(pool, { email: 'e', password: 'p', accountId: undefined, profileId: undefined, profilePin: undefined });
-  await session.ensureAuthenticated(signal);
+  const session = new OneplaySession(pool, {
+    email: 'e',
+    password: 'p',
+    accountId: undefined,
+    profileId: undefined,
+    profilePin: undefined,
+  });
+  await Promise.all([session.ensureAuthenticated(signal), session.ensureAuthenticated(signal)]); // concurrent first callers
   await session.ensureAuthenticated(signal);
   await Promise.all([session.ensureAuthenticated(signal), session.ensureAuthenticated(signal)]);
   assert.deepEqual(commands, ['setting.display'], 'one probe serves every call within the minute');

@@ -20,7 +20,12 @@ import { createPrimaDomaProvider } from './public-sites-primadoma.ts';
 import { createDirectProvider, createHtml5Provider, createStvrProvider, createYouTubeProvider } from './public-sites-url-resolvers.ts';
 
 /** A media_engine.* program: an upstream program listing entry with its own page. */
-export interface ScrapedProgram { id: string; title: string; kind: 'tv'; url: string }
+export interface ScrapedProgram {
+  id: string;
+  title: string;
+  kind: 'tv';
+  url: string;
+}
 
 export function createPublicSiteProviders(configs: Record<string, ProviderConfig>): Provider[] {
   const config = (id: string): ProviderConfig => configs[id] ?? {};

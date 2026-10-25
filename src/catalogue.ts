@@ -26,7 +26,10 @@ type CatalogueProvider = Pick<Provider, 'id' | 'catalogue' | 'entries'>;
  * title it accepts are expanded, with no any-word fallback.
  */
 export async function searchCatalogue(
-  provider: CatalogueProvider, query: SearchQuery, signal: AbortSignal, isCandidate?: (title: string) => boolean,
+  provider: CatalogueProvider,
+  query: SearchQuery,
+  signal: AbortSignal,
+  isCandidate?: (title: string) => boolean,
 ): Promise<Release[]> {
   signal.throwIfAborted();
   const page = new Page(provider.id, query.offset + query.limit);
@@ -35,8 +38,13 @@ export async function searchCatalogue(
   const text = query.q.trim();
   const movieYear = query.kind === 'movie' ? /\s+\(?(\d{4})\)?$/.exec(text) : null;
   const year = movieYear ? Number(movieYear[1]) : undefined;
-  const hint: CatalogueQuery = { q: movieYear ? text.slice(0, movieYear.index) : text,
-    kind: query.kind, season: query.season, episode: query.episode, airDate: query.airDate };
+  const hint: CatalogueQuery = {
+    q: movieYear ? text.slice(0, movieYear.index) : text,
+    kind: query.kind,
+    season: query.season,
+    episode: query.episode,
+    airDate: query.airDate,
+  };
   const take = (release: Release, filter: CatalogueQuery = hint): void => {
     if (matches(release, filter, year)) page.add(release);
   };
@@ -85,10 +93,15 @@ export async function searchCatalogue(
 
   const failures = await expandInOrder(programs, Math.max(1, catalogue.concurrency ?? 1), maxPrograms, expand, page, browsing, signal);
   if (!page.size && failures.length) {
-    throw new AggregateError(failures.map(failure => failure.error), `${provider.id}: every program listing failed`);
+    throw new AggregateError(
+      failures.map(failure => failure.error),
+      `${provider.id}: every program listing failed`,
+    );
   }
   for (const failure of failures) {
-    console.error(`${provider.id}: program "${failure.program.title}" failed: ${failure.error instanceof Error ? failure.error.message : String(failure.error)}`);
+    console.error(
+      `${provider.id}: program "${failure.program.title}" failed: ${failure.error instanceof Error ? failure.error.message : String(failure.error)}`,
+    );
   }
   return page.result(query.offset);
 }
@@ -97,11 +110,18 @@ function matches(release: Release, query: CatalogueQuery, year: number | undefin
   if (query.kind && release.kind !== query.kind) return false;
   if (year !== undefined && release.year !== year) return false;
   if (query.airDate && episodeAirDate(release) !== query.airDate) return false;
-  if (query.season !== undefined && release.season !== query.season
-      && !(query.season >= 1900 && episodeAirDate(release)?.startsWith(`${query.season}-`))) return false;
+  if (
+    query.season !== undefined &&
+    release.season !== query.season &&
+    !(query.season >= 1900 && episodeAirDate(release)?.startsWith(`${query.season}-`))
+  )
+    return false;
   if (query.episode !== undefined && release.episode !== query.episode) return false;
   const title = normalize(`${release.series ?? ''} ${release.title} ${release.year ?? ''}`);
-  return normalize(query.q).split(' ').filter(Boolean).every(word => title.includes(word));
+  return normalize(query.q)
+    .split(' ')
+    .filter(Boolean)
+    .every(word => title.includes(word));
 }
 
 class Page {
@@ -114,8 +134,12 @@ class Page {
     this.needed = needed;
   }
 
-  get size(): number { return this.releases.size; }
-  get full(): boolean { return this.releases.size >= this.needed; }
+  get size(): number {
+    return this.releases.size;
+  }
+  get full(): boolean {
+    return this.releases.size >= this.needed;
+  }
 
   add(release: Release): void {
     if (release.provider !== this.providerId) {
@@ -130,10 +154,17 @@ class Page {
 }
 
 async function textCandidates<P extends Program>(
-  programs: AsyncIterable<P>, query: CatalogueQuery, words: string[], isCandidate?: (title: string) => boolean,
+  programs: AsyncIterable<P>,
+  query: CatalogueQuery,
+  words: string[],
+  isCandidate?: (title: string) => boolean,
 ): Promise<P[]> {
   const listed = await Array.fromAsync(kindFiltered(programs, query), program => ({ program, title: normalize(program.title) }));
-  if (isCandidate) return rankExact(listed.filter(({ program }) => isCandidate(program.title)), words);
+  if (isCandidate)
+    return rankExact(
+      listed.filter(({ program }) => isCandidate(program.title)),
+      words,
+    );
   const strong = listed.filter(({ title }) => words.every(word => title.includes(word)));
   // The fallback needs a whole word of three letters or more: "Grey's Anatomy" has the word "s".
   const weak = words.filter(word => word.length > 2);
@@ -144,7 +175,8 @@ async function textCandidates<P extends Program>(
 function rankExact<P extends Program>(pool: Array<{ program: P; title: string }>, words: string[]): P[] {
   const exact = words.join(' ');
   return [...pool.filter(({ title }) => title === exact), ...pool.filter(({ title }) => title !== exact)]
-    .slice(0, TEXT_SEARCH_PROGRAM_CAP).map(({ program }) => program);
+    .slice(0, TEXT_SEARCH_PROGRAM_CAP)
+    .map(({ program }) => program);
 }
 
 async function* kindFiltered<P extends Program>(programs: AsyncIterable<P>, query: CatalogueQuery): AsyncGenerator<P> {
@@ -158,7 +190,10 @@ async function* fromArray<T>(values: T[]): AsyncGenerator<T> {
 }
 
 type Settled = { ok: true; value: Release[] } | { ok: false; error: unknown };
-interface Failure { program: Program; error: unknown }
+interface Failure {
+  program: Program;
+  error: unknown;
+}
 
 /**
  * Expands up to `concurrency` Programs at a time and adds their Releases to `page` strictly in
@@ -166,9 +201,13 @@ interface Failure { program: Program; error: unknown }
  * at most one Release), and cancels expansions still running once the page is full.
  */
 async function expandInOrder(
-  programs: AsyncIterable<Program>, concurrency: number, maxPrograms: number,
+  programs: AsyncIterable<Program>,
+  concurrency: number,
+  maxPrograms: number,
   expand: (program: Program, signal: AbortSignal) => Promise<Release[]>,
-  page: Page, browsing: boolean, signal: AbortSignal,
+  page: Page,
+  browsing: boolean,
+  signal: AbortSignal,
 ): Promise<Failure[]> {
   const cancel = new AbortController();
   const expansionSignal = AbortSignal.any([signal, cancel.signal]);
@@ -177,13 +216,16 @@ async function expandInOrder(
   const failures: Failure[] = [];
   let started = 0;
   let exhausted = false;
-  const wanted = (): boolean => browsing ? page.size + inFlight.length < page.needed : !page.full;
+  const wanted = (): boolean => (browsing ? page.size + inFlight.length < page.needed : !page.full);
 
   try {
     for (;;) {
       while (!exhausted && inFlight.length < concurrency && started < maxPrograms && wanted()) {
         const next = await iterator.next();
-        if (next.done) { exhausted = true; break; }
+        if (next.done) {
+          exhausted = true;
+          break;
+        }
         const program = next.value;
         started++;
         inFlight.push({

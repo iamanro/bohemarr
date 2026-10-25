@@ -22,8 +22,7 @@ export function tracksToSources(tracks: PlayerTrack[], drmReferer: string | unde
   for (const track of tracks) {
     if (!track.src) continue;
     const mime = track.type?.toLowerCase() ?? '';
-    const type = mime.includes('dash') ? 'dash'
-      : mime.includes('mpegurl') ? 'hls' : mediaType(track.src);
+    const type = mime.includes('dash') ? 'dash' : mime.includes('mpegurl') ? 'hls' : mediaType(track.src);
     const token = track.contentProtection?.token;
 
     if (token) {

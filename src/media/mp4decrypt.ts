@@ -10,9 +10,7 @@ import { runProcess } from './process.ts';
  * `kid` is either a hex key ID or, when the ID is unknown, the Bento4 track-number selector `"1"`.
  * Throws (leaving the original encrypted file untouched) on a non-zero exit code.
  */
-export async function decryptTrack(
-  config: Config, filePath: string, kid: string, key: string, signal: AbortSignal,
-): Promise<void> {
+export async function decryptTrack(config: Config, filePath: string, kid: string, key: string, signal: AbortSignal): Promise<void> {
   const dir = dirname(filePath);
   const token = randomBytes(8).toString('hex');
   const tempInput = join(dir, `${token}.enc.mp4`);

@@ -64,7 +64,10 @@ test('VOYO: a title outside the subscription fails alone and keeps the configure
   t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const page = /^https:\/\/voyo\.markiza\.sk\/program\/(\w+)$/.exec(url);
-    if (page) return new Response(`<div class="js-detail-player"><div class="iframe-wrap"><iframe src="https://media.cms.markiza.sk/embed/${page[1]}"></iframe></div></div>`);
+    if (page)
+      return new Response(
+        `<div class="js-detail-player"><div class="iframe-wrap"><iframe src="https://media.cms.markiza.sk/embed/${page[1]}"></iframe></div></div>`,
+      );
     if (url === 'https://media.cms.markiza.sk/embed/premium') {
       embedCookies.push(((init?.headers ?? {}) as Record<string, string>).Cookie ?? '');
       return new Response('<body class="error"><script>klebetnica({event:"e",data:{type:"player_logged_in_no_access"}});</script></body>');
@@ -77,7 +80,13 @@ test('VOYO: a title outside the subscription fails alone and keeps the configure
   });
 
   const provider = createMarkizaVoyoProvider({ cookies: 'votoken=my-token' });
-  const release = (name: string): Release => ({ id: name, provider: 'markizavoyo', title: name, url: `https://voyo.markiza.sk/program/${name}`, kind: 'tv' });
+  const release = (name: string): Release => ({
+    id: name,
+    provider: 'markizavoyo',
+    title: name,
+    url: `https://voyo.markiza.sk/program/${name}`,
+    kind: 'tv',
+  });
   await assert.rejects(provider.resolve(release('premium'), signal), /player_logged_in_no_access/);
   assert.deepEqual(await provider.resolve(release('free'), signal), [{ url: 'https://cdn.example/free.mp4', type: 'file' }]);
   assert.deepEqual(embedCookies, ['votoken=my-token', 'votoken=my-token']);

@@ -28,7 +28,9 @@ export function encode(value: BValue): Buffer {
     } else {
       parts.push(Buffer.from('d'));
       // Keys are raw byte strings sorted by their bytes, which BEP 3 requires for a canonical info hash.
-      const keys = Object.keys(item).map(key => Buffer.from(key, 'latin1')).sort(Buffer.compare);
+      const keys = Object.keys(item)
+        .map(key => Buffer.from(key, 'latin1'))
+        .sort(Buffer.compare);
       for (const key of keys) {
         write(key);
         write(item[key.toString('latin1')]!);
@@ -44,7 +46,9 @@ export function encode(value: BValue): Buffer {
 function decodeTorrent(content: Buffer): { torrent: Record<string, BValue>; info: Buffer } {
   let position = 0;
   let info: Buffer | undefined;
-  const fail = (): never => { throw new Error('Invalid torrent file'); };
+  const fail = (): never => {
+    throw new Error('Invalid torrent file');
+  };
   const digits = (end: number): number => {
     const text = content.toString('latin1', position, end);
     if (!/^(0|-?[1-9]\d*)$/.test(text)) fail();
@@ -55,21 +59,24 @@ function decodeTorrent(content: Buffer): { torrent: Record<string, BValue>; info
   const read = (depth: number): BValue => {
     if (depth > MAX_DEPTH || position >= content.length) fail();
     const marker = content[position]!;
-    if (marker === 0x69) { // i
+    if (marker === 0x69) {
+      // i
       const end = content.indexOf(0x65, ++position);
       if (end < 0) fail();
       const result = digits(end);
       position = end + 1;
       return result;
     }
-    if (marker === 0x6c) { // l
+    if (marker === 0x6c) {
+      // l
       position++;
       const list: BValue[] = [];
       while (content[position] !== 0x65) list.push(read(depth + 1));
       position++;
       return list;
     }
-    if (marker === 0x64) { // d
+    if (marker === 0x64) {
+      // d
       position++;
       const dict: Record<string, BValue> = Object.create(null);
       while (content[position] !== 0x65) {
@@ -98,8 +105,11 @@ function decodeTorrent(content: Buffer): { torrent: Record<string, BValue>; info
 function infoDictionary(releaseId: string, name: string): Record<string, BValue> {
   // One one-byte piece: a structurally valid single-file torrent whose identity is the Release and its title.
   return {
-    length: 1, name: Buffer.from(name), 'piece length': 16384,
-    pieces: createHash('sha1').update(releaseId).digest(), private: 1,
+    length: 1,
+    name: Buffer.from(name),
+    'piece length': 16384,
+    pieces: createHash('sha1').update(releaseId).digest(),
+    private: 1,
     [RELEASE_KEY]: Buffer.from(releaseId),
   };
 }
@@ -115,13 +125,16 @@ export function infoHashOf(content: Buffer): string {
 
 /** The info hash of the Task descriptor for a Release published under `name`. */
 export function taskInfoHash(releaseId: string, name: string): string {
-  return createHash('sha1').update(encode(infoDictionary(releaseId, name))).digest('hex');
+  return createHash('sha1')
+    .update(encode(infoDictionary(releaseId, name)))
+    .digest('hex');
 }
 
 export function createTaskTorrent(releaseId: string, name: string, secret: string): TaskTorrent {
   const infoHash = taskInfoHash(releaseId, name);
   const content = encode({
-    'created by': Buffer.from('Bohemarr'), info: infoDictionary(releaseId, name),
+    'created by': Buffer.from('Bohemarr'),
+    info: infoDictionary(releaseId, name),
     [SIGNATURE_KEY]: Buffer.from(sign(secret, infoHash).toString('hex')),
   });
   return { content, infoHash };
@@ -137,6 +150,7 @@ export function parseTaskTorrent(content: Buffer, secret: string): { releaseId: 
     throw new Error('Only task torrents from this Bohemarr instance are supported; this is not a BitTorrent client');
   }
   const infoHash = createHash('sha1').update(info).digest('hex');
-  if (!timingSafeEqual(Buffer.from(signature.toString('latin1'), 'hex'), sign(secret, infoHash))) throw new Error('Invalid task torrent signature');
+  if (!timingSafeEqual(Buffer.from(signature.toString('latin1'), 'hex'), sign(secret, infoHash)))
+    throw new Error('Invalid task torrent signature');
   return { releaseId: releaseId.toString('utf8'), infoHash };
 }

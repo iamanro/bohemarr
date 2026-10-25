@@ -2,8 +2,12 @@ import { hash } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { MediaSource, Release } from '../types.ts';
 
-/** Every upstream request gives up after this long, whatever the caller's own deadline. */
-export const REQUEST_TIMEOUT_MS = 45_000;
+/** A host that sends no response headers within this long has failed, whatever the caller's own deadline. */
+let requestTimeoutMs = 45_000;
+/** Tests shorten the deadline; nothing else should. */
+export function setRequestTimeout(ms: number): void {
+  requestTimeoutMs = ms;
+}
 
 /** Upstream requests per second and host; see `setRequestRate`. */
 let minSpacingMs = 0; // no limit until main.ts applies REQUEST_RATE; tests run unthrottled
@@ -24,14 +28,29 @@ async function waitForSlot(host: string, signal: AbortSignal): Promise<void> {
   if (at > now) await sleep(at - now, undefined, { signal }).catch(() => signal.throwIfAborted());
 }
 
-/** `fetch` with the request deadline and the per-host rate limit; the status is the caller's to judge. */
+/**
+ * `fetch` with the per-host rate limit and a deadline on the response headers; the status is the
+ * caller's to judge. The body is bound only to `signal` (and, for downloads, `readChunks`' idle
+ * limit), so a file may stream for as long as the caller allows.
+ */
 export async function fetchResponse(url: string | URL | Request, signal: AbortSignal, init: RequestInit = {}): Promise<Response> {
-  await waitForSlot(new URL(url instanceof Request ? url.url : url).hostname, signal);
-  return fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
+  const host = new URL(url instanceof Request ? url.url : url).hostname;
+  await waitForSlot(host, signal);
+  const deadline = new AbortController();
+  const timer = setTimeout(
+    () => deadline.abort(new Error(`${host} sent no response within ${Math.round(requestTimeoutMs / 1000)} s`)),
+    requestTimeoutMs,
+  );
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.any([signal, deadline.signal]) });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
+/** A text body is small, so here the deadline covers the whole exchange. */
 export async function fetchText(url: string | URL, signal: AbortSignal, init: RequestInit = {}): Promise<string> {
-  const response = await fetchResponse(url, signal, init);
+  const response = await fetchResponse(url, AbortSignal.any([signal, AbortSignal.timeout(requestTimeoutMs)]), init);
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(url).hostname}`);
   return response.text();
 }
@@ -78,7 +97,9 @@ export function cached<T>(ttlMs: number, load: (signal: AbortSignal) => Promise<
     if (!entry || Date.now() - entry.at >= ttlMs) {
       const current = { at: Date.now(), value: load(AbortSignal.timeout(SHARED_LOAD_TIMEOUT_MS)) };
       entry = current;
-      current.value.catch(() => { if (entry === current) entry = undefined; });
+      current.value.catch(() => {
+        if (entry === current) entry = undefined;
+      });
     }
     return untilAborted(entry.value, signal);
   };
@@ -107,7 +128,7 @@ export async function* empty(): AsyncGenerator<never> {}
 
 /**
  * Extracts a brace-balanced substring starting at the first occurrence of
- * `open` at or after `fromIndex`, honoring JS/​JSON string literals so that
+ * `open` at or after `fromIndex`, honoring JS/JSON string literals so that
  * braces inside strings are not counted. Mirrors `Utils.bracketSubstring`; `''` when the
  * opening bracket or its match is missing.
  */
@@ -122,12 +143,18 @@ export function bracketSubstring(text: string, fromIndex: number, open = '{', cl
     const ch = text[i];
 
     if (quote) {
-      if (ch === '\\') { i++; continue; }
+      if (ch === '\\') {
+        i++;
+        continue;
+      }
       if (ch === quote) quote = null;
       continue;
     }
 
-    if (ch === '"' || ch === '\'' || ch === '`') { quote = ch; continue; }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      continue;
+    }
 
     if (ch === open) depth++;
     else if (ch === close) {
@@ -154,14 +181,23 @@ export function releaseId(provider: string, url: string): string {
 }
 
 export function normalize(value: string): string {
-  return value.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  return value
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
 }
 
 export function episodeAirDate(release: Release): string | undefined {
   if (release.kind !== 'tv') return undefined;
   const iso = (release.airDate || release.title).match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
   const czech = !iso ? release.title.match(/\b(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\b/) : null;
-  const value = iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : czech ? `${czech[3]}-${czech[2]!.padStart(2, '0')}-${czech[1]!.padStart(2, '0')}` : undefined;
+  const value = iso
+    ? `${iso[1]}-${iso[2]}-${iso[3]}`
+    : czech
+      ? `${czech[3]}-${czech[2]!.padStart(2, '0')}-${czech[1]!.padStart(2, '0')}`
+      : undefined;
   if (!value) return undefined;
   try {
     Temporal.PlainDate.from(value, { overflow: 'reject' });
@@ -172,8 +208,13 @@ export function episodeAirDate(release: Release): string | undefined {
 }
 
 const LANGUAGE_CODES: Record<string, string> = {
-  cs: 'CZ', ces: 'CZ', cze: 'CZ', cz: 'CZ',
-  sk: 'SK', slk: 'SK', slo: 'SK',
+  cs: 'CZ',
+  ces: 'CZ',
+  cze: 'CZ',
+  cz: 'CZ',
+  sk: 'SK',
+  slk: 'SK',
+  slo: 'SK',
 };
 
 /** Normalizes a known audio/subtitle language code to its release-title form; never invents one. */
@@ -188,10 +229,14 @@ export function normalizeLanguage(code: string | undefined): string | undefined 
 export function releaseTitle(release: Release): string {
   const name = release.kind === 'tv' ? release.series || release.title : release.title;
   const airDate = episodeAirDate(release);
-  const episode = release.season !== undefined && release.episode !== undefined
-    ? ` S${String(release.season).padStart(2, '0')}E${String(release.episode).padStart(2, '0')}`
-    : airDate ? ` ${airDate.replaceAll('-', '.')}`
-    : release.kind === 'tv' && release.episode !== undefined ? ` - ${String(release.episode).padStart(3, '0')}` : '';
+  const episode =
+    release.season !== undefined && release.episode !== undefined
+      ? ` S${String(release.season).padStart(2, '0')}E${String(release.episode).padStart(2, '0')}`
+      : airDate
+        ? ` ${airDate.replaceAll('-', '.')}`
+        : release.kind === 'tv' && release.episode !== undefined
+          ? ` - ${String(release.episode).padStart(3, '0')}`
+          : '';
   const year = !episode && release.year ? ` ${release.year}` : '';
   const audioLanguage = normalizeLanguage(release.language);
   const language = audioLanguage ? ` (${audioLanguage})` : '';
@@ -200,7 +245,11 @@ export function releaseTitle(release: Release): string {
 }
 
 export function sanitizeFilename(title: string): string {
-  const cleaned = title.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').trim();
+  const cleaned = title
+    // oxlint-disable-next-line no-control-regex -- control characters are exactly what a file name must not contain
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
   return cleaned.length && !/^\.+$/.test(cleaned) ? cleaned : 'download';
 }
 
@@ -208,4 +257,3 @@ export function mediaType(url: string): MediaSource['type'] {
   const path = new URL(url).pathname.toLowerCase();
   return path.endsWith('.mpd') ? 'dash' : path.endsWith('.m3u8') ? 'hls' : 'file';
 }
-

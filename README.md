@@ -172,6 +172,8 @@ VLTAVA_SEEDER_USERPASS=bohemarr:...   # rqbit's HTTP API login
 bun install
 bun install --cwd web
 bun run check
+bun fmt --check
+bun run lint
 bun run test
 bun run build   # the web UI
 bun start

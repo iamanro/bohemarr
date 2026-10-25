@@ -38,23 +38,39 @@ export class QBittorrent {
   async handle(endpoint: string, params: Record<string, string>, torrents: Buffer[] = []): Promise<QBittorrentResponse> {
     const store = this.queue.store;
     switch (endpoint) {
-      case 'app/webapiVersion': return { body: WEB_API_VERSION };
-      case 'app/version': return { body: APP_VERSION };
-      case 'app/preferences': return { body: {
-        save_path: this.config.downloadsDir,
-        // Nothing is seeded; each torrent carries its own reached ratio limit instead (see `torrent`).
-        max_ratio_enabled: false, max_ratio: -1, max_seeding_time_enabled: false, max_seeding_time: -1,
-        max_inactive_seeding_time_enabled: false, max_inactive_seeding_time: -1, max_ratio_act: 0,
-        queueing_enabled: false, dht: false,
-      } };
-      case 'torrents/categories': return { body: Object.fromEntries(this.config.categories.map(category =>
-        [category, { name: category, savePath: resolve(this.config.downloadsDir, category) }])) };
+      case 'app/webapiVersion':
+        return { body: WEB_API_VERSION };
+      case 'app/version':
+        return { body: APP_VERSION };
+      case 'app/preferences':
+        return {
+          body: {
+            save_path: this.config.downloadsDir,
+            // Nothing is seeded; each torrent carries its own reached ratio limit instead (see `torrent`).
+            max_ratio_enabled: false,
+            max_ratio: -1,
+            max_seeding_time_enabled: false,
+            max_seeding_time: -1,
+            max_inactive_seeding_time_enabled: false,
+            max_inactive_seeding_time: -1,
+            max_ratio_act: 0,
+            queueing_enabled: false,
+            dht: false,
+          },
+        };
+      case 'torrents/categories':
+        return {
+          body: Object.fromEntries(
+            this.config.categories.map(category => [category, { name: category, savePath: resolve(this.config.downloadsDir, category) }]),
+          ),
+        };
       case 'torrents/createCategory':
         if (this.config.categories.includes(params.category || '')) return { body: '' };
         return { code: 409, body: `Add the category to "categories" in the Bohemarr configuration: ${params.category || '(missing)'}` };
       case 'torrents/info': {
         const hashes = this.hashes(params.hashes);
-        const jobs = store.jobs()
+        const jobs = store
+          .jobs()
           .filter(job => params.category === undefined || job.category === params.category)
           .filter(job => !hashes || hashes.has(job.id));
         return { body: jobs.map(job => this.torrent(job)) };
@@ -62,11 +78,20 @@ export class QBittorrent {
       case 'torrents/properties': {
         const job = store.job((params.hash || '').toLowerCase());
         if (!job) return { code: 404, body: 'Not Found' };
-        return { body: { hash: job.id, save_path: dirname(job.storage), seeding_time: 0, total_size: job.totalBytes,
-          addition_date: seconds(job.createdAt), completion_date: job.status === 'Completed' ? seconds(job.finishedAt!) : -1 } };
+        return {
+          body: {
+            hash: job.id,
+            save_path: dirname(job.storage),
+            seeding_time: 0,
+            total_size: job.totalBytes,
+            addition_date: seconds(job.createdAt),
+            completion_date: job.status === 'Completed' ? seconds(job.finishedAt!) : -1,
+          },
+        };
       }
       case 'torrents/add': {
-        if (!torrents.length) return { code: 415, body: 'Upload a task torrent from this Bohemarr instance; URLs and magnet links are not supported' };
+        if (!torrents.length)
+          return { code: 415, body: 'Upload a task torrent from this Bohemarr instance; URLs and magnet links are not supported' };
         const paused = params.paused === 'true' || params.stopped === 'true';
         // Parse every upload before queueing any, so a rejected file adds nothing.
         const tasks = torrents.map(content => this.indexer.parseTaskDescriptor(content));
@@ -112,16 +137,29 @@ export class QBittorrent {
     const size = completed ? job.bytes : job.totalBytes;
     const progress = completed ? 1 : Math.max(0, Math.min(0.99, job.progress / 100));
     return {
-      hash: job.id, name: releaseTitle(job.release), category: job.category,
+      hash: job.id,
+      name: releaseTitle(job.release),
+      category: job.category,
       state: { Queued: 'queuedDL', Downloading: 'downloading', Paused: 'pausedDL', Completed: 'pausedUP', Failed: 'error' }[job.status],
-      size, total_size: size, progress, amount_left: Math.max(0, Math.round(size * (1 - progress))),
-      dlspeed: 0, upspeed: 0, eta: completed ? 0 : UNKNOWN_ETA,
+      size,
+      total_size: size,
+      progress,
+      amount_left: Math.max(0, Math.round(size * (1 - progress))),
+      dlspeed: 0,
+      upspeed: 0,
+      eta: completed ? 0 : UNKNOWN_ETA,
       // A completed Job is a finished torrent in its own folder below the category save path.
-      save_path: dirname(job.storage), content_path: job.storage,
+      save_path: dirname(job.storage),
+      content_path: job.storage,
       // Nothing is seeded, so the seeding goal is reached on completion. Sonarr and Radarr then move and
       // remove a completed download when "Remove Completed" is enabled, and copy or hardlink it otherwise.
-      ratio: 0, ratio_limit: 0, seeding_time: 0, seeding_time_limit: -2, inactive_seeding_time_limit: -2,
-      added_on: seconds(job.createdAt), completion_on: completed ? seconds(job.finishedAt!) : -1,
+      ratio: 0,
+      ratio_limit: 0,
+      seeding_time: 0,
+      seeding_time_limit: -2,
+      inactive_seeding_time_limit: -2,
+      added_on: seconds(job.createdAt),
+      completion_on: completed ? seconds(job.finishedAt!) : -1,
       last_activity: seconds(job.updatedAt),
     };
   }

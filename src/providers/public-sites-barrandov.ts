@@ -3,7 +3,18 @@ import JSON5 from 'json5';
 import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
 import type { Catalogue, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { at, bracketSubstring, cached, empty, fetchResponse, fetchText, mediaType, normalize, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import {
+  at,
+  bracketSubstring,
+  cached,
+  empty,
+  fetchResponse,
+  fetchText,
+  mediaType,
+  normalize,
+  PROGRAM_LIST_TTL_MS,
+  releaseId,
+} from './common.ts';
 import { isYouTubeUrl, resolveYouTube } from './public-sites-youtube.ts';
 import { AccountSession, SessionRejected } from './account-session.ts';
 import type { ScrapedProgram } from './public-sites.ts';
@@ -18,9 +29,13 @@ async function authenticateBarrandov(username: string, password: string, signal:
   const response = await fetchResponse(URL_LOGIN, signal, {
     method: 'POST',
     headers: { Referer: URL_REFERER, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(), redirect: 'manual',
+    body: body.toString(),
+    redirect: 'manual',
   });
-  const cookieHeader = response.headers.getSetCookie().map(cookie => cookie.split(';', 1)[0]).join('; ');
+  const cookieHeader = response.headers
+    .getSetCookie()
+    .map(cookie => cookie.split(';', 1)[0])
+    .join('; ');
   const succeeded = response.status >= 300 && response.status < 400 && response.headers.get('location') === URL_REDIRECT;
   await response.body?.cancel();
   return succeeded && cookieHeader ? cookieHeader : undefined;
@@ -35,7 +50,11 @@ function parseBarrandovLocalSources(sourceElements: { src: string; res: string; 
   }));
 }
 
-async function fetchBarrandovDocument(url: string, cookie: string | undefined, signal: AbortSignal): Promise<{ finalUrl: string; body: string }> {
+async function fetchBarrandovDocument(
+  url: string,
+  cookie: string | undefined,
+  signal: AbortSignal,
+): Promise<{ finalUrl: string; body: string }> {
   const response = await fetchResponse(url, signal, {
     headers: cookie ? { Cookie: cookie } : {},
   });
@@ -75,10 +94,13 @@ function maybeImproveBarrandovTitle(program: ScrapedProgram, url: string, title:
   let extractedName = match[1]!.replace(/^-/, '');
   if (normalizedName === extractedName) return title;
 
-  extractedName = extractedName.replace(new RegExp(`^${RegExp.escape(normalizedName)}`), '').replace(/^-/, '').replace(/-/g, ' ');
+  extractedName = extractedName
+    .replace(new RegExp(`^${RegExp.escape(normalizedName)}`), '')
+    .replace(/^-/, '')
+    .replace(/-/g, ' ');
   if (!extractedName) return title;
 
-  const titlized = extractedName.replace(/\b\w/gu, (c) => c.toUpperCase());
+  const titlized = extractedName.replace(/\b\w/gu, c => c.toUpperCase());
   return `${titlized} (${title})`;
 }
 
@@ -108,9 +130,11 @@ async function* barrandovReleases(program: ScrapedProgram, signal: AbortSignal):
   let lastPage = 1;
   const pagination = $('.pagination__pages').first();
   if (pagination.length > 0) {
-    const pageNumbers = pagination.children().toArray()
-      .map((el) => Number.parseInt($(el).text(), 10))
-      .filter((n) => Number.isFinite(n));
+    const pageNumbers = pagination
+      .children()
+      .toArray()
+      .map(el => Number.parseInt($(el).text(), 10))
+      .filter(n => Number.isFinite(n));
     if (pageNumbers.length > 0) lastPage = Math.max(...pageNumbers);
   }
 
@@ -142,7 +166,10 @@ async function findBarrandovYouTubeFallback(originalUrl: string, signal: AbortSi
   const match = REGEX_BARRANDOV_EPISODE_URL.exec(new URL(originalUrl).pathname);
   if (!match) return undefined;
 
-  const programName = match[1]!.slice(1).replace(/-/g, ' ').replace(/\b\w/gu, (c) => c.toUpperCase());
+  const programName = match[1]!
+    .slice(1)
+    .replace(/-/g, ' ')
+    .replace(/\b\w/gu, c => c.toUpperCase());
   const programNameLower = programName.toLowerCase();
   let date = new Date(Date.UTC(Number.parseInt(match[4]!, 10), Number.parseInt(match[3]!, 10) - 1, Number.parseInt(match[2]!, 10)));
 
@@ -156,7 +183,12 @@ async function findBarrandovYouTubeFallback(originalUrl: string, signal: AbortSi
   return undefined;
 }
 
-async function searchBarrandovYouTubeChannel(query: string, programNameLower: string, dateString: string, signal: AbortSignal): Promise<string | undefined> {
+async function searchBarrandovYouTubeChannel(
+  query: string,
+  programNameLower: string,
+  dateString: string,
+  signal: AbortSignal,
+): Promise<string | undefined> {
   const searchUrl = `https://www.youtube.com/c/TelevizeBarrandovOfficial/search?query=${encodeURIComponent(query)}`;
   // SOCS=CAI is YouTube's own answer to its EU consent page (as yt-dlp sends it); fetch keeps no cookies.
   const response = await fetchResponse(searchUrl, signal, { headers: { Cookie: 'SOCS=CAI' } });
@@ -212,7 +244,10 @@ function barrandovSession(config: ProviderConfig): AccountSession<string> | unde
 const isPremiumArchive = (url: string): boolean => new URL(url).pathname.startsWith('/premiovy-archiv');
 
 async function resolveTvBarrandov(
-  release: Release, session: AccountSession<string> | undefined, youtubeConfig: ProviderConfig, signal: AbortSignal,
+  release: Release,
+  session: AccountSession<string> | undefined,
+  youtubeConfig: ProviderConfig,
+  signal: AbortSignal,
 ): Promise<MediaSource[]> {
   let page = session ? undefined : await fetchBarrandovDocument(release.url, undefined, signal);
   if (session) {
@@ -236,10 +271,12 @@ async function resolveTvBarrandov(
 
   const videoEl = $('.main video').first();
   if (!uriToProcess && videoEl.length > 0) {
-    const sourceElements = videoEl.find('source').toArray()
-      .map((el) => ({ src: $(el).attr('src') ?? '', res: $(el).attr('res') ?? '', type: $(el).attr('type') ?? '' }))
-      .filter((s) => s.src)
-      .map((s) => ({ ...s, src: new URL(s.src, release.url).href }));
+    const sourceElements = videoEl
+      .find('source')
+      .toArray()
+      .map(el => ({ src: $(el).attr('src') ?? '', res: $(el).attr('res') ?? '', type: $(el).attr('type') ?? '' }))
+      .filter(s => s.src)
+      .map(s => ({ ...s, src: new URL(s.src, release.url).href }));
 
     const sources = parseBarrandovLocalSources(sourceElements);
     if (sources.length > 0) return sources;
@@ -252,7 +289,9 @@ async function resolveTvBarrandov(
 
   if (uriToProcess) {
     if (isYouTubeUrl(uriToProcess)) return resolveYouTube(uriToProcess, signal, youtubeConfig);
-    throw new Error(`TVBarrandov: embedded video from unsupported host: ${new URL(uriToProcess).hostname} (only YouTube delegation is available in this provider bundle)`);
+    throw new Error(
+      `TVBarrandov: embedded video from unsupported host: ${new URL(uriToProcess).hostname} (only YouTube delegation is available in this provider bundle)`,
+    );
   }
 
   throw new Error('TVBarrandov: unable to find any playable video on the page');
@@ -267,8 +306,13 @@ export function createBarrandovProvider(config: ProviderConfig, youtube: Provide
       yield* await programs(signal);
     },
     // These Releases carry neither season nor episode, so such a search would walk the whole archive for nothing.
-    releases: (program, query, signal) => query.episode !== undefined || (query.season !== undefined && query.season < 1900)
-      ? empty() : barrandovReleases(program, signal),
+    releases: (program, query, signal) =>
+      query.episode !== undefined || (query.season !== undefined && query.season < 1900) ? empty() : barrandovReleases(program, signal),
   };
-  return { id: 'tvbarrandov', name: 'TV Barrandov', catalogue, resolve: (release, signal) => resolveTvBarrandov(release, session, youtube, signal) };
+  return {
+    id: 'tvbarrandov',
+    name: 'TV Barrandov',
+    catalogue,
+    resolve: (release, signal) => resolveTvBarrandov(release, session, youtube, signal),
+  };
 }

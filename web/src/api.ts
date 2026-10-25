@@ -28,7 +28,11 @@ export async function jobAction(action: "pause" | "resume" | "delete", id: strin
   if (!response.ok) throw new Error(await response.text())
 }
 
-export interface Setting { value?: string; set: boolean; source?: "env" | "ui" }
+export interface Setting {
+  value?: string
+  set: boolean
+  source?: "env" | "ui"
+}
 
 export interface Settings {
   publicUrl: string

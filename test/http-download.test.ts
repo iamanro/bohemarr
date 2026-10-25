@@ -14,7 +14,10 @@ const body = Buffer.from('abcdefgh');
 async function setup(handler: RequestListener, partial: Buffer) {
   const directory = await mkdtempDisposable(join(tmpdir(), 'md-direct-'));
   const seen: IncomingHttpHeaders[] = [];
-  const server = createServer((request, response) => { seen.push(request.headers); handler(request, response); });
+  const server = createServer((request, response) => {
+    seen.push(request.headers);
+    handler(request, response);
+  });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address() as { port: number };
@@ -26,7 +29,18 @@ async function setup(handler: RequestListener, partial: Buffer) {
   await writeFile(ffprobe, '#!/bin/sh\necho \'{"streams":[{"index":0,"codec_type":"video"}],"format":{"size":"8"}}\'\n');
   await chmod(ffprobe, 0o755);
   const download = () => downloadDirectFile({ ffprobe } as Config, { url, type: 'file' }, finalPath, AbortSignal.timeout(5000), () => {});
-  return { directory, server, seen, finalPath, download, [Symbol.asyncDispose]: async () => { server.closeAllConnections(); server.close(); await directory[Symbol.asyncDispose](); } };
+  return {
+    directory,
+    server,
+    seen,
+    finalPath,
+    download,
+    [Symbol.asyncDispose]: async () => {
+      server.closeAllConnections();
+      server.close();
+      await directory[Symbol.asyncDispose]();
+    },
+  };
 }
 
 test('a fully written partial file is completed on a 416 that carries no validator', async () => {
@@ -45,11 +59,19 @@ test('a fully written partial file is completed on a 416 that carries no validat
 });
 
 test('a resume honoured with 206 appends only the missing bytes', async () => {
-  await using t = await setup((request, response) => {
-    const from = Number(/^bytes=(\d+)-$/.exec(request.headers.range ?? '')?.[1] ?? 0);
-    response.writeHead(206, { 'Content-Range': `bytes ${from}-${body.length - 1}/${body.length}`, 'Content-Length': body.length - from, ETag: '"v1"' })
-      .end(body.subarray(from));
-  }, body.subarray(0, 4));
+  await using t = await setup(
+    (request, response) => {
+      const from = Number(/^bytes=(\d+)-$/.exec(request.headers.range ?? '')?.[1] ?? 0);
+      response
+        .writeHead(206, {
+          'Content-Range': `bytes ${from}-${body.length - 1}/${body.length}`,
+          'Content-Length': body.length - from,
+          ETag: '"v1"',
+        })
+        .end(body.subarray(from));
+    },
+    body.subarray(0, 4),
+  );
   await t.download();
   assert.equal((await readFile(t.finalPath)).toString(), 'abcdefgh');
   assert.equal(t.seen[0]!.range, 'bytes=4-');

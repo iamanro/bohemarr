@@ -5,7 +5,7 @@ import { loadSeriesIdentity, isSeriesCandidate, selectProgram, type ProgramSelec
 import type { SeriesIdentity, ProgramMetadata } from '../src/types.ts';
 
 /** The selected Program id, or why none was selected. */
-const outcome = (selection: ProgramSelection): string => 'program' in selection ? selection.program.id : selection.reason;
+const outcome = (selection: ProgramSelection): string => ('program' in selection ? selection.program.id : selection.reason);
 
 const loveIslandIdentity: SeriesIdentity = {
   tvdbId: 410707,
@@ -48,10 +48,7 @@ test('loadSeriesIdentity parses a real Skyhook payload', async (t: TestContext) 
 
 test('loadSeriesIdentity rejects a non-OK status with a clear error', async (t: TestContext) => {
   t.mock.method(globalThis, 'fetch', async () => new Response('nope', { status: 404 }));
-  await assert.rejects(
-    loadSeriesIdentity(1, new AbortController().signal),
-    /status 404/,
-  );
+  await assert.rejects(loadSeriesIdentity(1, new AbortController().signal), /status 404/);
 });
 
 test('loadSeriesIdentity rejects malformed JSON', async (t: TestContext) => {
@@ -78,22 +75,38 @@ test('loadSeriesIdentity tolerates absent optional metadata', async (t: TestCont
 test('verified TVmaze names bind a Czech programme to its English TVDB identity', async (t: TestContext) => {
   t.mock.method(globalThis, 'fetch', async (input: string | URL) => {
     const url = String(input);
-    if (url.includes('skyhook.sonarr.tv')) return Response.json({ tvdbId: 441247, title: 'Extractors', firstAired: '2023-10-27', originalCountry: 'cze', tmdbId: 215097, tvMazeId: 72176 });
-    if (url.endsWith('/akas')) return Response.json([{ name: 'Extractors' }, { name: 'Extraktoři' }]);
+    if (url.includes('skyhook.sonarr.tv'))
+      return Response.json({
+        tvdbId: 441247,
+        title: 'Extractors',
+        firstAired: '2023-10-27',
+        originalCountry: 'cze',
+        tmdbId: 215097,
+        tvMazeId: 72176,
+      });
+    if (url.endsWith('/akas')) return Response.json([{ name: 'Extractors' }, { name: 'Vyprošťovači' }]);
     return Response.json({ id: 72176, name: 'Extraktoři', externals: { thetvdb: 441247 } });
   });
   const identity = await loadSeriesIdentity(441247, new AbortController().signal);
-  const programme = { id: 'https://www.oneplay.cz/porad/9486-extraktori', title: 'Extraktoři', aliases: [], year: 2023, countries: ['Česká republika'] };
+  const programme = {
+    id: 'https://www.oneplay.cz/porad/9486-extraktori',
+    title: 'Extraktoři',
+    aliases: [],
+    year: 2023,
+    countries: ['Česká republika'],
+  };
   assert.equal(outcome(selectProgram(identity, [programme])), programme.id);
   assert.equal(identity.title, 'Extractors');
   assert.equal(identity.tmdbId, 215097);
-  assert.deepEqual(identity.aliases, ['Extraktoři']);
+  assert.deepEqual(identity.aliases, ['Extraktoři', 'Vyprošťovači'], 'the TVmaze name and its akas, without the TVDB title');
 });
 
 test('TVmaze aliases cannot attach a different TVDB identity', async (t: TestContext) => {
-  t.mock.method(globalThis, 'fetch', async (input: string | URL) => String(input).includes('skyhook.sonarr.tv')
-    ? Response.json({ tvdbId: 441247, title: 'Extractors', tvMazeId: 72176 })
-    : Response.json({ id: 72176, name: 'Unrelated show', externals: { thetvdb: 999999 } }));
+  t.mock.method(globalThis, 'fetch', async (input: string | URL) =>
+    String(input).includes('skyhook.sonarr.tv')
+      ? Response.json({ tvdbId: 441247, title: 'Extractors', tvMazeId: 72176 })
+      : Response.json({ id: 72176, name: 'Unrelated show', externals: { thetvdb: 999999 } }),
+  );
   await assert.rejects(loadSeriesIdentity(441247, new AbortController().signal), /Mismatched TVmaze/);
 });
 
@@ -104,6 +117,7 @@ test('isSeriesCandidate accepts token-boundary prefixes and rejects substring-in
   assert.ok(isSeriesCandidate('Love Island Česko & Slovensko', loveIslandIdentity));
   assert.ok(!isSeriesCandidate('Loveisland Extra', loveIslandIdentity));
   assert.ok(!isSeriesCandidate('Islanders', loveIslandIdentity));
+  assert.ok(!isSeriesCandidate('Love Islanders', loveIslandIdentity), 'the identity name ends inside a word of the title');
   assert.ok(!isSeriesCandidate('Totally Unrelated Show', loveIslandIdentity));
 });
 
@@ -148,9 +162,7 @@ test('selectProgram leaves missing identity evidence (no year, no country) unbou
 });
 
 test('selectProgram leaves an unrecognized candidate country unbound rather than guessing', () => {
-  const candidates: ProgramMetadata[] = [
-    { id: 'x', title: 'Love Island', aliases: [], year: 2021, countries: ['Narnia'] },
-  ];
+  const candidates: ProgramMetadata[] = [{ id: 'x', title: 'Love Island', aliases: [], year: 2021, countries: ['Narnia'] }];
   assert.equal(outcome(selectProgram(loveIslandIdentity, candidates)), 'country-mismatch');
 });
 

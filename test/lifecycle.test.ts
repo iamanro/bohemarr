@@ -16,18 +16,43 @@ import { PlaybackBusy } from '../src/providers/common.ts';
 import { fakeCatalogue } from './fake-catalogue.ts';
 import type { Config, Provider, Release } from '../src/types.ts';
 
-const release: Release = { id: 'episode-one', provider: 'direct', title: 'Example', series: 'Example', kind: 'tv', season: 1, episode: 1, url: 'https://example.test/video.mp4' };
+const release: Release = {
+  id: 'episode-one',
+  provider: 'direct',
+  title: 'Example',
+  series: 'Example',
+  kind: 'tv',
+  season: 1,
+  episode: 1,
+  url: 'https://example.test/video.mp4',
+};
 
 async function fixture() {
   const dir = await mkdtempDisposable(join(tmpdir(), 'md-lifecycle-'));
   const config: Config = {
-    host: '127.0.0.1', port: 8787, apiKey: 'a'.repeat(64), publicUrl: 'http://localhost:8787',
-    dataDir: dir.path, downloadsDir: join(dir.path, 'downloads'), concurrency: 1, requestRate: 100,
-    ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'https://example.test/wv/',
-    categories: ['tv', 'movies'], providers: {}, arrs: [],
+    host: '127.0.0.1',
+    port: 8787,
+    apiKey: 'a'.repeat(64),
+    publicUrl: 'http://localhost:8787',
+    dataDir: dir.path,
+    downloadsDir: join(dir.path, 'downloads'),
+    concurrency: 1,
+    requestRate: 100,
+    ffmpeg: 'ffmpeg',
+    ffprobe: 'ffprobe',
+    mp4decrypt: 'mp4decrypt',
+    wvApiUrl: 'https://example.test/wv/',
+    categories: ['tv', 'movies'],
+    providers: {},
+    arrs: [],
   };
   const store = new Store(join(dir.path, 'state.sqlite'));
-  const provider: Provider = { id: 'direct', name: 'Direct', catalogue: fakeCatalogue(() => [release]), resolve: async () => [{ url: release.url, type: 'file', height: 1080, audioLanguage: 'cs' }] };
+  const provider: Provider = {
+    id: 'direct',
+    name: 'Direct',
+    catalogue: fakeCatalogue(() => [release]),
+    resolve: async () => [{ url: release.url, type: 'file', height: 1080, audioLanguage: 'cs' }],
+  };
   const providers = new Map([[provider.id, provider]]);
   return { dir, root: dir.path, config, store, providers };
 }
@@ -36,30 +61,44 @@ test('pause wins against a late downloader completion and cancellation removes f
   const f = await fixture();
   await using dir = f.dir;
   using store = f.store;
-  const entered = Promise.withResolvers<void>();
+  let entered = Promise.withResolvers<void>();
+  let finished = 0;
   await using queue = new Queue(f.store, f.config, f.providers, async (_sources, directory, _title, signal, progress) => {
     entered.resolve();
     await once(signal, 'abort');
+    await new Promise(resolve => setTimeout(resolve, 20)); // a slow worker: anything not awaiting it finishes first
+    await mkdir(directory, { recursive: true });
     const file = join(directory, 'late.mp4');
     await writeFile(file, 'late result');
+    finished++;
     progress({ bytes: 11, progress: 100 });
     return file;
   });
   const job = queue.add('job-one', release, 'tv');
   await entered.promise;
   await queue.pause(job.id);
+  await access(join(job.storage, 'late.mp4')); // the worker had finished when pause resolved
   assert.equal(f.store.job(job.id)?.status, 'Paused');
-  assert.notEqual(f.store.job(job.id)?.progress, 100);
+  assert.equal(f.store.job(job.id)?.bytes, 0);
   await queue.remove(job.id, true);
   assert.equal(f.store.job(job.id), undefined);
   await assert.rejects(access(job.storage), { code: 'ENOENT' });
+
+  entered = Promise.withResolvers<void>();
+  const running = queue.add('job-two', { ...release, id: 'episode-two', episode: 2 }, 'tv');
+  await entered.promise;
+  await queue.remove(running.id, true);
+  assert.equal(finished, 2, 'remove resolved only after its worker wrote its late file');
+  await assert.rejects(access(running.storage), { code: 'ENOENT' });
 });
 
 test('removal accepts a persisted old release folder but never deletes a sibling job', async () => {
   const f = await fixture();
   await using dir = f.dir;
   using store = f.store;
-  await using queue = new Queue(f.store, f.config, f.providers, async () => { throw new Error('must remain paused'); });
+  await using queue = new Queue(f.store, f.config, f.providers, async () => {
+    throw new Error('must remain paused');
+  });
   const oldJob = queue.add('old-job', release, 'tv', true);
   const oldFolder = join(f.config.downloadsDir, 'tv', oldJob.id, 'Example S01E01 WEB-DL-direct');
   await mkdir(oldFolder, { recursive: true });
@@ -81,20 +120,26 @@ test('restart recovers interrupted work without losing a per-job pause', async (
   const f = await fixture();
   await using dir = f.dir;
   let store = f.store;
-  let queue = new Queue(store, f.config, f.providers, async () => { throw new Error('must remain paused'); });
+  let queue = new Queue(store, f.config, f.providers, async () => {
+    throw new Error('must remain paused');
+  });
   try {
     const queued = queue.add('job-one', release, 'tv', true);
     const paused = queue.add('job-two', { ...release, id: 'episode-two', episode: 2 }, 'tv', true);
     store.updateJob(queued.id, { status: 'Downloading', bytes: 123 });
     // Deliberate restart: close and reopen the Store to prove recovery from persisted state.
-    await queue.close(); store.close();
+    await queue.close();
+    store.close();
     store = new Store(join(f.root, 'state.sqlite'));
-    queue = new Queue(store, f.config, f.providers, async () => { throw new Error('must remain paused'); });
+    queue = new Queue(store, f.config, f.providers, async () => {
+      throw new Error('must remain paused');
+    });
     assert.equal(store.job(queued.id)?.status, 'Queued');
     assert.equal(store.job(queued.id)?.bytes, 123);
     assert.equal(store.job(paused.id)?.status, 'Paused');
   } finally {
-    await queue.close(); store.close();
+    await queue.close();
+    store.close();
   }
 });
 
@@ -135,7 +180,18 @@ test('movie task names use the movie title rather than their source collection',
   const f = await fixture();
   await using dir = f.dir;
   using store = f.store;
-  f.store.saveReleases([{ ...release, id: 'movie', kind: 'movie', title: 'Actual Film', series: 'Film Collection', season: undefined, episode: undefined, year: 2008 }]);
+  f.store.saveReleases([
+    {
+      ...release,
+      id: 'movie',
+      kind: 'movie',
+      title: 'Actual Film',
+      series: 'Film Collection',
+      season: undefined,
+      episode: undefined,
+      year: 2008,
+    },
+  ]);
   const indexer = new Indexer(f.config, f.store, f.providers, new SeriesBindings(f.store.database));
   const name = indexer.taskDescriptor('movie').name;
   assert.match(name, /^Actual Film 2008\b/);
@@ -147,10 +203,19 @@ test('Radarr title-and-year queries distinguish films with the same title', asyn
   const f = await fixture();
   await using dir = f.dir;
   using store = f.store;
-  const movie: Release = { id: 'original-film', provider: 'direct', kind: 'movie', title: 'Example Film', year: 2008, url: 'https://example.test/original.mp4' };
+  const movie: Release = {
+    id: 'original-film',
+    provider: 'direct',
+    kind: 'movie',
+    title: 'Example Film',
+    year: 2008,
+    url: 'https://example.test/original.mp4',
+  };
   const remake: Release = { ...movie, id: 'remade-film', year: 2024, url: 'https://example.test/remake.mp4' };
   const providers = createProviders({ ...f.config, providers: { direct: { enabled: true, catalog: [movie, remake] } } }, f.store.database);
-  t.mock.method(providers.get('direct')!, 'resolve', async (item: Release) => [{ url: item.url, type: 'file', height: 1080, audioLanguage: 'cs' }]);
+  t.mock.method(providers.get('direct')!, 'resolve', async (item: Release) => [
+    { url: item.url, type: 'file', height: 1080, audioLanguage: 'cs' },
+  ]);
   const indexer = new Indexer(f.config, f.store, new Map([['direct', providers.get('direct')!]]), new SeriesBindings(f.store.database));
   const xml = await indexer.search({ t: 'search', cat: '2000', q: 'Example Film 2008' }, new AbortController().signal);
   assert.match(xml, /<comments>https:\/\/example\.test\/original\.mp4<\/comments>/);
@@ -161,7 +226,9 @@ test('re-adding a task torrent keeps its info hash as download ID and requeues i
   const f = await fixture();
   await using dir = f.dir;
   using store = f.store;
-  await using queue = new Queue(f.store, f.config, f.providers, async () => { throw new Error('must remain paused'); });
+  await using queue = new Queue(f.store, f.config, f.providers, async () => {
+    throw new Error('must remain paused');
+  });
   f.store.saveReleases([release]);
   const indexer = new Indexer(f.config, f.store, f.providers, new SeriesBindings(f.store.database));
   const qbittorrent = new QBittorrent(f.config, queue, indexer);
@@ -171,9 +238,15 @@ test('re-adding a task torrent keeps its info hash as download ID and requeues i
   for (let attempt = 0; attempt < 2; attempt++) {
     assert.equal((await qbittorrent.handle('torrents/add', { category: 'tv', paused: 'true' }, [content])).body, 'Ok.');
   }
-  assert.deepEqual(f.store.jobs().map(job => [job.id, job.status]), [[infoHash, 'Paused']]);
+  assert.deepEqual(
+    f.store.jobs().map(job => [job.id, job.status]),
+    [[infoHash, 'Paused']],
+  );
   const listed = (await qbittorrent.handle('torrents/info', { category: 'tv' })).body as Array<Record<string, unknown>>;
-  assert.deepEqual(listed.map(torrent => [torrent.hash, torrent.state]), [[infoHash, 'pausedDL']]);
+  assert.deepEqual(
+    listed.map(torrent => [torrent.hash, torrent.state]),
+    [[infoHash, 'pausedDL']],
+  );
   assert.deepEqual((await qbittorrent.handle('torrents/info', { category: 'movies' })).body, []);
 
   f.store.updateJob(infoHash, { status: 'Failed', error: 'gone' });
@@ -217,13 +290,42 @@ test('an upgrade turns a global pause into a pause of each job it held back and 
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     INSERT INTO settings VALUES ('schema_version', '1'), ('paused', 'true');`);
   const insert = legacy.prepare('INSERT INTO jobs VALUES (?, ?)');
-  for (const [id, status, priority] of [['held', 'Queued', 0], ['forced', 'Downloading', 2], ['done', 'Completed', 0]] as const) {
-    insert.run(id, JSON.stringify({ id, release, category: 'tv', status, priority, bytes: 0, totalBytes: 0, progress: 0, storage: '', error: '', createdAt: 0, updatedAt: 0 }));
+  for (const [id, status, priority] of [
+    ['held', 'Queued', 0],
+    ['forced', 'Downloading', 2],
+    ['done', 'Completed', 0],
+  ] as const) {
+    insert.run(
+      id,
+      JSON.stringify({
+        id,
+        release,
+        category: 'tv',
+        status,
+        priority,
+        bytes: 0,
+        totalBytes: 0,
+        progress: 0,
+        storage: '',
+        error: '',
+        createdAt: 0,
+        updatedAt: 0,
+      }),
+    );
   }
   legacy.close();
   using store = new Store(path);
-  assert.deepEqual(store.jobs().map(job => [job.id, job.status, 'priority' in job]).sort(),
-    [['done', 'Completed', false], ['forced', 'Downloading', false], ['held', 'Paused', false]]);
+  assert.deepEqual(
+    store
+      .jobs()
+      .map(job => [job.id, job.status, 'priority' in job])
+      .sort(),
+    [
+      ['done', 'Completed', false],
+      ['forced', 'Downloading', false],
+      ['held', 'Paused', false],
+    ],
+  );
   assert.equal(store.database.prepare("SELECT value FROM settings WHERE key='paused'").get(), undefined);
 });
 

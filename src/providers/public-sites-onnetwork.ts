@@ -45,10 +45,18 @@ export async function resolveOnNetworkEmbed(scriptSrc: string, referer: string, 
   const sources: MediaSource[] = [];
   for (const video of playerVideos) {
     const videoHeightMatch = video.name?.match(/(\d+)/);
-    sources.push({ url: video.url, type: mediaType(video.url), height: videoHeightMatch ? Number.parseInt(videoHeightMatch[1]!, 10) : undefined });
+    sources.push({
+      url: video.url,
+      type: mediaType(video.url),
+      height: videoHeightMatch ? Number.parseInt(videoHeightMatch[1]!, 10) : undefined,
+    });
     for (const additional of video.urls ?? []) {
       const additionalHeightMatch = additional.name?.match(/(\d+)/);
-      sources.push({ url: additional.url, type: mediaType(additional.url), height: additionalHeightMatch ? Number.parseInt(additionalHeightMatch[1]!, 10) : undefined });
+      sources.push({
+        url: additional.url,
+        type: mediaType(additional.url),
+        height: additionalHeightMatch ? Number.parseInt(additionalHeightMatch[1]!, 10) : undefined,
+      });
     }
   }
 

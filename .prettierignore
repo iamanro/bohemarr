@@ -1,0 +1,2 @@
+# Files their own tools write; bun fmt also skips everything in .gitignore
+/.claude/

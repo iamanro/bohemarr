@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { XMLParser } from 'fast-xml-parser';
 import * as cheerio from 'cheerio';
 import type { MediaKind } from '../types.ts';
-import { untilAborted } from './common.ts';
+import { fetchResponse, fetchText, untilAborted } from './common.ts';
 
 const SITEMAPS: ReadonlyArray<{ url: string; kind: MediaKind }> = [
   { url: 'https://www.iprima.cz/sitemap-series.xml', kind: 'tv' },
@@ -15,7 +15,6 @@ const REFRESH_AFTER_MS = 6 * 60 * 60 * 1000;
 const TITLE_INTERVAL_MS = 1000;
 /** The page `<title>` sits in the first few hundred bytes; stop reading well after it. */
 const TITLE_READ_LIMIT = 16 * 1024;
-const REQUEST_TIMEOUT_MS = 45_000;
 
 /** Clock and wait used by the index; tests replace both to avoid real time. */
 export interface IndexTiming {
@@ -77,7 +76,8 @@ export class PrimaIndex {
       CREATE TABLE IF NOT EXISTS prima_index (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
     this.selectPrograms = db.prepare('SELECT uri, kind, title FROM prima_programs ORDER BY lastmod DESC, uri');
     this.selectUntitled = db.prepare(
-      'SELECT uri, lastmod FROM prima_programs WHERE title_lastmod IS NOT lastmod ORDER BY lastmod DESC, uri LIMIT ?');
+      'SELECT uri, lastmod FROM prima_programs WHERE title_lastmod IS NOT lastmod ORDER BY lastmod DESC, uri LIMIT ?',
+    );
     this.selectUris = db.prepare('SELECT uri FROM prima_programs');
     this.upsertProgram = db.prepare(`INSERT INTO prima_programs (uri, kind, lastmod) VALUES (?, ?, ?)
       ON CONFLICT(uri) DO UPDATE SET kind=excluded.kind, lastmod=excluded.lastmod`);
@@ -85,7 +85,8 @@ export class PrimaIndex {
     this.updateTitle = db.prepare('UPDATE prima_programs SET title=?, title_lastmod=? WHERE uri=? AND lastmod=?');
     this.selectRefreshedAt = db.prepare("SELECT value FROM prima_index WHERE key='refreshed_at'");
     this.upsertRefreshedAt = db.prepare(
-      "INSERT INTO prima_index VALUES ('refreshed_at', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value");
+      "INSERT INTO prima_index VALUES ('refreshed_at', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+    );
   }
 
   /** Programmes, most recently changed first. */
@@ -95,7 +96,10 @@ export class PrimaIndex {
     if (refreshedAt === undefined) await untilAborted(this.refresh(this.lifetime.signal), signal);
     else if (this.now() - Number(refreshedAt) >= REFRESH_AFTER_MS) void this.refresh(this.lifetime.signal).catch(logFailure);
     // Titles left over from an earlier run are completed once per process; a refresh starts another pass.
-    if (!this.resumed) { this.resumed = true; this.startTitling(); }
+    if (!this.resumed) {
+      this.resumed = true;
+      this.startTitling();
+    }
     // Read all rows first: background title updates write to the table while callers consume lazily.
     for (const row of this.selectPrograms.all()) {
       signal.throwIfAborted();
@@ -120,8 +124,9 @@ export class PrimaIndex {
 
   /** Replaces the listing with the current sitemaps; concurrent callers share one refresh. */
   private refresh(signal: AbortSignal): Promise<void> {
-    this.refreshing ??= this.fetchSitemaps(AbortSignal.any([signal, this.lifetime.signal]))
-      .finally(() => { this.refreshing = undefined; });
+    this.refreshing ??= this.fetchSitemaps(AbortSignal.any([signal, this.lifetime.signal])).finally(() => {
+      this.refreshing = undefined;
+    });
     return this.refreshing;
   }
 
@@ -151,7 +156,9 @@ export class PrimaIndex {
   private startTitling(): void {
     this.titling ??= this.fillTitles(this.lifetime.signal)
       .catch(logFailure)
-      .finally(() => { this.titling = undefined; });
+      .finally(() => {
+        this.titling = undefined;
+      });
   }
 
   /**
@@ -177,14 +184,18 @@ export class PrimaIndex {
       } catch (error) {
         signal.throwIfAborted();
         if (error instanceof PageStatusError && (error.status === 403 || error.status === 429)) {
-          console.error(`iprima: iPrima refused a page (HTTP ${error.status}); reading programme titles stops until the next index refresh`);
+          console.error(
+            `iprima: iPrima refused a page (HTTP ${error.status}); reading programme titles stops until the next index refresh`,
+          );
           return;
         }
         failed.add(row.uri);
-        if (failed.size === 1) console.error(`iprima: reading the title of ${row.uri} failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (failed.size === 1)
+          console.error(`iprima: reading the title of ${row.uri} failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    if (failed.size) console.error(`iprima: ${failed.size} programme titles could not be read; they are retried after the next index refresh`);
+    if (failed.size)
+      console.error(`iprima: ${failed.size} programme titles could not be read; they are retried after the next index refresh`);
   }
 }
 
@@ -194,16 +205,16 @@ function logFailure(error: unknown): void {
 }
 
 async function sitemapEntries(url: string, signal: AbortSignal): Promise<Array<{ uri: string; lastmod: string }>> {
-  const response = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
-  if (!response.ok) throw new Error(`HTTP ${response.status} from ${url}`);
-  const parsed = new XMLParser({ parseTagValue: false, trimValues: true, processEntities: { maxEntityCount: 1000 } })
-    .parse(await response.text()) as { urlset?: { url?: unknown } };
+  const parsed = new XMLParser({ parseTagValue: false, trimValues: true, processEntities: { maxEntityCount: 1000 } }).parse(
+    await fetchText(url, signal),
+  ) as { urlset?: { url?: unknown } };
   const urls = parsed.urlset?.url;
   const entries = Array.isArray(urls) ? urls : urls ? [urls] : [];
   return entries.flatMap(entry => {
     const { loc, lastmod } = (entry ?? {}) as { loc?: unknown; lastmod?: unknown };
     return typeof loc === 'string' && loc.startsWith('https://www.iprima.cz/')
-      ? [{ uri: loc, lastmod: typeof lastmod === 'string' ? lastmod : '' }] : [];
+      ? [{ uri: loc, lastmod: typeof lastmod === 'string' ? lastmod : '' }]
+      : [];
   });
 }
 
@@ -212,7 +223,7 @@ async function sitemapEntries(url: string, signal: AbortSignal): Promise<Array<{
  * or `Táta je doma (2015) online – celý film ke zhlédnutí | prima+`. Only the page head is read.
  */
 export async function pageTitle(uri: string, signal: AbortSignal): Promise<string | undefined> {
-  const response = await fetch(uri, { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
+  const response = await fetchResponse(uri, signal);
   if (!response.ok || !response.body) throw new PageStatusError(response.status, uri);
   const decoder = new TextDecoder();
   let head = '';
@@ -231,8 +242,9 @@ export async function pageTitle(uri: string, signal: AbortSignal): Promise<strin
 
 function parseTitle(documentTitle: string): string | undefined {
   // Anchored on the whole suffix, so names that contain "online" themselves survive.
-  const match = /^(.+?)\s+(?:\(\d{4}\)\s+)?online\s+(?:–\s+celý film\s+)?ke zhlédnutí\s*\|\s*prima\+$/iu
-    .exec(documentTitle.replace(/\s+/g, ' ').trim());
+  const match = /^(.+?)\s+(?:\(\d{4}\)\s+)?online\s+(?:–\s+celý film\s+)?ke zhlédnutí\s*\|\s*prima\+$/iu.exec(
+    documentTitle.replace(/\s+/g, ' ').trim(),
+  );
   return match?.[1]?.trim() || undefined;
 }
 

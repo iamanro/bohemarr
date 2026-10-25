@@ -6,7 +6,11 @@ import { evaluatePlayerScript } from '../src/providers/javascript.ts';
 import { tracksToSources } from '../src/providers/nova-markiza-media.ts';
 
 test('extensionless protected manifests cannot be downgraded to clear downloads', () => {
-  const protectedTrack = { src: 'https://media.test/manifest?id=42', type: 'application/dash+xml', contentProtection: { token: 'test-license-token' } };
+  const protectedTrack = {
+    src: 'https://media.test/manifest?id=42',
+    type: 'application/dash+xml',
+    contentProtection: { token: 'test-license-token' },
+  };
   const clearTrack = { src: 'https://media.test/clear.mp4', type: 'video/mp4' };
   const supported = tracksToSources([protectedTrack], 'https://tv.nova.cz/');
   assert.equal(supported[0]?.type, 'dash');

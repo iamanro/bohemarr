@@ -13,10 +13,19 @@ function fakeConnections() {
     let open = false;
     const connection = {
       clientId,
-      async open() { open = true; log.push('open'); return connection; },
+      async open() {
+        open = true;
+        log.push('open');
+        return connection;
+      },
       isOpen: () => open,
-      close() { open = false; log.push('close'); },
-      authenticate(token: unknown) { log.push(`auth:${String(token)}`); },
+      close() {
+        open = false;
+        log.push('close');
+      },
+      authenticate(token: unknown) {
+        log.push(`auth:${String(token)}`);
+      },
     };
     return connection as unknown as OneplayConnection;
   };
@@ -28,7 +37,10 @@ test('an aborted waiter leaves the queue, and the slot it waited for goes to the
   const pool = new OneplayConnectionPool(1, device, connect);
   const holder = Promise.withResolvers<void>();
   const entered = Promise.withResolvers<void>();
-  const first = pool.withConnection(AbortSignal.timeout(5000), () => { entered.resolve(); return holder.promise; });
+  const first = pool.withConnection(AbortSignal.timeout(5000), () => {
+    entered.resolve();
+    return holder.promise;
+  });
   await entered.promise; // the first caller holds the only slot before anyone queues
   const waiter = new AbortController();
   const second = pool.withConnection(waiter.signal, async () => 'second');
@@ -47,7 +59,10 @@ test('closing the pool rejects queued callers instead of leaving them hanging', 
   const pool = new OneplayConnectionPool(1, device, connect);
   const holder = Promise.withResolvers<void>();
   const entered = Promise.withResolvers<void>();
-  const first = pool.withConnection(AbortSignal.timeout(5000), () => { entered.resolve(); return holder.promise; });
+  const first = pool.withConnection(AbortSignal.timeout(5000), () => {
+    entered.resolve();
+    return holder.promise;
+  });
   await entered.promise; // the first caller holds the only slot before anyone queues
   const queued = pool.withConnection(AbortSignal.timeout(5000), async () => 'never');
   const rejected = assert.rejects(queued, /not active/);
@@ -62,7 +77,12 @@ test('a failing caller releases its slot, the connection is reused, and authenti
   const { connect, log } = fakeConnections();
   const pool = new OneplayConnectionPool(1, device, connect);
   const signal = AbortSignal.timeout(5000);
-  await assert.rejects(pool.withConnection(signal, async () => { throw new Error('boom'); }), /boom/);
+  await assert.rejects(
+    pool.withConnection(signal, async () => {
+      throw new Error('boom');
+    }),
+    /boom/,
+  );
   pool.authenticate('token' as never);
   assert.equal(await pool.withConnection(signal, async () => 'ok'), 'ok');
   assert.deepEqual(log, ['open', 'auth:token'], 'one connection opened, authenticated in place, no reopen');

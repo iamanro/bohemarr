@@ -6,7 +6,11 @@ import { validateMediaFile } from './ffprobe.ts';
 import { readChunks, writeJsonAtomic } from './segment-download.ts';
 import { fetchResponse } from '../providers/common.ts';
 
-interface ResumeMeta { url: string; etag?: string; lastModified?: string; }
+interface ResumeMeta {
+  url: string;
+  etag?: string;
+  lastModified?: string;
+}
 
 /** Parses a `Content-Range: bytes start-end/total` (or `.../*`) response header. */
 function parseContentRange(headerValue: string | null): { start: number; end: number; total?: number } | undefined {
@@ -31,7 +35,10 @@ function parseUnsatisfiableTotal(headerValue: string | null): number | undefined
  * "completed" output and always leaves a resumable, byte-accurate partial file behind.
  */
 export async function downloadDirectFile(
-  config: Config, source: MediaSource, finalPath: string, signal: AbortSignal,
+  config: Config,
+  source: MediaSource,
+  finalPath: string,
+  signal: AbortSignal,
   onProgress: (progress: DownloadProgress) => void,
 ): Promise<void> {
   const partPath = `${finalPath}.part`;
@@ -99,8 +106,14 @@ export async function downloadDirectFile(
   let totalBytes: number | undefined;
   if (response.status === 206) {
     const range = parseContentRange(response.headers.get('content-range'));
-    if (!range || range.start !== resumeFrom || range.total === undefined
-        || !Number.isSafeInteger(range.total) || range.end !== range.total - 1 || range.end < range.start) {
+    if (
+      !range ||
+      range.start !== resumeFrom ||
+      range.total === undefined ||
+      !Number.isSafeInteger(range.total) ||
+      range.end !== range.total - 1 ||
+      range.end < range.start
+    ) {
       // Server ignored or mismatched our Range request. The on-disk partial + meta are left
       // untouched so a later attempt can retry cleanly; writing here would corrupt the file.
       await response.body.cancel().catch(() => {});

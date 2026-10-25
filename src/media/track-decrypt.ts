@@ -18,7 +18,10 @@ const KEY_RETRY_BASE_MS = 250;
 
 /** Prefers a provider-supplied PSSH, then the manifest's own ContentProtection/EXT-X-KEY PSSH, then scans the initialization segment as a last resort. */
 async function resolveTrackPssh(
-  license: License, track: ProtectedTrack, headers: Record<string, string> | undefined, signal: AbortSignal,
+  license: License,
+  track: ProtectedTrack,
+  headers: Record<string, string> | undefined,
+  signal: AbortSignal,
 ): Promise<string> {
   if (license.pssh?.length) return license.pssh[0] ?? '';
   if (track.pssh.length) return track.pssh[0] ?? '';
@@ -35,7 +38,9 @@ async function resolveTrackPssh(
 function trackIdentity(license: License, track: ProtectedTrack): string {
   const psshHint = license.pssh?.[0] ?? track.pssh[0] ?? '';
   const payload = JSON.stringify({
-    psshHint, keyId: track.keyId ?? '', durationSeconds: track.durationSeconds,
+    psshHint,
+    keyId: track.keyId ?? '',
+    durationSeconds: track.durationSeconds,
     init: track.initSegment,
     segments: track.mediaSegments,
   });
@@ -56,7 +61,9 @@ async function isAlreadyComplete(doneMarkerPath: string, outputPath: string, ide
 async function exchangeLicense(license: License, challenge: Uint8Array, signal: AbortSignal): Promise<Uint8Array> {
   if (license.exchange) return license.exchange(challenge, signal);
   const response = await fetchResponse(license.url, signal, {
-    method: 'POST', headers: { ...license.headers, 'Content-Type': 'application/octet-stream' }, body: Buffer.from(challenge),
+    method: 'POST',
+    headers: { ...license.headers, 'Content-Type': 'application/octet-stream' },
+    body: Buffer.from(challenge),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} from license server ${new URL(license.url).hostname}`);
   return new Uint8Array(await response.arrayBuffer());
@@ -95,7 +102,11 @@ async function obtainContentKeys(cdm: Cdm, license: License, pssh: string, signa
  * selector to Bento4's track-number form `"1"` since the real key ID is unknown.
  */
 async function selectDecryptionKey(
-  config: Config, testFilePath: string, keys: ContentKey[], keyId: string | undefined, signal: AbortSignal,
+  config: Config,
+  testFilePath: string,
+  keys: ContentKey[],
+  keyId: string | undefined,
+  signal: AbortSignal,
 ): Promise<{ kid: string; key: string }> {
   if (keyId) {
     const match = keys.find(key => key.kid.replace(/-/g, '').toLowerCase() === keyId.replace(/-/g, '').toLowerCase());
@@ -103,10 +114,11 @@ async function selectDecryptionKey(
   }
   for (const candidate of keys) {
     try {
-      await runProcess(config.ffmpeg, [
-        '-y', '-hide_banner', '-loglevel', 'error', '-xerror',
-        '-decryption_key', candidate.key, '-i', testFilePath, '-f', 'null', '-',
-      ], signal);
+      await runProcess(
+        config.ffmpeg,
+        ['-y', '-hide_banner', '-loglevel', 'error', '-xerror', '-decryption_key', candidate.key, '-i', testFilePath, '-f', 'null', '-'],
+        signal,
+      );
       return { kid: '1', key: candidate.key };
     } catch {
       // Wrong key for this track; try the next candidate.
@@ -122,8 +134,15 @@ async function selectDecryptionKey(
  * in place. Returns the path to the decrypted file.
  */
 export async function obtainAndDecryptTrack(
-  config: Config, cdm: Cdm, license: License, track: ProtectedTrack, headers: Record<string, string> | undefined,
-  workDir: string, label: string, signal: AbortSignal, onBytes: (bytes: number) => void,
+  config: Config,
+  cdm: Cdm,
+  license: License,
+  track: ProtectedTrack,
+  headers: Record<string, string> | undefined,
+  workDir: string,
+  label: string,
+  signal: AbortSignal,
+  onBytes: (bytes: number) => void,
 ): Promise<string> {
   if (!track.mediaSegments.length) throw new Error(`${label} track has no media segments`);
   const outputPath = join(workDir, `${label}.mp4`);

@@ -65,11 +65,7 @@ export interface OneplayResponse {
 }
 
 /** `Connection.createRequest`. */
-export function createRequestBody(
-  context: ConnectionContext,
-  requestId: string,
-  options: OneplayRequestOptions,
-): Record<string, unknown> {
+export function createRequestBody(context: ConnectionContext, requestId: string, options: OneplayRequestOptions): Record<string, unknown> {
   const contextBlock: Record<string, unknown> = {
     clientId: context.clientId,
     sessionId: context.sessionId,
@@ -145,7 +141,8 @@ export function successData(response: OneplayResponse): unknown {
     const err = resultError(response.data);
     if (err) throw err;
     // Not an Oneplay error payload either, e.g. the HTTP 401 `request` reports as `Unauthorized`.
-    if (at<string>(response.data, 'result.status') !== 'Error') throw new Error(`Oneplay ${response.command}: ${response.status ?? 'no status'}`);
+    if (at<string>(response.data, 'result.status') !== 'Error')
+      throw new Error(`Oneplay ${response.command}: ${response.status ?? 'no status'}`);
   }
   return response.data;
 }

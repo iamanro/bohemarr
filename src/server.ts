@@ -49,18 +49,34 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
   app.get('/health', async () => ({ status: 'ok' }));
   app.get('/', async (_request, reply) => reply.redirect('/ui/'));
   app.get('/v1/settings', async () => ({
-    publicUrl: config.publicUrl, categories: config.categories, providerIds: PROVIDER_IDS,
-    enabled: [...providers.keys()], vltava: Boolean(config.vltava), arrs: Object.fromEntries(arrStatus),
-    settings: Object.fromEntries(EDITABLE_SETTINGS.map(name => {
-      const value = env(name);
-      return [name, { value: SECRET_SETTING.test(name) ? undefined : value, set: value !== undefined, source: settingSource(name) }];
-    })),
+    publicUrl: config.publicUrl,
+    categories: config.categories,
+    providerIds: PROVIDER_IDS,
+    enabled: [...providers.keys()],
+    vltava: Boolean(config.vltava),
+    arrs: Object.fromEntries(arrStatus),
+    settings: Object.fromEntries(
+      EDITABLE_SETTINGS.map(name => {
+        const value = env(name);
+        return [name, { value: SECRET_SETTING.test(name) ? undefined : value, set: value !== undefined, source: settingSource(name) }];
+      }),
+    ),
   }));
   // The UI controls Jobs through the qBittorrent API; this adds what that API cannot carry, such as the failure reason.
-  app.get('/v1/jobs', async () => store.jobs().map(job => ({
-    id: job.id, title: releaseTitle(job.release), provider: job.release.provider, category: job.category, status: job.status,
-    progress: job.progress, bytes: job.bytes, totalBytes: job.totalBytes, error: job.error, createdAt: job.createdAt,
-  })));
+  app.get('/v1/jobs', async () =>
+    store.jobs().map(job => ({
+      id: job.id,
+      title: releaseTitle(job.release),
+      provider: job.release.provider,
+      category: job.category,
+      status: job.status,
+      progress: job.progress,
+      bytes: job.bytes,
+      totalBytes: job.totalBytes,
+      error: job.error,
+      createdAt: job.createdAt,
+    })),
+  );
   // Saved settings apply at the next start; a set that would stop Bohemarr from starting is refused.
   app.put('/v1/settings', async (request, reply) => {
     const changes = request.body;
@@ -69,7 +85,8 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
     for (const [name, value] of Object.entries(changes)) {
       if (!EDITABLE_SETTINGS.includes(name)) return reply.code(400).send({ error: `${name} cannot be set here` });
       if (value !== null && typeof value !== 'string') return reply.code(400).send({ error: `${name} must be a string` });
-      if (value) next[name] = value.trim(); else delete next[name];
+      if (value) next[name] = value.trim();
+      else delete next[name];
     }
     try {
       await loadConfig(next);
@@ -90,10 +107,20 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
     const params = stringParams(request.query);
     try {
       const { page, total } = await whileOpen(reply, signal => indexer.find({ ...params, t: params.t || 'search' }, signal));
-      return { total, releases: page.map(release => ({
-        id: release.id, title: releaseTitle(release), provider: release.provider, kind: release.kind, url: release.url,
-        publishedAt: release.publishedAt, size: release.size, sizeEstimated: release.sizeEstimated, height: release.height,
-      })) };
+      return {
+        total,
+        releases: page.map(release => ({
+          id: release.id,
+          title: releaseTitle(release),
+          provider: release.provider,
+          kind: release.kind,
+          url: release.url,
+          publishedAt: release.publishedAt,
+          size: release.size,
+          sizeEstimated: release.sizeEstimated,
+          height: release.height,
+        })),
+      };
     } catch (error) {
       return reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
     }
@@ -117,7 +144,9 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
       if (params.t === 'caps') return indexer.capabilities();
       if (params.t === 'get') {
         const descriptor = indexer.taskDescriptor(params.id || '');
-        reply.type('application/x-bittorrent').header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(descriptor.name)}`);
+        reply
+          .type('application/x-bittorrent')
+          .header('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(descriptor.name)}`);
         return descriptor.content;
       }
       if (!['search', 'tvsearch', 'movie'].includes(params.t || '')) throw new Error('Unsupported Torznab function');
@@ -147,7 +176,8 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
     return 'Ok.';
   });
   app.route({
-    method: ['GET', 'POST'], url: '/api/v2/*',
+    method: ['GET', 'POST'],
+    url: '/api/v2/*',
     handler: async (request, reply) => {
       const params = { ...stringParams(request.body), ...stringParams(request.query) };
       const torrents: Buffer[] = [];
@@ -181,7 +211,9 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
 /** Runs `task` with a signal that aborts when the client disconnects or after 120 seconds. */
 async function whileOpen<T>(reply: FastifyReply, task: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
-  const onClose = () => { if (!reply.raw.writableEnded) controller.abort(); };
+  const onClose = () => {
+    if (!reply.raw.writableEnded) controller.abort();
+  };
   reply.raw.on('close', onClose);
   try {
     return await task(AbortSignal.any([controller.signal, AbortSignal.timeout(120_000)]));

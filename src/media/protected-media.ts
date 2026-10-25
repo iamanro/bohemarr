@@ -10,7 +10,10 @@ import { runProcess } from './process.ts';
 import { fetchResponse } from '../providers/common.ts';
 
 /** One Widevine content key: a key ID paired with the raw key bytes (hex), as returned by a CDM's license extraction step. */
-export interface ContentKey { kid: string; key: string; }
+export interface ContentKey {
+  kid: string;
+  key: string;
+}
 
 /**
  * The only seam in the protected-media pipeline: a Content Decryption Module that turns a base64
@@ -25,11 +28,18 @@ export interface Cdm {
 }
 
 /** One Period's selected tracks, in document order; HLS always has exactly one. */
-interface Period { video: ProtectedTrack; audio?: ProtectedTrack; }
+interface Period {
+  video: ProtectedTrack;
+  audio?: ProtectedTrack;
+}
 
 /** Fetches one track into `workDir` and returns the path of its playable (clear) file. */
 export type TrackFetcher = (
-  track: ProtectedTrack, workDir: string, label: string, signal: AbortSignal, onBytes: (bytes: number) => void,
+  track: ProtectedTrack,
+  workDir: string,
+  label: string,
+  signal: AbortSignal,
+  onBytes: (bytes: number) => void,
 ) => Promise<string>;
 
 /** ffmpeg concat-demuxer list entries require `'` escaped as `'\''` inside single-quoted paths. */
@@ -38,12 +48,20 @@ function concatListEntry(path: string): string {
 }
 
 /** Losslessly concatenates same-codec ordered fragments (one per DASH Period) via ffmpeg's concat demuxer, preserving timestamps/audio without re-encoding. */
-export async function concatOrdered(config: Config, paths: string[], listPath: string, outputPath: string, signal: AbortSignal): Promise<string> {
+export async function concatOrdered(
+  config: Config,
+  paths: string[],
+  listPath: string,
+  outputPath: string,
+  signal: AbortSignal,
+): Promise<string> {
   if (paths.length === 1) return paths[0]!;
   await writeFile(listPath, paths.map(concatListEntry).join(''));
-  await runProcess(config.ffmpeg, [
-    '-y', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath,
-  ], signal);
+  await runProcess(
+    config.ffmpeg,
+    ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath],
+    signal,
+  );
   return outputPath;
 }
 
@@ -69,14 +87,29 @@ async function resolvePeriods(source: MediaSource, signal: AbortSignal): Promise
  * track before `muxPeriods` assembles them into a validated `<outputDir>/<safeTitle>.mkv`.
  */
 export async function downloadProtectedMedia(
-  config: Config, cdm: Cdm, source: MediaSource, outputDir: string, safeTitle: string,
-  signal: AbortSignal, onProgress: (progress: DownloadProgress) => void,
+  config: Config,
+  cdm: Cdm,
+  source: MediaSource,
+  outputDir: string,
+  safeTitle: string,
+  signal: AbortSignal,
+  onProgress: (progress: DownloadProgress) => void,
 ): Promise<string> {
   if (!source.drm) throw new Error('Protected media source is missing DRM license information');
   const license: License = source.drm;
   const periods = await resolvePeriods(source, signal);
-  return muxPeriods(config, source, periods, 'mkv', (track, workDir, label, trackSignal, onBytes) =>
-    obtainAndDecryptTrack(config, cdm, license, track, source.headers, workDir, label, trackSignal, onBytes), outputDir, safeTitle, signal, onProgress);
+  return muxPeriods(
+    config,
+    source,
+    periods,
+    'mkv',
+    (track, workDir, label, trackSignal, onBytes) =>
+      obtainAndDecryptTrack(config, cdm, license, track, source.headers, workDir, label, trackSignal, onBytes),
+    outputDir,
+    safeTitle,
+    signal,
+    onProgress,
+  );
 }
 
 /**
@@ -87,8 +120,15 @@ export async function downloadProtectedMedia(
  * resumed attempt can skip already-completed work.
  */
 export async function muxPeriods(
-  config: Config, source: MediaSource, periods: Period[], extension: 'mkv' | 'mp4', fetchTrack: TrackFetcher,
-  outputDir: string, safeTitle: string, signal: AbortSignal, onProgress: (progress: DownloadProgress) => void,
+  config: Config,
+  source: MediaSource,
+  periods: Period[],
+  extension: 'mkv' | 'mp4',
+  fetchTrack: TrackFetcher,
+  outputDir: string,
+  safeTitle: string,
+  signal: AbortSignal,
+  onProgress: (progress: DownloadProgress) => void,
 ): Promise<string> {
   if (!periods.length) throw new Error('Media source has no periods to download');
   if (periods.some(period => period.audio) && periods.some(period => !period.audio)) {
@@ -126,12 +166,20 @@ export async function muxPeriods(
 
   const inputs: MuxInput[] = [{ url: videoPath, kind: 'video' }];
   if (audioPath) inputs.push({ url: audioPath, kind: 'audio' });
-  for (const subtitle of source.subtitles ?? []) inputs.push({ url: subtitle.url, headers: subtitle.headers, kind: 'subtitle', language: subtitle.language });
+  for (const subtitle of source.subtitles ?? [])
+    inputs.push({ url: subtitle.url, headers: subtitle.headers, kind: 'subtitle', language: subtitle.language });
 
   // The mux only copies tracks already downloaded, so its own byte count is not added on top.
-  const finalPath = await muxToFile(config, inputs, join(outputDir, `${safeTitle}.${extension}`), signal, progress => {
-    onProgress({ bytes, progress: progress.progress });
-  }, totalDurationSeconds || undefined);
+  const finalPath = await muxToFile(
+    config,
+    inputs,
+    join(outputDir, `${safeTitle}.${extension}`),
+    signal,
+    progress => {
+      onProgress({ bytes, progress: progress.progress });
+    },
+    totalDurationSeconds || undefined,
+  );
   await rm(workDir, { recursive: true, force: true }).catch(() => {});
   return finalPath;
 }

@@ -63,8 +63,7 @@ export interface ImportEvent {
 }
 
 export type ImportDecision =
-  | { publish: Omit<Publication, 'status' | 'attempts' | 'error' | 'createdAt' | 'updatedAt'> }
-  | { ignore: string };
+  { publish: Omit<Publication, 'status' | 'attempts' | 'error' | 'createdAt' | 'updatedAt'> } | { ignore: string };
 
 /**
  * Whether an import is published: only files Bohemarr downloaded from an allowed provider, one
@@ -84,14 +83,24 @@ export function decideImport(event: ImportEvent, store: Store, vltava: VltavaCon
   const episodes = event.episodes ?? [];
   if (tv && episodes.length !== 1) return { ignore: `file holds ${episodes.length} episodes; only single episodes are published` };
   const episode = episodes[0];
-  return { publish: {
-    id: createHash('sha256').update(`${event.downloadId}\n${path}`).digest('hex').slice(0, 24),
-    kind: tv ? 'tv' : 'movie', path, release, providerName,
-    title: subject.title ?? release.series ?? release.title, year: subject.year || undefined,
-    tmdbId: subject.tmdbId, tvdbId: tv ? event.series!.tvdbId || undefined : undefined, imdbId: subject.imdbId || undefined,
-    season: episode?.seasonNumber, episode: episode?.episodeNumber, episodeTitle: episode?.title || undefined,
-    airDate: episode?.airDate || undefined,
-  } };
+  return {
+    publish: {
+      id: createHash('sha256').update(`${event.downloadId}\n${path}`).digest('hex').slice(0, 24),
+      kind: tv ? 'tv' : 'movie',
+      path,
+      release,
+      providerName,
+      title: subject.title ?? release.series ?? release.title,
+      year: subject.year || undefined,
+      tmdbId: subject.tmdbId,
+      tvdbId: tv ? event.series!.tvdbId || undefined : undefined,
+      imdbId: subject.imdbId || undefined,
+      season: episode?.seasonNumber,
+      episode: episode?.episodeNumber,
+      episodeTitle: episode?.title || undefined,
+      airDate: episode?.airDate || undefined,
+    },
+  };
 }
 
 const LANGUAGES: Record<string, string> = { CZ: 'čeština', SK: 'slovenština', EN: 'angličtina' };
@@ -99,8 +108,10 @@ const LANGUAGES: Record<string, string> = { CZ: 'čeština', SK: 'slovenština',
 /** The Markdown description of a Publication. */
 export function describe(publication: Publication): string {
   const { release } = publication;
-  const episode = publication.kind === 'tv' && publication.season !== undefined && publication.episode !== undefined
-    ? ` – S${String(publication.season).padStart(2, '0')}E${String(publication.episode).padStart(2, '0')}` : '';
+  const episode =
+    publication.kind === 'tv' && publication.season !== undefined && publication.episode !== undefined
+      ? ` – S${String(publication.season).padStart(2, '0')}E${String(publication.episode).padStart(2, '0')}`
+      : '';
   const year = publication.year ? ` (${publication.year})` : '';
   const lines = [`## ${publication.title}${year}${episode}${publication.episodeTitle ? ` – ${publication.episodeTitle}` : ''}`, ''];
   const facts = [
@@ -119,7 +130,13 @@ export function describe(publication: Publication): string {
 }
 
 function resolutionSlug(height: number): string {
-  for (const [minimum, slug] of [[2160, '2160p'], [1080, '1080p'], [720, '720p'], [576, '576p'], [480, '480p']] as const) {
+  for (const [minimum, slug] of [
+    [2160, '2160p'],
+    [1080, '1080p'],
+    [720, '720p'],
+    [576, '576p'],
+    [480, '480p'],
+  ] as const) {
     if (height >= minimum * 0.9) return slug;
   }
   return 'other';
@@ -148,11 +165,13 @@ export class Publisher {
 
   publication(id: string): Publication | undefined {
     const row = this.select.get(id);
-    return row ? JSON.parse(String(row.payload)) as Publication : undefined;
+    return row ? (JSON.parse(String(row.payload)) as Publication) : undefined;
   }
 
   publications(): Publication[] {
-    return this.selectAll.all().map(row => JSON.parse(String(row.payload)) as Publication)
+    return this.selectAll
+      .all()
+      .map(row => JSON.parse(String(row.payload)) as Publication)
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   }
 
@@ -205,7 +224,9 @@ export class Publisher {
       if (publication.status === 'Pending') {
         const uploaded = await this.upload(publication);
         this.save({ ...publication, ...uploaded, status: 'Uploaded', attempts: 0, retryAt: undefined, error: '' });
-        console.log(`Vltava: uploaded ${label} as torrent #${uploaded.torrentId ?? '?'}${uploaded.namingFixRequired ? '; the naming still needs a fix' : ''}`);
+        console.log(
+          `Vltava: uploaded ${label} as torrent #${uploaded.torrentId ?? '?'}${uploaded.namingFixRequired ? '; the naming still needs a fix' : ''}`,
+        );
       } else if (await this.seed(publication)) {
         this.save({ ...publication, status: 'Seeding', attempts: 0, retryAt: undefined, error: '' });
         console.log(`Vltava: seeding ${label}`);
@@ -219,7 +240,12 @@ export class Publisher {
       const attempts = publication.attempts + 1;
       const final = error instanceof PermanentError || attempts >= MAX_ATTEMPTS;
       const delay = Math.min(FIRST_RETRY_MS * 2 ** (attempts - 1), MAX_RETRY_MS);
-      this.save({ ...publication, attempts, error: message, ...(final ? { status: 'Failed', retryAt: undefined } : { retryAt: Date.now() + delay }) });
+      this.save({
+        ...publication,
+        attempts,
+        error: message,
+        ...(final ? { status: 'Failed', retryAt: undefined } : { retryAt: Date.now() + delay }),
+      });
       console.error(`Vltava: ${final ? 'gave up on' : `retrying in ${Math.round(delay / 60_000)} min`} ${label}: ${message}`);
     }
   }
@@ -233,11 +259,26 @@ export class Publisher {
     await mkdir(outDir, { recursive: true });
     const descriptionFile = join(this.vltava.outDir, `${publication.id}.md`);
     await writeFile(descriptionFile, describe(publication));
-    const height = (await probeMedia(this.config, publication.path, undefined, signal)).streams
-      .find(stream => stream.codec_type === 'video')?.height;
-    const args = ['upload', publication.path, '--category', publication.kind === 'tv' ? 'tv' : 'movies',
-      '--tmdb', String(publication.tmdbId), '--type', 'web-dl', '--out', outDir, '--link', this.vltava.link,
-      '--description-file', descriptionFile, '--yes'];
+    const height = (await probeMedia(this.config, publication.path, undefined, signal)).streams.find(
+      stream => stream.codec_type === 'video',
+    )?.height;
+    const args = [
+      'upload',
+      publication.path,
+      '--category',
+      publication.kind === 'tv' ? 'tv' : 'movies',
+      '--tmdb',
+      String(publication.tmdbId),
+      '--type',
+      'web-dl',
+      '--out',
+      outDir,
+      '--link',
+      this.vltava.link,
+      '--description-file',
+      descriptionFile,
+      '--yes',
+    ];
     if (height) args.push('--resolution', resolutionSlug(height));
     if (publication.kind === 'tv') args.push('--season', String(publication.season), '--episode', String(publication.episode));
     if (this.vltava.group) args.push('--group', this.vltava.group);
@@ -245,8 +286,11 @@ export class Publisher {
     let stdout: string;
     let namingFixRequired = false;
     try {
-      stdout = await runProcess(this.vltava.cli, args, signal, undefined,
-        { ...process.env, VLTAVA_URL: this.vltava.url, VLTAVA_TOKEN: this.vltava.token });
+      stdout = await runProcess(this.vltava.cli, args, signal, undefined, {
+        ...process.env,
+        VLTAVA_URL: this.vltava.url,
+        VLTAVA_TOKEN: this.vltava.token,
+      });
     } catch (error) {
       // Exit code 2: uploaded, but Vltava still reports a naming problem.
       if (!(error instanceof ProcessExitError) || error.exitCode !== 2) {
@@ -293,11 +337,13 @@ export class Publisher {
   private async seeder(path: string, init: RequestInit = {}): Promise<string> {
     const { url, userpass } = this.vltava.seeder;
     const response = await fetch(`${url}/${path}`, {
-      ...init, signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(10 * 60_000)]),
+      ...init,
+      signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(10 * 60_000)]),
       headers: userpass ? { Authorization: `Basic ${Buffer.from(userpass).toString('base64')}` } : {},
     });
     const text = await response.text();
-    if (!response.ok) throw new Error(`rqbit ${init.method ?? 'GET'} /${path.split('?')[0]}: HTTP ${response.status} ${text.trim().slice(0, 300)}`);
+    if (!response.ok)
+      throw new Error(`rqbit ${init.method ?? 'GET'} /${path.split('?')[0]}: HTTP ${response.status} ${text.trim().slice(0, 300)}`);
     return text;
   }
 

@@ -29,14 +29,30 @@ const mp4decryptPath = resolveMp4decrypt();
 
 function baseConfig(directory: string): Config {
   return {
-    host: '127.0.0.1', port: 0, apiKey: 'test', publicUrl: 'http://127.0.0.1', dataDir: directory, downloadsDir: directory,
-    concurrency: 1, requestRate: 100, ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: mp4decryptPath ?? 'mp4decrypt', wvApiUrl: 'http://unused.invalid',
-    categories: [], providers: {}, arrs: [],
+    host: '127.0.0.1',
+    port: 0,
+    apiKey: 'test',
+    publicUrl: 'http://127.0.0.1',
+    dataDir: directory,
+    downloadsDir: directory,
+    concurrency: 1,
+    requestRate: 100,
+    ffmpeg: 'ffmpeg',
+    ffprobe: 'ffprobe',
+    mp4decrypt: mp4decryptPath ?? 'mp4decrypt',
+    wvApiUrl: 'http://unused.invalid',
+    categories: [],
+    providers: {},
+    arrs: [],
   };
 }
 
 /** A top-level ISO-BMFF box (`ftyp`, `moov`, `moof`, `mdat`, ...) found by a flat, non-recursive scan. */
-interface TopBox { type: string; start: number; end: number; }
+interface TopBox {
+  type: string;
+  start: number;
+  end: number;
+}
 
 function scanTopBoxes(buffer: Buffer): TopBox[] {
   const boxes: TopBox[] = [];
@@ -52,7 +68,10 @@ function scanTopBoxes(buffer: Buffer): TopBox[] {
   return boxes;
 }
 
-interface FragmentLayout { initRange: { start: number; end: number }; segmentRanges: Array<{ start: number; end: number }>; }
+interface FragmentLayout {
+  initRange: { start: number; end: number };
+  segmentRanges: Array<{ start: number; end: number }>;
+}
 
 /** Splits an `empty_moov` fragmented MP4 (as produced by ffmpeg's `+frag_keyframe+empty_moov+default_base_moof`) into an `ftyp+moov` init byte range and one contiguous `moof+mdat` byte range per fragment, ignoring any trailing index (`mfra`) box. */
 function splitFragmentedMp4(buffer: Buffer): FragmentLayout {
@@ -74,40 +93,72 @@ function splitFragmentedMp4(buffer: Buffer): FragmentLayout {
 
 /** Generates a fragmented, CENC-encrypted (`cenc-aes-ctr`) single-track (video-only or audio-only) MP4 via ffmpeg. */
 async function generateEncryptedTrack(kind: 'video' | 'audio', kid: string, key: string, outputPath: string): Promise<void> {
-  const source = kind === 'video'
-    ? ['-f', 'lavfi', '-i', 'testsrc=size=64x64:rate=5:duration=1']
-    : ['-f', 'lavfi', '-i', 'sine=frequency=1000:duration=1'];
-  const codec = kind === 'video'
-    ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '5', '-an']
-    : ['-c:a', 'aac', '-vn'];
+  const source =
+    kind === 'video'
+      ? ['-f', 'lavfi', '-i', 'testsrc=size=64x64:rate=5:duration=1']
+      : ['-f', 'lavfi', '-i', 'sine=frequency=1000:duration=1'];
+  const codec =
+    kind === 'video' ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '5', '-an'] : ['-c:a', 'aac', '-vn'];
   await execFileAsync('ffmpeg', [
-    '-y', '-hide_banner', '-loglevel', 'error', ...source, ...codec,
-    '-encryption_scheme', 'cenc-aes-ctr', '-encryption_key', key, '-encryption_kid', kid,
-    '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-frag_duration', '500000',
+    '-y',
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    ...source,
+    ...codec,
+    '-encryption_scheme',
+    'cenc-aes-ctr',
+    '-encryption_key',
+    key,
+    '-encryption_kid',
+    kid,
+    '-movflags',
+    '+frag_keyframe+empty_moov+default_base_moof',
+    '-frag_duration',
+    '500000',
     outputPath,
   ]);
 }
 
 /** Generates the unencrypted counterpart with identical encode settings, used as the frame-accuracy reference. */
 async function generateClearTrack(kind: 'video' | 'audio', outputPath: string): Promise<void> {
-  const source = kind === 'video'
-    ? ['-f', 'lavfi', '-i', 'testsrc=size=64x64:rate=5:duration=1']
-    : ['-f', 'lavfi', '-i', 'sine=frequency=1000:duration=1'];
-  const codec = kind === 'video'
-    ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '5', '-an']
-    : ['-c:a', 'aac', '-vn'];
+  const source =
+    kind === 'video'
+      ? ['-f', 'lavfi', '-i', 'testsrc=size=64x64:rate=5:duration=1']
+      : ['-f', 'lavfi', '-i', 'sine=frequency=1000:duration=1'];
+  const codec =
+    kind === 'video' ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-g', '5', '-an'] : ['-c:a', 'aac', '-vn'];
   await execFileAsync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', ...source, ...codec, outputPath]);
 }
 
 async function framemd5(path: string, mapArg: string): Promise<string> {
-  const { stdout } = await execFileAsync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', path, '-map', mapArg, '-f', 'framemd5', '-']);
+  const { stdout } = await execFileAsync('ffmpeg', [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-i',
+    path,
+    '-map',
+    mapArg,
+    '-f',
+    'framemd5',
+    '-',
+  ]);
   return stdout;
 }
 
 /** Audio decode of a fragmented, edit-list-less CENC track is legitimately a fixed encoder-priming sample count off from a plain re-encode of the same source, so audio is verified by codec/duration (not exact per-frame PCM hashes) once video framemd5 has already proven the CENC decrypt round-trip is byte-exact. */
 async function probeAudioCodecAndDuration(path: string): Promise<{ codec: string; duration: number }> {
   const { stdout } = await execFileAsync('ffprobe', [
-    '-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=codec_name:format=duration', '-of', 'json', path,
+    '-v',
+    'error',
+    '-select_streams',
+    'a:0',
+    '-show_entries',
+    'stream=codec_name:format=duration',
+    '-of',
+    'json',
+    path,
   ]);
   const parsed = JSON.parse(stdout) as { streams?: Array<{ codec_name?: string }>; format?: { duration?: string } };
   const codec = parsed.streams?.[0]?.codec_name;
@@ -127,7 +178,10 @@ function fakePssh(): string {
   return box.toString('base64');
 }
 
-interface FakeLicenseServerRecord { headers: Record<string, string | string[] | undefined>; body: Buffer; }
+interface FakeLicenseServerRecord {
+  headers: Record<string, string | string[] | undefined>;
+  body: Buffer;
+}
 
 /** A local HTTP server standing in for a provider's Widevine license endpoint: records every request it receives and replies with a JSON-encoded content-key list the paired fake CDM knows how to parse. */
 function startFakeLicenseServer(keys: ContentKey[]): { server: Server; url: string; requests: FakeLicenseServerRecord[] } {
@@ -162,9 +216,17 @@ function serveRangedBuffers(buffers: Record<string, Buffer>): Server {
   return createServer((request, response) => {
     const path = (request.url ?? '').replace(/^\//, '');
     const buffer = buffers[path];
-    if (!buffer) { response.writeHead(404); response.end(); return; }
+    if (!buffer) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
     const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range ?? '');
-    if (!range) { response.writeHead(200, { 'Content-Length': buffer.length }); response.end(buffer); return; }
+    if (!range) {
+      response.writeHead(200, { 'Content-Length': buffer.length });
+      response.end(buffer);
+      return;
+    }
     const start = Number(range[1]);
     const end = Number(range[2]);
     const slice = buffer.subarray(start, end + 1);
@@ -208,8 +270,7 @@ function dashManifest(videoUrl: string, videoLayout: FragmentLayout, audioUrl: s
 }
 
 function hlsVariantPlaylist(fileUrl: string, layout: FragmentLayout, keyLine: string): string {
-  const segments = layout.segmentRanges.map(r =>
-    `#EXT-X-BYTERANGE:${r.end - r.start + 1}@${r.start}\n#EXTINF:0.5,\n${fileUrl}`).join('\n');
+  const segments = layout.segmentRanges.map(r => `#EXT-X-BYTERANGE:${r.end - r.start + 1}@${r.start}\n#EXTINF:0.5,\n${fileUrl}`).join('\n');
   return `#EXTM3U
 #EXT-X-VERSION:7
 #EXT-X-TARGETDURATION:1
@@ -232,8 +293,11 @@ const REAL_KEY = '00112233445566778899aabbccddeeff';
 const DECOY_KID = 'ffeeddccbbaa99887766554433221100';
 const DECOY_KEY = 'ffeeddccbbaa99887766554433221100';
 
-test('a DASH protected source decrypts, muxes, and its decoded video/audio match the clear source (known-KID key selection)', async (t) => {
-  if (!mp4decryptPath) { t.skip('mp4decrypt not installed'); return; }
+test('a DASH protected source decrypts, muxes, and its decoded video/audio match the clear source (known-KID key selection)', async t => {
+  if (!mp4decryptPath) {
+    t.skip('mp4decrypt not installed');
+    return;
+  }
 
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-protected-dash-'));
   const outputDir = join(directory.path, 'out');
@@ -258,7 +322,10 @@ test('a DASH protected source decrypts, muxes, and its decoded video/audio match
   const fileBase = await listen(fileServer);
 
   // Extra decoy key ordered first: the module must pick the one matching the manifest's default_KID, not just the first key.
-  const licenseKeys: ContentKey[] = [{ kid: DECOY_KID, key: DECOY_KEY }, { kid: REAL_KID, key: REAL_KEY }];
+  const licenseKeys: ContentKey[] = [
+    { kid: DECOY_KID, key: DECOY_KEY },
+    { kid: REAL_KID, key: REAL_KEY },
+  ];
   const { server: licenseServerHandle, requests } = startFakeLicenseServer(licenseKeys);
   const licenseBase = await listen(licenseServerHandle);
 
@@ -282,7 +349,10 @@ test('a DASH protected source decrypts, muxes, and its decoded video/audio match
     assert.equal(await framemd5(finalPath, '0:v:0'), await framemd5(videoClear, '0:v:0'));
     const [actualAudio, expectedAudio] = await Promise.all([probeAudioCodecAndDuration(finalPath), probeAudioCodecAndDuration(audioClear)]);
     assert.equal(actualAudio.codec, expectedAudio.codec);
-    assert.ok(Math.abs(actualAudio.duration - expectedAudio.duration) < 0.2, `audio duration ${actualAudio.duration} too far from ${expectedAudio.duration}`);
+    assert.ok(
+      Math.abs(actualAudio.duration - expectedAudio.duration) < 0.2,
+      `audio duration ${actualAudio.duration} too far from ${expectedAudio.duration}`,
+    );
 
     // The provider license exchange must receive exactly the CDM's own challenge bytes plus the configured headers.
     assert.ok(requests.length >= 2, 'expected one license exchange per track');
@@ -298,8 +368,11 @@ test('a DASH protected source decrypts, muxes, and its decoded video/audio match
   }
 });
 
-test('an HLS protected source decrypts, muxes, and its decoded video/audio match the clear source (trial-decode key selection)', async (t) => {
-  if (!mp4decryptPath) { t.skip('mp4decrypt not installed'); return; }
+test('an HLS protected source decrypts, muxes, and its decoded video/audio match the clear source (trial-decode key selection)', async t => {
+  if (!mp4decryptPath) {
+    t.skip('mp4decrypt not installed');
+    return;
+  }
 
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-protected-hls-'));
   const outputDir = join(directory.path, 'out');
@@ -327,7 +400,10 @@ test('an HLS protected source decrypts, muxes, and its decoded video/audio match
   const masterPlaylist = hlsMasterPlaylist();
 
   // Decoy listed first so the module must actually reject it via trial-decode before finding the real key.
-  const licenseKeys: ContentKey[] = [{ kid: '1', key: DECOY_KEY }, { kid: '1', key: REAL_KEY }];
+  const licenseKeys: ContentKey[] = [
+    { kid: '1', key: DECOY_KEY },
+    { kid: '1', key: REAL_KEY },
+  ];
   const { server: licenseServerHandle, requests } = startFakeLicenseServer(licenseKeys);
   const licenseBase = await listen(licenseServerHandle);
 
@@ -339,14 +415,22 @@ test('an HLS protected source decrypts, muxes, and its decoded video/audio match
     else if (path === '/video.mp4' || path === '/audio.mp4') {
       const buffer = path === '/video.mp4' ? videoBuffer : audioBuffer;
       const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers.range ?? '');
-      if (!range) { response.writeHead(200, { 'Content-Length': buffer.length }); response.end(buffer); return; }
+      if (!range) {
+        response.writeHead(200, { 'Content-Length': buffer.length });
+        response.end(buffer);
+        return;
+      }
       const start = Number(range[1]);
       const end = Number(range[2]);
       const slice = buffer.subarray(start, end + 1);
       response.writeHead(206, { 'Content-Length': slice.length, 'Content-Range': `bytes ${start}-${end}/${buffer.length}` });
       response.end(slice);
       return;
-    } else { response.writeHead(404); response.end(); return; }
+    } else {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
   });
   const playlistBase = await listen(playlistServer);
 
@@ -363,7 +447,10 @@ test('an HLS protected source decrypts, muxes, and its decoded video/audio match
     assert.equal(await framemd5(finalPath, '0:v:0'), await framemd5(videoClear, '0:v:0'));
     const [actualAudio, expectedAudio] = await Promise.all([probeAudioCodecAndDuration(finalPath), probeAudioCodecAndDuration(audioClear)]);
     assert.equal(actualAudio.codec, expectedAudio.codec);
-    assert.ok(Math.abs(actualAudio.duration - expectedAudio.duration) < 0.2, `audio duration ${actualAudio.duration} too far from ${expectedAudio.duration}`);
+    assert.ok(
+      Math.abs(actualAudio.duration - expectedAudio.duration) < 0.2,
+      `audio duration ${actualAudio.duration} too far from ${expectedAudio.duration}`,
+    );
 
     assert.ok(requests.length >= 2, 'expected one license exchange per track');
     for (const recorded of requests) assert.equal(recorded.headers['x-test-header'], 'xyz789');

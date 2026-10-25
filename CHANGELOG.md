@@ -114,7 +114,7 @@
 
 ### Love Island interactive-search diagnosis
 
-- Found Stream.cz's broad title fallback expanding unrelated programmes such as *Mazlové* (971 episodes), including repeated appearances of the same programme. The existing programme cache did not cache episode listings.
+- Found Stream.cz's broad title fallback expanding unrelated programmes such as _Mazlové_ (971 episodes), including repeated appearances of the same programme. The existing programme cache did not cache episode listings.
 - Persist complete, non-empty Stream.cz episode listings in `stream_episode_cache` for five minutes, sharing a native programme's listing across requested episodes and repeated appearances without changing title matching or provider context. Playback stays live. First lookups and expired snapshots still scan upstream; newly published episodes can lag by five minutes.
 - Guard cancellation, partial consumption and pagination completeness before publishing an episode snapshot. All 127 tests passed in Docker; type checking and build passed.
 - Verified the same Love Island S04E45/S04E48 releases remained accepted by Sonarr at 1080p. A warm direct Bohemarr request took 1.19 seconds; an expired-cache request took 4.99 seconds.
@@ -135,13 +135,13 @@ The catalogue matching pass is a completed deployment operation, **not a committ
 - Stored 4,716 verified TMDB relations: 4,225 movie relations and 491 TV relations, representing 3,716 distinct TMDB movies and 467 distinct TMDB TV series.
 - Recorded all entries, including unmatched entries and their reasons, in the production SQLite table `catalogue_tmdb_mappings`.
 
-| Source | Verified TMDB relations | Without a verified relation |
-| --- | ---: | ---: |
-| Prima | 1,945 | 2,771 |
-| Oneplay | 1,775 | 688 |
-| Česká televize | 996 | 7,314 |
-| Stream.cz | 0 | 1,478 |
-| **Total** | **4,716** | **12,251** |
+| Source         | Verified TMDB relations | Without a verified relation |
+| -------------- | ----------------------: | --------------------------: |
+| Prima          |                   1,945 |                       2,771 |
+| Oneplay        |                   1,775 |                         688 |
+| Česká televize |                     996 |                       7,314 |
+| Stream.cz      |                       0 |                       1,478 |
+| **Total**      |               **4,716** |                  **12,251** |
 
 - Added 487 verified series bindings to the existing Sonarr matching table; four bindings already existed and no existing binding was reassigned.
 - Accepted additional localized names from TMDB movie metadata and verified, typed TMDB TV pages. Names were not guessed or translated automatically.
@@ -158,7 +158,7 @@ The catalogue matching pass is a completed deployment operation, **not a committ
 ### Verification and limitations
 
 - Type checking and build passed for the archive-search changes; all 105 tests passed in Docker with the media tools available.
-- Sonarr returned `Extractors S01E01 (CZ)[WEB-DL][1080p]` without rejection. A newly prefilled bilingual binding returned `The Affair S01E01 (CZ)[WEB-DL][1080p]` for the Czech programme *Aféra* through the actual Newznab service.
+- Sonarr returned `Extractors S01E01 (CZ)[WEB-DL][1080p]` without rejection. A newly prefilled bilingual binding returned `The Affair S01E01 (CZ)[WEB-DL][1080p]` for the Czech programme _Aféra_ through the actual Newznab service.
 - Revalidated all 4,716 installed relations and checked SQLite integrity successfully.
 - The account-enabled Sonarr connection test passed with five-result pages.
 - This pass did **not** pair every catalogue entry. Missing or conflicting identity evidence remains unresolved rather than forced into a match.

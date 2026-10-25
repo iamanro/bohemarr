@@ -1,16 +1,31 @@
-# Dependencies and build output
-/node_modules/
+# Dependencies; the service and the web UI each install their own
+node_modules/
 
-# Local runtime state: private configuration, API key, database, downloads
+# Build output
+/web/dist/
+*.tsbuildinfo
+# An old tsc build; nothing writes it any more
+/dist/
+
+# Local runtime state: the API key, the database, downloads
 /data/
 /downloads/
 
-# Local deployment settings (may contain the API key or host paths)
+# Local deployment settings, which may hold passwords, API keys or host paths (see README)
 .env
 .env.*
-/compose.override.yaml
-
-*.log
-.DS_Store
 !/.env.example
-/web/dist/
+/compose.override.yaml
+/config.json
+/secrets/
+
+# Claude Code: per-session worktrees and personal settings
+/.claude/worktrees/
+/.claude/settings.local.json
+
+# Logs, editors, operating systems
+*.log
+*.swp
+.idea/
+.vscode/
+.DS_Store

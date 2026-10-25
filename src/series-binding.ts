@@ -52,14 +52,21 @@ export class SeriesBindings {
       );
       UPDATE series_mappings SET payload = json_remove(json_set(payload, '$.program', payload -> '$.source'), '$.source')
         WHERE json_type(payload, '$.source') IS NOT NULL;`);
-    if (!db.prepare('PRAGMA table_info(series_mappings)').all().some(column => column.name === 'tmdb_id')) {
+    if (
+      !db
+        .prepare('PRAGMA table_info(series_mappings)')
+        .all()
+        .some(column => column.name === 'tmdb_id')
+    ) {
       db.exec('ALTER TABLE series_mappings ADD COLUMN tmdb_id INTEGER');
     }
     db.exec(`CREATE INDEX IF NOT EXISTS series_mappings_tmdb ON series_mappings(tmdb_id);
       UPDATE series_mappings SET tmdb_id = json_extract(payload, '$.identity.tmdbId')
         WHERE tmdb_id IS NULL AND json_type(payload, '$.identity.tmdbId') = 'integer';`);
     this.selectIdentityByTvdbId = db.prepare('SELECT payload FROM series_mappings WHERE tvdb_id=? LIMIT 1');
-    this.insertBinding = db.prepare('INSERT INTO series_mappings (provider, source_id, tvdb_id, payload, tmdb_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING');
+    this.insertBinding = db.prepare(
+      'INSERT INTO series_mappings (provider, source_id, tvdb_id, payload, tmdb_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+    );
     this.selectBindingByIdentity = db.prepare('SELECT payload FROM series_mappings WHERE provider=? AND tvdb_id=?');
     this.selectBindingByProgram = db.prepare('SELECT payload FROM series_mappings WHERE provider=? AND source_id=?');
     db.exec(`CREATE TABLE IF NOT EXISTS series_release_cache (
@@ -69,7 +76,8 @@ export class SeriesBindings {
         PRIMARY KEY(provider, program_id, tvdb_id, season, episode, offset, limit_count)
       );`);
     this.selectEpisodeCache = db.prepare(
-      'SELECT created_at, payload FROM series_release_cache WHERE provider=? AND program_id=? AND tvdb_id=? AND season=? AND episode=? AND offset=? AND limit_count=?');
+      'SELECT created_at, payload FROM series_release_cache WHERE provider=? AND program_id=? AND tvdb_id=? AND season=? AND episode=? AND offset=? AND limit_count=?',
+    );
     this.upsertEpisodeCache = db.prepare(`INSERT INTO series_release_cache
         (provider, program_id, tvdb_id, season, episode, offset, limit_count, created_at, payload)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -99,37 +107,69 @@ export class SeriesBindings {
     if (identity && provider.seriesCandidates) {
       const existing = this.byIdentity(provider.id, identity.tvdbId);
       if (!existing) signal.throwIfAborted(); // about to create a new binding: never bind past an abort
-      const binding = existing ?? await this.bind(provider, identity, signal);
+      const binding = existing ?? (await this.bind(provider, identity, signal));
       if (typeof binding === 'string') return { releases: [], unbound: binding };
       const programId = binding.program.id;
-      const exactEpisode = query.kind === 'tv' && typeof query.season === 'number' && Number.isInteger(query.season)
-        && typeof query.episode === 'number' && Number.isInteger(query.episode) && query.airDate === undefined
-        ? { season: query.season, episode: query.episode } : undefined;
+      const exactEpisode =
+        query.kind === 'tv' &&
+        typeof query.season === 'number' &&
+        Number.isInteger(query.season) &&
+        typeof query.episode === 'number' &&
+        Number.isInteger(query.episode) &&
+        query.airDate === undefined
+          ? { season: query.season, episode: query.episode }
+          : undefined;
       if (exactEpisode) {
-        const cached = this.cachedEpisode(provider.id, programId, identity.tvdbId, exactEpisode.season, exactEpisode.episode, query.offset, query.limit);
+        const cached = this.cachedEpisode(
+          provider.id,
+          programId,
+          identity.tvdbId,
+          exactEpisode.season,
+          exactEpisode.episode,
+          query.offset,
+          query.limit,
+        );
         if (cached) {
           signal.throwIfAborted(); // never hand back a cached response past an abort
           return { releases: cached };
         }
       }
       const releases = (await searchCatalogue(provider, { ...query, q: '', programId }, signal))
-        .filter(release => release.kind === 'tv' && release.programId === programId
-          && (release.tvdbId === undefined || release.tvdbId === identity.tvdbId)).map(release => stamp(release, binding.identity));
+        .filter(
+          release =>
+            release.kind === 'tv' &&
+            release.programId === programId &&
+            (release.tvdbId === undefined || release.tvdbId === identity.tvdbId),
+        )
+        .map(release => stamp(release, binding.identity));
       if (exactEpisode && releases.length > 0) {
         // The catalogue promise can resolve after the caller aborted; never write a cache snapshot past that point.
         signal.throwIfAborted();
-        this.cacheEpisode(provider.id, programId, identity.tvdbId, exactEpisode.season, exactEpisode.episode, query.offset, query.limit, releases);
+        this.cacheEpisode(
+          provider.id,
+          programId,
+          identity.tvdbId,
+          exactEpisode.season,
+          exactEpisode.episode,
+          query.offset,
+          query.limit,
+          releases,
+        );
       }
       return { releases };
     }
 
     // A search by a known series expands only Programs whose name is that series', not every title containing its words.
     const isCandidate = identity && ((title: string) => isSeriesCandidate(title, identity));
-    const releases = (await searchCatalogue(provider, identity ? { ...query, q: identity.title } : query, signal, isCandidate)).map(release => {
-      const binding = release.kind === 'tv' && release.programId ? this.byProgram(provider.id, release.programId) : undefined;
-      return binding ? stamp(release, binding.identity) : release;
-    });
-    return { releases: identity ? releases.filter(release => release.tvdbId === undefined || release.tvdbId === identity.tvdbId) : releases };
+    const releases = (await searchCatalogue(provider, identity ? { ...query, q: identity.title } : query, signal, isCandidate)).map(
+      release => {
+        const binding = release.kind === 'tv' && release.programId ? this.byProgram(provider.id, release.programId) : undefined;
+        return binding ? stamp(release, binding.identity) : release;
+      },
+    );
+    return {
+      releases: identity ? releases.filter(release => release.tvdbId === undefined || release.tvdbId === identity.tvdbId) : releases,
+    };
   }
 
   /**
@@ -164,7 +204,13 @@ export class SeriesBindings {
 
   /** A fresh cached exact episode expansion, or `undefined` on a miss or an expired entry. */
   private cachedEpisode(
-    provider: string, programId: string, tvdbId: number, season: number, episode: number, offset: number, limit: number,
+    provider: string,
+    programId: string,
+    tvdbId: number,
+    season: number,
+    episode: number,
+    offset: number,
+    limit: number,
   ): Release[] | undefined {
     const row = this.selectEpisodeCache.get(provider, programId, tvdbId, season, episode, offset, limit);
     if (!row || this.now() - Number(row.created_at) >= SERIES_RELEASE_CACHE_TTL_MS) return undefined;
@@ -173,7 +219,14 @@ export class SeriesBindings {
 
   /** Stores a successful, non-empty exact episode expansion; called only after `searchCatalogue` resolves. */
   private cacheEpisode(
-    provider: string, programId: string, tvdbId: number, season: number, episode: number, offset: number, limit: number, releases: Release[],
+    provider: string,
+    programId: string,
+    tvdbId: number,
+    season: number,
+    episode: number,
+    offset: number,
+    limit: number,
+    releases: Release[],
   ): void {
     this.deleteExpiredEpisodeCache.run(this.now() - SERIES_RELEASE_CACHE_TTL_MS);
     this.upsertEpisodeCache.run(provider, programId, tvdbId, season, episode, offset, limit, this.now(), JSON.stringify(releases));

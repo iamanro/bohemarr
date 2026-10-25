@@ -19,7 +19,9 @@ const server = await createServer(config, store, queue, providers, publisher);
 const arrSetup = new AbortController();
 const cleanup = new AsyncDisposableStack();
 cleanup.use(store);
-cleanup.defer(async () => { await Promise.all([...providers.values()].map(provider => provider.close?.())); });
+cleanup.defer(async () => {
+  await Promise.all([...providers.values()].map(provider => provider.close?.()));
+});
 cleanup.use(queue);
 if (publisher) cleanup.defer(() => publisher.close());
 cleanup.use(server);
@@ -27,8 +29,18 @@ cleanup.defer(() => arrSetup.abort());
 async function shutdown(): Promise<void> {
   await cleanup.disposeAsync();
 }
-process.once('SIGTERM', () => { void shutdown().catch(error => { console.error(error); process.exitCode = 1; }); });
-process.once('SIGINT', () => { void shutdown().catch(error => { console.error(error); process.exitCode = 1; }); });
+process.once('SIGTERM', () => {
+  void shutdown().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+});
+process.once('SIGINT', () => {
+  void shutdown().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+});
 try {
   await server.listen({ host: config.host, port: config.port });
   queue.wake();

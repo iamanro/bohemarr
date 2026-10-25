@@ -13,11 +13,19 @@ import type { Config, Provider, Release } from '../types.ts';
 /** `database` is the service database; providers that keep local state (the Prima+ index, the Stream.cz discovery cache) own tables in it. */
 export function createProviders(config: Config, database: DatabaseSync): Map<string, Provider> {
   const providers = new Map<string, Provider>();
-  for (const factory of [createPrimaProviders, createOneplayProviders, createCzechPublicProviders,
-    createNovaMarkizaProviders, createPublicSiteProviders, createJojSledovaniProviders, createFileHostProviders]) {
+  for (const factory of [
+    createPrimaProviders,
+    createOneplayProviders,
+    createCzechPublicProviders,
+    createNovaMarkizaProviders,
+    createPublicSiteProviders,
+    createJojSledovaniProviders,
+    createFileHostProviders,
+  ]) {
     for (const provider of factory(config.providers, database)) {
       if (providers.has(provider.id)) throw new Error(`Duplicate provider ID: ${provider.id}`);
-      if (!(PROVIDER_IDS as readonly string[]).includes(provider.id)) throw new Error(`Provider ID missing from PROVIDER_IDS: ${provider.id}`);
+      if (!(PROVIDER_IDS as readonly string[]).includes(provider.id))
+        throw new Error(`Provider ID missing from PROVIDER_IDS: ${provider.id}`);
       const entries = catalogueEntries(provider.id, config.providers[provider.id]?.catalog);
       providers.set(provider.id, entries.length ? { ...provider, entries } : provider);
     }
@@ -40,7 +48,11 @@ function catalogueEntries(providerId: string, catalog: unknown): Release[] {
     if (typeof entry.title !== 'string' || !entry.title.trim()) throw new Error(`${where}.title is required`);
     if (entry.kind !== 'tv' && entry.kind !== 'movie') throw new Error(`${where}.kind must be "tv" or "movie"`);
     let url: URL;
-    try { url = new URL(String(entry.url)); } catch { throw new Error(`${where}.url must be an absolute URL`); }
+    try {
+      url = new URL(String(entry.url));
+    } catch {
+      throw new Error(`${where}.url must be an absolute URL`);
+    }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`${where}.url must be http(s)`);
     return { ...entry, id: releaseId(providerId, url.href), provider: providerId, title: entry.title, url: url.href, kind: entry.kind };
   });

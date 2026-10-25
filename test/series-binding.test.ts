@@ -18,22 +18,37 @@ const query: SearchQuery = { q: '', kind: 'tv', limit: 50, offset: 0 };
 
 function episode(program: string, overrides: Partial<Release> = {}): Release {
   return {
-    id: `${program}-ep1`, provider: 'oneplay', title: 'Show Name - S01E01', series: 'Show Name (provider title)',
-    kind: 'tv', season: 1, episode: 1, url: `https://oneplay.test/${program}/stream.mp4`, programId: program, ...overrides,
-  };
-}
-
-/** A metadata-backed provider whose Programs each hold one episode. */
-function provider(candidates: (wanted: SeriesIdentity) => ProgramMetadata[] | Promise<ProgramMetadata[]>, overrides: Partial<Provider> = {}): Provider {
-  return {
-    id: 'oneplay', name: 'Oneplay', resolve: async () => [],
-    seriesCandidates: async wanted => candidates(wanted),
-    catalogue: fakeCatalogue(bound => bound ? [episode(bound)] : [episode(correct.id), episode(foreign.id)]),
+    id: `${program}-ep1`,
+    provider: 'oneplay',
+    title: 'Show Name - S01E01',
+    series: 'Show Name (provider title)',
+    kind: 'tv',
+    season: 1,
+    episode: 1,
+    url: `https://oneplay.test/${program}/stream.mp4`,
+    programId: program,
     ...overrides,
   };
 }
 
-const failingLookup: IdentityLookup = async () => { throw new Error('TVDB lookup must not be needed'); };
+/** A metadata-backed provider whose Programs each hold one episode. */
+function provider(
+  candidates: (wanted: SeriesIdentity) => ProgramMetadata[] | Promise<ProgramMetadata[]>,
+  overrides: Partial<Provider> = {},
+): Provider {
+  return {
+    id: 'oneplay',
+    name: 'Oneplay',
+    resolve: async () => [],
+    seriesCandidates: async wanted => candidates(wanted),
+    catalogue: fakeCatalogue(bound => (bound ? [episode(bound)] : [episode(correct.id), episode(foreign.id)])),
+    ...overrides,
+  };
+}
+
+const failingLookup: IdentityLookup = async () => {
+  throw new Error('TVDB lookup must not be needed');
+};
 
 /** A query shape eligible for the exact-episode cache: `kind: 'tv'`, integer season/episode, no `airDate`. */
 const episodeQuery: SearchQuery = { q: '', kind: 'tv', season: 1, episode: 1, limit: 50, offset: 0 };
@@ -42,7 +57,13 @@ const episodeQuery: SearchQuery = { q: '', kind: 'tv', season: 1, episode: 1, li
 function countingCatalogue(base: Catalogue): { catalogue: Catalogue; calls: () => number } {
   let calls = 0;
   return {
-    catalogue: { ...base, async *releases(program, hint, releaseSignal) { calls++; yield* base.releases(program, hint, releaseSignal); } },
+    catalogue: {
+      ...base,
+      async *releases(program, hint, releaseSignal) {
+        calls++;
+        yield* base.releases(program, hint, releaseSignal);
+      },
+    },
     calls: () => calls,
   };
 }
@@ -55,11 +76,17 @@ async function withStore(run: (store: Store) => Promise<void>): Promise<void> {
 test('binds the Program whose own metadata agrees and expands only it, stamped with the canonical identity', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const { releases, unbound } = await bindings.search(provider(() => [foreign, correct]), query, identity, signal);
+    const { releases, unbound } = await bindings.search(
+      provider(() => [foreign, correct]),
+      query,
+      identity,
+      signal,
+    );
     assert.equal(unbound, undefined);
-    assert.deepEqual(releases.map(r => [r.id, r.series, r.tvdbId, r.url]), [
-      ['src-correct-ep1', 'Show Name', 12345, 'https://oneplay.test/src-correct/stream.mp4'],
-    ]);
+    assert.deepEqual(
+      releases.map(r => [r.id, r.series, r.tvdbId, r.url]),
+      [['src-correct-ep1', 'Show Name', 12345, 'https://oneplay.test/src-correct/stream.mp4']],
+    );
   });
 });
 
@@ -67,32 +94,76 @@ test('an unbound identity returns nothing and says why, and stores no binding', 
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
     const twin = { ...correct, id: 'src-twin' };
-    assert.deepEqual(await bindings.search(provider(() => [correct, twin]), query, identity, signal), { releases: [], unbound: 'ambiguous' });
+    assert.deepEqual(
+      await bindings.search(
+        provider(() => [correct, twin]),
+        query,
+        identity,
+        signal,
+      ),
+      { releases: [], unbound: 'ambiguous' },
+    );
     // Nothing was stored: a later, unambiguous listing still binds.
-    const { releases } = await bindings.search(provider(() => [correct]), query, identity, signal);
-    assert.deepEqual(releases.map(r => r.id), ['src-correct-ep1']);
+    const { releases } = await bindings.search(
+      provider(() => [correct]),
+      query,
+      identity,
+      signal,
+    );
+    assert.deepEqual(
+      releases.map(r => r.id),
+      ['src-correct-ep1'],
+    );
   });
 });
 
-test('a stored binding survives a restart and needs neither TVDB metadata nor the provider\'s candidates', async () => {
+test("a stored binding survives a restart and needs neither TVDB metadata nor the provider's candidates", async () => {
   await using dir = await mkdtempDisposable(join(tmpdir(), 'md-binding-'));
   const path = join(dir.path, 'state.sqlite');
   const store = new Store(path);
-  await new SeriesBindings(store.database).search(provider(() => [correct]), query, identity, signal);
+  await new SeriesBindings(store.database).search(
+    provider(() => [correct]),
+    query,
+    identity,
+    signal,
+  );
   // Deliberate restart: close and reopen the Store to prove the binding was persisted.
   store.close();
   using reopened = new Store(path);
   const bindings = new SeriesBindings(reopened.database, failingLookup);
   assert.deepEqual(await bindings.identity(identity.tvdbId, signal), identity);
-  const { releases } = await bindings.search(provider(() => { throw new Error('must not be asked'); }), query, identity, signal);
-  assert.deepEqual(releases.map(r => r.tvdbId), [identity.tvdbId]);
+  const { releases } = await bindings.search(
+    provider(() => {
+      throw new Error('must not be asked');
+    }),
+    query,
+    identity,
+    signal,
+  );
+  assert.deepEqual(
+    releases.map(r => r.tvdbId),
+    [identity.tvdbId],
+  );
 });
 
 test('a bound Program is never reassigned to a second identity', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    await bindings.search(provider(() => [correct]), query, identity, signal);
-    assert.deepEqual(await bindings.search(provider(() => [correct]), query, other, signal), { releases: [], unbound: 'program-already-bound' });
+    await bindings.search(
+      provider(() => [correct]),
+      query,
+      identity,
+      signal,
+    );
+    assert.deepEqual(
+      await bindings.search(
+        provider(() => [correct]),
+        query,
+        other,
+        signal,
+      ),
+      { releases: [], unbound: 'program-already-bound' },
+    );
   });
 });
 
@@ -102,11 +173,28 @@ test('an identity is never rebound when two searches bind it concurrently to dif
     const second = { ...correct, id: 'src-second' };
     const firstListed = Promise.withResolvers<void>();
     const firstStored = Promise.withResolvers<void>();
-    const racing = bindings.search(provider(async () => { firstListed.resolve(); await firstStored.promise; return [second]; }), query, identity, signal);
+    const racing = bindings.search(
+      provider(async () => {
+        firstListed.resolve();
+        await firstStored.promise;
+        return [second];
+      }),
+      query,
+      identity,
+      signal,
+    );
     await firstListed.promise; // the second search has checked for a binding and is now listing candidates
-    const first = await bindings.search(provider(() => [correct]), query, identity, signal);
+    const first = await bindings.search(
+      provider(() => [correct]),
+      query,
+      identity,
+      signal,
+    );
     firstStored.resolve();
-    assert.deepEqual(first.releases.map(r => r.id), ['src-correct-ep1']);
+    assert.deepEqual(
+      first.releases.map(r => r.id),
+      ['src-correct-ep1'],
+    );
     assert.deepEqual(await racing, { releases: [], unbound: 'identity-already-bound' });
   });
 });
@@ -114,7 +202,9 @@ test('an identity is never rebound when two searches bind it concurrently to dif
 test('a Release claiming another Program is not stamped with the bound identity', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const spoofing = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode('src-not-bound', { id: 'spoofed' })] : []) });
+    const spoofing = provider(() => [correct], {
+      catalogue: fakeCatalogue(bound => (bound ? [episode('src-not-bound', { id: 'spoofed' })] : [])),
+    });
     assert.deepEqual(await bindings.search(spoofing, query, identity, signal), { releases: [] });
   });
 });
@@ -122,22 +212,45 @@ test('a Release claiming another Program is not stamped with the bound identity'
 test('a plain text search stamps Releases of bound Programs and leaves others alone', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    await bindings.search(provider(() => [correct]), query, identity, signal);
-    const { releases } = await bindings.search(provider(() => []), { ...query, q: 'Show Name' }, undefined, signal);
-    assert.deepEqual(releases.map(r => [r.id, r.tvdbId, r.series]), [
-      ['src-correct-ep1', 12345, 'Show Name'],
-      ['src-foreign-ep1', undefined, 'Show Name (provider title)'],
-    ]);
+    await bindings.search(
+      provider(() => [correct]),
+      query,
+      identity,
+      signal,
+    );
+    const { releases } = await bindings.search(
+      provider(() => []),
+      { ...query, q: 'Show Name' },
+      undefined,
+      signal,
+    );
+    assert.deepEqual(
+      releases.map(r => [r.id, r.tvdbId, r.series]),
+      [
+        ['src-correct-ep1', 12345, 'Show Name'],
+        ['src-foreign-ep1', undefined, 'Show Name (provider title)'],
+      ],
+    );
   });
 });
 
 test('a provider without metadata is searched by the identity title and never labelled with it', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const plain = provider(() => [], { seriesCandidates: undefined });
+    const unrelated = episode('other', { series: 'Other Show', title: 'Other - S01E01' }); // matches an empty query, not the identity title
+    const plain = provider(() => [], {
+      seriesCandidates: undefined,
+      catalogue: fakeCatalogue(bound => (bound ? [] : [episode(correct.id), episode(foreign.id), unrelated])),
+    });
     const { releases, unbound } = await bindings.search(plain, query, identity, signal);
     assert.equal(unbound, undefined);
-    assert.deepEqual(releases.map(r => [r.id, r.tvdbId]), [['src-correct-ep1', undefined], ['src-foreign-ep1', undefined]]);
+    assert.deepEqual(
+      releases.map(r => [r.id, r.tvdbId]),
+      [
+        ['src-correct-ep1', undefined],
+        ['src-foreign-ep1', undefined],
+      ],
+    );
   });
 });
 
@@ -146,18 +259,34 @@ test('a search by series expands only Programs named as the series, not every ti
     const most: SeriesIdentity = { tvdbId: 357409, title: 'MOST!', aliases: [], year: 2019, country: 'cze' };
     const expanded: string[] = [];
     const plain: Provider = {
-      id: 'ceskatelevize', name: 'ČT', resolve: async () => [],
+      id: 'ceskatelevize',
+      name: 'ČT',
+      resolve: async () => [],
       catalogue: {
-        async *programs() { for (const title of ['Mostecký špacír', 'MOST!', 'Mosty přes řeku', 'Most! (making of)']) yield { id: title, title }; },
+        async *programs() {
+          for (const title of ['Mostecký špacír', 'MOST!', 'Mosty přes řeku', 'Most! (making of)']) yield { id: title, title };
+        },
         async *releases(program) {
           expanded.push(program.id);
-          yield { id: `${program.id}-7`, provider: 'ceskatelevize', title: 'Díl 7', series: program.title, kind: 'tv', season: 1, episode: 7, url: `https://ct.test/${program.id}/7` };
+          yield {
+            id: `${program.id}-7`,
+            provider: 'ceskatelevize',
+            title: 'Díl 7',
+            series: program.title,
+            kind: 'tv',
+            season: 1,
+            episode: 7,
+            url: `https://ct.test/${program.id}/7`,
+          };
         },
       },
     };
     const { releases } = await new SeriesBindings(store.database).search(plain, { ...episodeQuery, episode: 7 }, most, signal);
     assert.deepEqual(expanded, ['MOST!', 'Most! (making of)']);
-    assert.deepEqual(releases.map(release => release.series), ['MOST!', 'Most! (making of)']);
+    assert.deepEqual(
+      releases.map(release => release.series),
+      ['MOST!', 'Most! (making of)'],
+    );
   });
 });
 
@@ -180,7 +309,8 @@ test('bindings and queued jobs stored before the program-id rename keep working'
   const legacyRelease = { ...episode(correct.id), programId: undefined, sourceSeriesId: correct.id };
   legacy.prepare('INSERT INTO releases VALUES (?, ?)').run(legacyRelease.id, JSON.stringify(legacyRelease));
   legacy.prepare('INSERT INTO jobs VALUES (?, ?)').run('job', JSON.stringify({ id: 'job', release: legacyRelease }));
-  legacy.prepare('INSERT INTO series_mappings VALUES (?, ?, ?, ?)')
+  legacy
+    .prepare('INSERT INTO series_mappings VALUES (?, ?, ?, ?)')
     .run('oneplay', correct.id, identity.tvdbId, JSON.stringify({ provider: 'oneplay', source: correct, identity }));
   // The legacy DB must be closed before the Store opens the same file.
   legacy.close();
@@ -189,18 +319,31 @@ test('bindings and queued jobs stored before the program-id rename keep working'
   assert.equal(store.release(legacyRelease.id)?.programId, correct.id);
   assert.equal(store.job('job')?.release.programId, correct.id);
   const bindings = new SeriesBindings(store.database, failingLookup);
-  const { releases } = await bindings.search(provider(() => { throw new Error('must not be asked'); }), query, identity, signal);
-  assert.deepEqual(releases.map(r => r.tvdbId), [identity.tvdbId]);
+  const { releases } = await bindings.search(
+    provider(() => {
+      throw new Error('must not be asked');
+    }),
+    query,
+    identity,
+    signal,
+  );
+  assert.deepEqual(
+    releases.map(r => r.tvdbId),
+    [identity.tvdbId],
+  );
 });
 
 test('a fresh cached exact episode search returns the same Releases without calling the catalogue again', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const { catalogue, calls } = countingCatalogue(fakeCatalogue(bound => bound ? [episode(correct.id)] : []));
+    const { catalogue, calls } = countingCatalogue(fakeCatalogue(bound => (bound ? [episode(correct.id)] : [])));
     const prov = provider(() => [correct], { catalogue });
     const first = await bindings.search(prov, episodeQuery, identity, signal);
     assert.equal(calls(), 1);
-    assert.deepEqual(first.releases.map(r => r.id), ['src-correct-ep1']);
+    assert.deepEqual(
+      first.releases.map(r => r.id),
+      ['src-correct-ep1'],
+    );
     const second = await bindings.search(prov, episodeQuery, identity, signal);
     assert.equal(calls(), 1); // cache hit: the catalogue was not asked again
     assert.deepEqual(second.releases, first.releases);
@@ -210,11 +353,11 @@ test('a fresh cached exact episode search returns the same Releases without call
 test('a cached exact episode response is never returned to an already-aborted signal', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const prov = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode(correct.id)] : []) });
+    const prov = provider(() => [correct], { catalogue: fakeCatalogue(bound => (bound ? [episode(correct.id)] : [])) });
     await bindings.search(prov, episodeQuery, identity, signal); // populates the cache
     const controller = new AbortController();
     controller.abort();
-    await assert.rejects(bindings.search(prov, episodeQuery, identity, controller.signal));
+    await assert.rejects(bindings.search(prov, episodeQuery, identity, controller.signal), { name: 'AbortError' });
   });
 });
 
@@ -224,12 +367,20 @@ test('an exact episode expansion that succeeds after its signal aborted is rejec
     const controller = new AbortController();
     // The fake catalogue ignores its signal, so it can still yield a full result after the abort arrives.
     const aborting = provider(() => [correct], {
-      catalogue: fakeCatalogue(bound => { if (bound) controller.abort(); return bound ? [episode(correct.id)] : []; }),
+      catalogue: fakeCatalogue(bound => {
+        if (bound) controller.abort();
+        return bound ? [episode(correct.id)] : [];
+      }),
     });
-    await assert.rejects(bindings.search(aborting, episodeQuery, identity, controller.signal));
-    const recovered = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode(correct.id, { id: 'recovered' })] : []) });
+    await assert.rejects(bindings.search(aborting, episodeQuery, identity, controller.signal), { name: 'AbortError' });
+    const recovered = provider(() => [correct], {
+      catalogue: fakeCatalogue(bound => (bound ? [episode(correct.id, { id: 'recovered' })] : [])),
+    });
     const { releases } = await bindings.search(recovered, episodeQuery, identity, signal);
-    assert.deepEqual(releases.map(r => r.id), ['recovered']); // nothing from the aborted attempt was cached
+    assert.deepEqual(
+      releases.map(r => r.id),
+      ['recovered'],
+    ); // nothing from the aborted attempt was cached
   });
 });
 
@@ -237,16 +388,31 @@ test('a cached exact episode search survives a restart and needs no provider cal
   await using dir = await mkdtempDisposable(join(tmpdir(), 'md-binding-episode-cache-'));
   const path = join(dir.path, 'state.sqlite');
   const store = new Store(path);
-  await new SeriesBindings(store.database).search(provider(() => [correct]), episodeQuery, identity, signal);
+  await new SeriesBindings(store.database).search(
+    provider(() => [correct]),
+    episodeQuery,
+    identity,
+    signal,
+  );
   // Deliberate restart: close and reopen the Store to prove the cached Releases were persisted.
   store.close();
   using reopened = new Store(path);
   const bindings = new SeriesBindings(reopened.database, failingLookup);
-  const forbidden: Provider = provider(() => { throw new Error('candidates must not be asked'); }, {
-    catalogue: fakeCatalogue(() => { throw new Error('catalogue must not be asked'); }),
-  });
+  const forbidden: Provider = provider(
+    () => {
+      throw new Error('candidates must not be asked');
+    },
+    {
+      catalogue: fakeCatalogue(() => {
+        throw new Error('catalogue must not be asked');
+      }),
+    },
+  );
   const { releases } = await bindings.search(forbidden, episodeQuery, identity, signal);
-  assert.deepEqual(releases.map(r => r.id), ['src-correct-ep1']);
+  assert.deepEqual(
+    releases.map(r => r.id),
+    ['src-correct-ep1'],
+  );
 });
 
 test('an expired exact episode cache entry is replaced by a fresh upstream result', async () => {
@@ -254,13 +420,23 @@ test('an expired exact episode cache entry is replaced by a fresh upstream resul
     let now = 0;
     const clock: () => number = () => now;
     const bindings = new SeriesBindings(store.database, failingLookup, clock);
-    const stale = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode(correct.id, { id: 'stale-release' })] : []) });
+    const stale = provider(() => [correct], {
+      catalogue: fakeCatalogue(bound => (bound ? [episode(correct.id, { id: 'stale-release' })] : [])),
+    });
     const first = await bindings.search(stale, episodeQuery, identity, signal);
-    assert.deepEqual(first.releases.map(r => r.id), ['stale-release']);
+    assert.deepEqual(
+      first.releases.map(r => r.id),
+      ['stale-release'],
+    );
     now += 6 * 60 * 60 * 1000; // exactly six hours later: the cached entry has expired
-    const fresh = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode(correct.id, { id: 'fresh-release' })] : []) });
+    const fresh = provider(() => [correct], {
+      catalogue: fakeCatalogue(bound => (bound ? [episode(correct.id, { id: 'fresh-release' })] : [])),
+    });
     const second = await bindings.search(fresh, episodeQuery, identity, signal);
-    assert.deepEqual(second.releases.map(r => r.id), ['fresh-release']);
+    assert.deepEqual(
+      second.releases.map(r => r.id),
+      ['fresh-release'],
+    );
   });
 });
 
@@ -270,30 +446,41 @@ test('an empty exact episode expansion is never cached as a negative result', as
     const empty = provider(() => [correct], { catalogue: fakeCatalogue(() => []) });
     const miss = await bindings.search(empty, episodeQuery, identity, signal);
     assert.deepEqual(miss.releases, []);
-    const found = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode(correct.id)] : []) });
+    const found = provider(() => [correct], { catalogue: fakeCatalogue(bound => (bound ? [episode(correct.id)] : [])) });
     const { releases } = await bindings.search(found, episodeQuery, identity, signal);
-    assert.deepEqual(releases.map(r => r.id), ['src-correct-ep1']);
+    assert.deepEqual(
+      releases.map(r => r.id),
+      ['src-correct-ep1'],
+    );
   });
 });
 
-test('a different requested episode is never served from another episode\'s cache entry', async () => {
+test("a different requested episode is never served from another episode's cache entry", async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const { catalogue, calls } = countingCatalogue(fakeCatalogue(bound => bound ? [episode(correct.id, { season: 1, episode: 1 })] : []));
-    await bindings.search(provider(() => [correct], { catalogue }), episodeQuery, identity, signal);
+    const { catalogue, calls } = countingCatalogue(fakeCatalogue(bound => (bound ? [episode(correct.id, { season: 1, episode: 1 })] : [])));
+    await bindings.search(
+      provider(() => [correct], { catalogue }),
+      episodeQuery,
+      identity,
+      signal,
+    );
     assert.equal(calls(), 1);
     const secondEpisode = provider(() => [correct], {
-      catalogue: fakeCatalogue(bound => bound ? [episode(correct.id, { season: 1, episode: 2, id: `${correct.id}-ep2` })] : []),
+      catalogue: fakeCatalogue(bound => (bound ? [episode(correct.id, { season: 1, episode: 2, id: `${correct.id}-ep2` })] : [])),
     });
     const { releases } = await bindings.search(secondEpisode, { ...episodeQuery, episode: 2 }, identity, signal);
-    assert.deepEqual(releases.map(r => r.id), ['src-correct-ep2']);
+    assert.deepEqual(
+      releases.map(r => r.id),
+      ['src-correct-ep2'],
+    );
   });
 });
 
 test('a browsing (non-exact-episode) bound search is never served from or written to the episode cache', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const { catalogue, calls } = countingCatalogue(fakeCatalogue(bound => bound ? [episode(correct.id)] : []));
+    const { catalogue, calls } = countingCatalogue(fakeCatalogue(bound => (bound ? [episode(correct.id)] : [])));
     const prov = provider(() => [correct], { catalogue });
     await bindings.search(prov, query, identity, signal); // query has no season/episode: not cache-eligible
     await bindings.search(prov, query, identity, signal);
@@ -301,26 +488,63 @@ test('a browsing (non-exact-episode) bound search is never served from or writte
   });
 });
 
-test('an aborted or failing exact episode expansion never populates the cache', async () => {
+test('a failing exact episode expansion never populates the cache', async () => {
   await withStore(async store => {
     const bindings = new SeriesBindings(store.database);
-    const failing = provider(() => [correct], { catalogue: fakeCatalogue(() => { throw new Error('catalogue failed'); }) });
-    await assert.rejects(bindings.search(failing, episodeQuery, identity, signal));
-    const recovered = provider(() => [correct], { catalogue: fakeCatalogue(bound => bound ? [episode(correct.id)] : []) });
+    const failing = provider(() => [correct], {
+      catalogue: fakeCatalogue(() => {
+        throw new Error('catalogue failed');
+      }),
+    });
+    await assert.rejects(bindings.search(failing, episodeQuery, identity, signal), /catalogue failed/);
+    const recovered = provider(() => [correct], { catalogue: fakeCatalogue(bound => (bound ? [episode(correct.id)] : [])) });
     const { releases } = await bindings.search(recovered, episodeQuery, identity, signal);
-    assert.deepEqual(releases.map(r => r.id), ['src-correct-ep1']);
+    assert.deepEqual(
+      releases.map(r => r.id),
+      ['src-correct-ep1'],
+    );
+  });
+});
+
+test('writing an exact episode cache entry removes the entries that have expired', async () => {
+  await withStore(async store => {
+    const now = 1_000_000_000_000;
+    const bindings = new SeriesBindings(store.database, failingLookup, () => now);
+    // Expired, and inserted after the start-up sweep, so only the write can remove it.
+    store.database
+      .prepare('INSERT INTO series_release_cache VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('oneplay', 'old', 1, 9, 9, 0, 50, now - 7 * 60 * 60_000, '[]');
+    await bindings.search(
+      provider(() => [correct]),
+      episodeQuery,
+      identity,
+      signal,
+    );
+    assert.deepEqual(
+      store.database
+        .prepare('SELECT program_id FROM series_release_cache')
+        .all()
+        .map(row => row.program_id),
+      [correct.id],
+    );
   });
 });
 
 test('the RSS listing expands an existing binding but never creates one', async () => {
   await withStore(async store => {
     let lookups = 0;
-    const counted = provider(() => { lookups++; return [correct]; });
+    const counted = provider(() => {
+      lookups++;
+      return [correct];
+    });
     const bindings = new SeriesBindings(store.database);
     assert.deepEqual(await bindings.recent(counted, identity, 5, signal), []);
     assert.equal(lookups, 0);
     await bindings.search(counted, query, identity, signal);
-    assert.deepEqual((await bindings.recent(counted, identity, 5, signal)).map(r => [r.id, r.tvdbId]), [['src-correct-ep1', 12345]]);
+    assert.deepEqual(
+      (await bindings.recent(counted, identity, 5, signal)).map(r => [r.id, r.tvdbId]),
+      [['src-correct-ep1', 12345]],
+    );
     assert.equal(lookups, 1);
   });
 });

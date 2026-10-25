@@ -69,8 +69,14 @@ function parsePrimaDomaEpisodesList($: CheerioAPI, container: Cheerio<AnyNode>, 
 
     const url = new URL(href, program.url).href;
     releases.push({
-      id: releaseId('tvprimadoma', url), provider: 'tvprimadoma', title: title.trim() || program.title,
-      url, kind: 'tv', series: program.title, season, episode,
+      id: releaseId('tvprimadoma', url),
+      provider: 'tvprimadoma',
+      title: title.trim() || program.title,
+      url,
+      kind: 'tv',
+      series: program.title,
+      season,
+      episode,
     });
   });
 

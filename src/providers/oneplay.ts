@@ -1,5 +1,13 @@
 import type {
-  Catalogue, CatalogueQuery, MediaSource, Program, Provider, ProviderConfig, Release, SeriesIdentity, ProgramMetadata,
+  Catalogue,
+  CatalogueQuery,
+  MediaSource,
+  Program,
+  Provider,
+  ProviderConfig,
+  Release,
+  SeriesIdentity,
+  ProgramMetadata,
 } from '../types.ts';
 import { cached, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { isSeriesCandidate } from '../series-identity.ts';
@@ -105,7 +113,11 @@ async function lookupBoundProgram(
   return { id, uri: id, title: result.title, kind: 'tv', listing: result };
 }
 
-function createOneplayCatalogue(pool: OneplayConnectionPool, session: OneplaySession, allPrograms: ProgramList): Catalogue<OneplayCatalogueProgram> {
+function createOneplayCatalogue(
+  pool: OneplayConnectionPool,
+  session: OneplaySession,
+  allPrograms: ProgramList,
+): Catalogue<OneplayCatalogueProgram> {
   return {
     programs: (_query: CatalogueQuery, signal: AbortSignal) => catalogueProgramsOf(allPrograms, signal),
     program: (id, signal) => lookupBoundProgram(pool, session, id, signal),
@@ -125,8 +137,7 @@ async function seriesCandidates(
   identity: SeriesIdentity,
   signal: AbortSignal,
 ): Promise<ProgramMetadata[]> {
-  const programs = (await allPrograms(signal))
-    .filter(program => program.kind === 'tv' && isSeriesCandidate(program.title, identity));
+  const programs = (await allPrograms(signal)).filter(program => program.kind === 'tv' && isSeriesCandidate(program.title, identity));
   if (!programs.length) return [];
 
   await session.ensureAuthenticated(signal);

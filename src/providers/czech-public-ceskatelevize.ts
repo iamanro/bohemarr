@@ -49,9 +49,22 @@ const QUERY_SEARCH_SHOWS = `query SearchShows($limit: PaginationAmount!, $offset
   }
 }`;
 
-interface CtShow { id: string; slug: string; title: string; code?: string }
-interface CtSearchedShow { id: string; code: string; title: string }
-interface CtEpisodeItem { id: string; playable: boolean; title: string }
+interface CtShow {
+  id: string;
+  slug: string;
+  title: string;
+  code?: string;
+}
+interface CtSearchedShow {
+  id: string;
+  code: string;
+  title: string;
+}
+interface CtEpisodeItem {
+  id: string;
+  playable: boolean;
+  title: string;
+}
 
 async function graphql<T>(operationName: string, query: string, variables: Record<string, unknown>, signal: AbortSignal): Promise<T> {
   return fetchJson<T>(GRAPHQL_URL, signal, {
@@ -63,15 +76,25 @@ async function graphql<T>(operationName: string, query: string, variables: Recor
 
 async function getProgramsByCategory(categoryId: number, offset: number, limit: number, signal: AbortSignal) {
   const json = await graphql<{ data: { showFindByGenre: { items: CtShow[]; totalCount: number } } }>(
-    'GetCategoryById', QUERY_CATEGORY,
-    { categoryId: String(categoryId), limit, offset, order: 'asc', orderBy: 'alphabet' }, signal,
+    'GetCategoryById',
+    QUERY_CATEGORY,
+    { categoryId: String(categoryId), limit, offset, order: 'asc', orderBy: 'alphabet' },
+    signal,
   );
   return json.data.showFindByGenre;
 }
 
-async function searchShows(text: string, offset: number, limit: number, signal: AbortSignal): Promise<{ items: CtShow[]; totalCount: number }> {
+async function searchShows(
+  text: string,
+  offset: number,
+  limit: number,
+  signal: AbortSignal,
+): Promise<{ items: CtShow[]; totalCount: number }> {
   const json = await graphql<{ data: { searchShows: { items: CtSearchedShow[]; totalCount: number } } }>(
-    'SearchShows', QUERY_SEARCH_SHOWS, { limit, offset, search: text, onlyPlayable: false }, signal,
+    'SearchShows',
+    QUERY_SEARCH_SHOWS,
+    { limit, offset, search: text, onlyPlayable: false },
+    signal,
   );
   const { items, totalCount } = json.data.searchShows;
   // Show pages are served at porady/{id}-{code}/, mirroring the upstream FORMAT_SHOW_URL pattern.
@@ -80,7 +103,10 @@ async function searchShows(text: string, offset: number, limit: number, signal: 
 
 async function getEpisodes(idec: string, offset: number, limit: number, seasonId: string | null, signal: AbortSignal) {
   const json = await graphql<{ data: { episodesPreviewFind: { items: CtEpisodeItem[]; totalCount: number } } }>(
-    'GetEpisodes', QUERY_EPISODES, { idec, seasonId, limit, offset, orderBy: 'oldest' }, signal,
+    'GetEpisodes',
+    QUERY_EPISODES,
+    { idec, seasonId, limit, offset, orderBy: 'oldest' },
+    signal,
   );
   return json.data.episodesPreviewFind;
 }
@@ -93,7 +119,11 @@ function episodeUrl(programUri: string, id: string): string {
   return `${programUri}${id}/`;
 }
 
-interface ShowMetadata { idec: string; seasons: string[]; year?: number }
+interface ShowMetadata {
+  idec: string;
+  seasons: string[];
+  year?: number;
+}
 
 async function fetchShowMetadata(programUri: string, signal: AbortSignal): Promise<ShowMetadata | null> {
   const html = await fetchText(programUri, signal, { headers: { referer: REFERER } });
@@ -125,13 +155,26 @@ async function fetchShowMetadata(programUri: string, signal: AbortSignal): Promi
 }
 
 function buildEpisodeRelease(
-  show: CtShow, meta: ShowMetadata, pUrl: string, item: CtEpisodeItem,
-  season: number | undefined, episode: number | undefined, kind: MediaKind,
+  show: CtShow,
+  meta: ShowMetadata,
+  pUrl: string,
+  item: CtEpisodeItem,
+  season: number | undefined,
+  episode: number | undefined,
+  kind: MediaKind,
 ): Release {
   const url = episodeUrl(pUrl, item.id);
   return {
-    id: releaseId('ceskatelevize', url), provider: 'ceskatelevize', title: item.title,
-    url, kind, series: show.title, season, episode, year: kind === 'movie' ? meta.year : undefined, data: { idec: item.id },
+    id: releaseId('ceskatelevize', url),
+    provider: 'ceskatelevize',
+    title: item.title,
+    url,
+    kind,
+    series: show.title,
+    season,
+    episode,
+    year: kind === 'movie' ? meta.year : undefined,
+    data: { idec: item.id },
   };
 }
 
@@ -141,7 +184,9 @@ function buildEpisodeRelease(
  * probe request rather than by fetching and discarding a full page.
  */
 async function* pagesNewestFirst(
-  idec: string, seasonId: string | null, signal: AbortSignal,
+  idec: string,
+  seasonId: string | null,
+  signal: AbortSignal,
 ): AsyncGenerator<{ item: CtEpisodeItem; index: number; total: number }> {
   const probe = await getEpisodes(idec, 0, 1, seasonId, signal);
   const total = probe.totalCount;
@@ -150,7 +195,8 @@ async function* pagesNewestFirst(
   for (let offset = lastOffset; offset >= 0; offset -= MAX_ITEMS_PER_PAGE) {
     const page = await getEpisodes(idec, offset, MAX_ITEMS_PER_PAGE, seasonId, signal);
     // An episode whose rights expired stays listed upstream; it keeps its number but is never offered.
-    for (let i = page.items.length - 1; i >= 0; i--) if (page.items[i]!.playable) yield { item: page.items[i]!, index: offset + i + 1, total };
+    for (let i = page.items.length - 1; i >= 0; i--)
+      if (page.items[i]!.playable) yield { item: page.items[i]!, index: offset + i + 1, total };
   }
 }
 
@@ -219,7 +265,8 @@ async function* iterateShows(query: CatalogueQuery, signal: AbortSignal): AsyncG
     return;
   }
   for (const categoryId of CATEGORIES) {
-    let offset = 0, total = -1;
+    let offset = 0,
+      total = -1;
     do {
       const page = await getProgramsByCategory(categoryId, offset, MAX_ITEMS_PER_PAGE, signal);
       if (total < 0) total = page.totalCount;
@@ -236,9 +283,27 @@ const ceskaTelevizeCatalogue: Catalogue<CtShow> = {
 
 // --- Playback resolution (VOD.* in the upstream engine) ---------------------------------------
 
-interface ExternalSource { kind: 'external'; idec: string; deviceId: string; origin: string; client: string }
-interface InternalSource { kind: 'internal'; versionId: string; sessionId: string; origin: string; client: string }
-interface BonusSource { kind: 'bonus'; value: string; deviceId: string; origin: string; client: string }
+interface ExternalSource {
+  kind: 'external';
+  idec: string;
+  deviceId: string;
+  origin: string;
+  client: string;
+}
+interface InternalSource {
+  kind: 'internal';
+  versionId: string;
+  sessionId: string;
+  origin: string;
+  client: string;
+}
+interface BonusSource {
+  kind: 'bonus';
+  value: string;
+  deviceId: string;
+  origin: string;
+  client: string;
+}
 type SourceInfo = ExternalSource | InternalSource | BonusSource;
 
 function sourceInfoPath(info: SourceInfo): string {
@@ -258,7 +323,13 @@ const xmlParser = new XMLParser({
   attributeNamePrefix: '@_',
   // The MPD manifest is fetched from the remote CDN; keep standard entity decoding (`&amp;` etc.)
   // but bound entity expansion against XXE/billion-laughs-style DoS from an untrusted response.
-  processEntities: { maxEntitySize: 10_000, maxExpansionDepth: 10_000, maxTotalExpansions: 1000, maxExpandedLength: 100_000, maxEntityCount: 1000 },
+  processEntities: {
+    maxEntitySize: 10_000,
+    maxExpansionDepth: 10_000,
+    maxTotalExpansions: 1000,
+    maxExpandedLength: 100_000,
+    maxEntityCount: 1000,
+  },
 });
 
 async function detectDrm(mpdUrl: string, signal: AbortSignal): Promise<{ pssh: string[] } | null> {
@@ -277,7 +348,10 @@ async function detectDrm(mpdUrl: string, signal: AbortSignal): Promise<{ pssh: s
   }
   const pssh: string[] = [];
   const walk = (node: unknown): void => {
-    if (Array.isArray(node)) { for (const entry of node) walk(entry); return; }
+    if (Array.isArray(node)) {
+      for (const entry of node) walk(entry);
+      return;
+    }
     if (!node || typeof node !== 'object') return;
     const obj = node as Record<string, unknown>;
     if (String(obj['@_schemeIdUri'] ?? '').toLowerCase() === WIDEVINE_SCHEME_URN) {
@@ -295,7 +369,11 @@ async function buildMediaSource(streamUrl: string, subtitles: Map<string, string
   let finalUrl = streamUrl;
   let contentType: string | null = null;
   try {
-    const head = await fetch(streamUrl, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]) });
+    const head = await fetch(streamUrl, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
+    });
     if (head.url) finalUrl = head.url;
     contentType = head.headers.get('content-type');
   } catch {
@@ -303,9 +381,7 @@ async function buildMediaSource(streamUrl: string, subtitles: Map<string, string
   }
   // CT's signed CDN/token URLs carry no .mpd/.m3u8 suffix (they resolve via query params), so the
   // extension-based mediaType() helper misclassifies them; prefer the real Content-Type when known.
-  const type = contentType?.includes('dash+xml') ? 'dash'
-    : contentType?.includes('mpegurl') ? 'hls'
-    : mediaType(finalUrl);
+  const type = contentType?.includes('dash+xml') ? 'dash' : contentType?.includes('mpegurl') ? 'hls' : mediaType(finalUrl);
   const subs: NonNullable<MediaSource['subtitles']> = [];
   for (const [language, urls] of subtitles) {
     const vtt = urls.find(u => u.toLowerCase().endsWith('.vtt'));
@@ -320,8 +396,15 @@ async function buildMediaSource(streamUrl: string, subtitles: Map<string, string
   return source;
 }
 
-interface PlaylistStreamItem { url?: unknown; subtitles?: unknown }
-interface PlaylistResponse { error?: unknown; message?: unknown; streams?: PlaylistStreamItem[] }
+interface PlaylistStreamItem {
+  url?: unknown;
+  subtitles?: unknown;
+}
+interface PlaylistResponse {
+  error?: unknown;
+  message?: unknown;
+  streams?: PlaylistStreamItem[];
+}
 
 async function fetchPlaylist(info: SourceInfo, signal: AbortSignal): Promise<MediaSource[]> {
   const url = new URL(sourceInfoPath(info), VOD_ENDPOINT).toString();
@@ -362,7 +445,11 @@ async function discoverSourceInfos(pageUrl: string, signal: AbortSignal): Promis
     const script = $('script#__NEXT_DATA__').first().html();
     if (!script) return [];
     let parsedJson: unknown;
-    try { parsedJson = JSON.parse(script); } catch { return []; }
+    try {
+      parsedJson = JSON.parse(script);
+    } catch {
+      return [];
+    }
     const deviceId = randomUUID();
     const infos: SourceInfo[] = [];
     for (const candidatePath of ['props.pageProps.data.mediaMeta', 'props.pageProps.data.show']) {
@@ -376,7 +463,11 @@ async function discoverSourceInfos(pageUrl: string, signal: AbortSignal): Promis
     const script = $('script#__NEXT_DATA__').first().html();
     if (!script) return [];
     let parsedJson: unknown;
-    try { parsedJson = JSON.parse(script); } catch { return []; }
+    try {
+      parsedJson = JSON.parse(script);
+    } catch {
+      return [];
+    }
     const versionId = at(parsedJson, 'props.pageProps.videoModel.origin.versionId');
     if (typeof versionId !== 'string') return [];
     const origin = sub === 'ct24' ? 'ct24' : 'sport';
@@ -391,11 +482,16 @@ async function discoverSourceInfos(pageUrl: string, signal: AbortSignal): Promis
       const href = $(el).attr('href');
       if (!href) return;
       let query: URLSearchParams;
-      try { query = new URL(href, pageUrl).searchParams; } catch { return; }
+      try {
+        query = new URL(href, pageUrl).searchParams;
+      } catch {
+        return;
+      }
       const bonus = query.get('bonus');
       const idecParam = query.get('IDEC');
       if (bonus) infos.push({ kind: 'bonus', value: bonus, deviceId, origin: 'artzona', client: 'ArtWeb' });
-      else if (idecParam) infos.push({ kind: 'external', idec: idecParam.replace(/[ /]/g, ''), deviceId, origin: 'artzona', client: 'ArtWeb' });
+      else if (idecParam)
+        infos.push({ kind: 'external', idec: idecParam.replace(/[ /]/g, ''), deviceId, origin: 'artzona', client: 'ArtWeb' });
     });
     return infos;
   }
@@ -441,11 +537,12 @@ async function discoverSourceInfos(pageUrl: string, signal: AbortSignal): Promis
     const infos: SourceInfo[] = [];
     const seasonIds: Array<string | null> = [...meta.seasons, null];
     for (const seasonId of seasonIds) {
-      let offset = 0, total = -1;
+      let offset = 0,
+        total = -1;
       do {
         const page = await getEpisodes(meta.idec, offset, MAX_ITEMS_PER_PAGE, seasonId, signal);
         if (total < 0) total = page.totalCount;
-        for (const item of page.items) infos.push(...await discoverSourceInfos(episodeUrl(pUrl, item.id), signal));
+        for (const item of page.items) infos.push(...(await discoverSourceInfos(episodeUrl(pUrl, item.id), signal)));
         offset += MAX_ITEMS_PER_PAGE;
       } while (offset < total);
     }
@@ -463,7 +560,7 @@ async function resolveCeskaTelevize(release: Release, signal: AbortSignal): Prom
   }
   const infos = await discoverSourceInfos(release.url, signal);
   const sources: MediaSource[] = [];
-  for (const info of infos) sources.push(...await fetchPlaylist(info, signal));
+  for (const info of infos) sources.push(...(await fetchPlaylist(info, signal)));
   return sources;
 }
 
@@ -477,6 +574,8 @@ export function createCeskaTelevizeProvider(config: ProviderConfig = {}): Provid
     id: 'ceskatelevize',
     name: 'Česká televize',
     catalogue: ceskaTelevizeCatalogue,
-    async resolve(release, signal) { return resolveCeskaTelevize(release, signal); },
+    async resolve(release, signal) {
+      return resolveCeskaTelevize(release, signal);
+    },
   };
 }

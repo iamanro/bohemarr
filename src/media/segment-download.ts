@@ -19,7 +19,9 @@ export async function* readChunks(body: ReadableStream<Uint8Array>, signal: Abor
   const reader = body.getReader();
   const idle = Promise.withResolvers<never>();
   let timer: NodeJS.Timeout | undefined;
-  const onAbort = (): void => { reader.cancel(signal.reason).catch(() => {}); };
+  const onAbort = (): void => {
+    reader.cancel(signal.reason).catch(() => {});
+  };
   signal.addEventListener('abort', onAbort, { once: true });
   try {
     for (;;) {
@@ -44,7 +46,11 @@ export async function* readChunks(body: ReadableStream<Uint8Array>, signal: Abor
 const SEGMENT_MAX_RETRY_ATTEMPTS = 20;
 const SEGMENT_RETRY_BASE_MS = 250;
 
-interface ResumeState { completed: number; bytes: number; segmentsHash: string; }
+interface ResumeState {
+  completed: number;
+  bytes: number;
+  segmentsHash: string;
+}
 
 /** Writes `value` as JSON through a temporary file, so a crash never leaves a half-written file. */
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
@@ -82,24 +88,34 @@ async function fetchSegmentWithRetry(url: string, headers: Record<string, string
  * the range and would return the whole resource) or a mismatched `Content-Range` is a hard error,
  * never silently downloaded and spliced in as if it were the requested slice.
  */
-export async function fetchSegment(segment: MediaSegment, headers: Record<string, string> | undefined, signal: AbortSignal): Promise<Response> {
+export async function fetchSegment(
+  segment: MediaSegment,
+  headers: Record<string, string> | undefined,
+  signal: AbortSignal,
+): Promise<Response> {
   const range = segment.range;
   const requestHeaders = range ? { ...headers, Range: `bytes=${range.start}-${range.start + range.length - 1}` } : headers;
   const response = await fetchSegmentWithRetry(segment.url, requestHeaders, signal);
   if (!range) return response;
   if (response.status !== 206) {
     await response.body?.cancel().catch(() => {});
-    throw new Error(`Byte-range segment request to ${new URL(segment.url).hostname} was not honored (got ${response.status}, expected 206)`);
+    throw new Error(
+      `Byte-range segment request to ${new URL(segment.url).hostname} was not honored (got ${response.status}, expected 206)`,
+    );
   }
   const contentRange = response.headers.get('content-range');
   if (!contentRange?.startsWith(`bytes ${range.start}-`)) {
     await response.body?.cancel().catch(() => {});
-    throw new Error(`Byte-range mismatch downloading ${new URL(segment.url).hostname}: requested start ${range.start}, server returned ${contentRange ?? 'no Content-Range'}`);
+    throw new Error(
+      `Byte-range mismatch downloading ${new URL(segment.url).hostname}: requested start ${range.start}, server returned ${contentRange ?? 'no Content-Range'}`,
+    );
   }
   const contentLength = response.headers.get('content-length');
   if (contentLength !== null && Number(contentLength) !== range.length) {
     await response.body?.cancel().catch(() => {});
-    throw new Error(`Byte-range length mismatch downloading ${new URL(segment.url).hostname}: expected ${range.length} bytes, server reports ${contentLength}`);
+    throw new Error(
+      `Byte-range length mismatch downloading ${new URL(segment.url).hostname}: expected ${range.length} bytes, server reports ${contentLength}`,
+    );
   }
   return response;
 }
@@ -110,11 +126,14 @@ export async function fetchSegment(segment: MediaSegment, headers: Record<string
  * never reports more bytes as written than were persisted, and no listener stays on the stream.
  */
 async function writeSegmentBody(
-  response: Response, writeStream: Writable, signal: AbortSignal, onChunk: (length: number) => void,
+  response: Response,
+  writeStream: Writable,
+  signal: AbortSignal,
+  onChunk: (length: number) => void,
 ): Promise<void> {
   if (!response.body) throw new Error('Segment response has no body');
   for await (const buffer of readChunks(response.body, signal)) {
-    await new Promise<void>((resolve, reject) => writeStream.write(buffer, error => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) => writeStream.write(buffer, error => (error ? reject(error) : resolve())));
     onChunk(buffer.length);
   }
 }
@@ -135,8 +154,12 @@ async function writeSegmentBody(
  * track restarts from scratch instead.
  */
 export async function downloadSegmentsConcat(
-  segments: MediaSegment[], headers: Record<string, string> | undefined, outputPath: string, signal: AbortSignal,
-  onBytes?: (bytes: number) => void, resumeStatePath?: string,
+  segments: MediaSegment[],
+  headers: Record<string, string> | undefined,
+  outputPath: string,
+  signal: AbortSignal,
+  onBytes?: (bytes: number) => void,
+  resumeStatePath?: string,
 ): Promise<void> {
   const segmentsHash = hash(
     'sha256',

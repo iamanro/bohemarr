@@ -31,16 +31,16 @@ export interface AuthenticationData {
 }
 
 function parseAccounts(rawAccounts: readonly unknown[]): OneplayAccount[] {
-  return rawAccounts.map((raw) => ({ id: at<string>(raw, 'accountId') ?? '', isActive: at<boolean>(raw, 'isActive') ?? false }));
+  return rawAccounts.map(raw => ({ id: at<string>(raw, 'accountId') ?? '', isActive: at<boolean>(raw, 'isActive') ?? false }));
 }
 
 /** `Authenticator.selectAccount`. */
 function selectAccount(accounts: readonly OneplayAccount[], accountId: string | undefined): OneplayAccount {
   if (accounts.length === 0) throw new Error('Oneplay login failed: no accounts available');
-  const firstActive = accounts.find((account) => account.isActive);
+  const firstActive = accounts.find(account => account.isActive);
   if (!firstActive) throw new Error('Oneplay login failed: no active account');
   if (!accountId) return firstActive;
-  return accounts.find((account) => account.isActive && account.id === accountId) ?? firstActive;
+  return accounts.find(account => account.isActive && account.id === accountId) ?? firstActive;
 }
 
 /** `Authenticator.selectProfile`. */
@@ -48,7 +48,7 @@ function selectProfile(profiles: readonly OneplayProfile[], profileId: string | 
   if (profiles.length === 0) throw new Error('Oneplay login failed: account has no profiles');
   const first = profiles[0]!;
   if (!profileId) return first;
-  return profiles.find((profile) => profile.id === profileId) ?? first;
+  return profiles.find(profile => profile.id === profileId) ?? first;
 }
 
 /** `Authenticator.Profiles.all`. */
@@ -58,7 +58,7 @@ async function fetchProfiles(connection: OneplayConnection, signal: AbortSignal)
   if (response.status !== 'Ok' || !profiles) {
     throw new Error(`Failed to get profiles. Reason: ${readErrorMessage(response.data)}`);
   }
-  return profiles.map((profile) => ({
+  return profiles.map(profile => ({
     id: at<string>(profile, 'profile.id') ?? '',
     name: at<string>(profile, 'profile.name') ?? '',
   }));
@@ -77,17 +77,10 @@ async function selectAccountStep(
   signal: AbortSignal,
 ): Promise<SelectedAccount> {
   if (!account.id) throw new Error('Failed to log in (account step). Cannot find any suitable account.');
-  const response = await connection.command(
-    'user.login.step',
-    'LoginWithAccountCommand',
-    { accountId: account.id, authCode },
-    signal,
-  );
+  const response = await connection.command('user.login.step', 'LoginWithAccountCommand', { accountId: account.id, authCode }, signal);
   const authTokenValue = at<string>(response.data, 'step.bearerToken');
   if (response.status !== 'Ok' || !authTokenValue) {
-    throw new Error(
-      `Failed to log in (account step). Reason: ${readErrorMessage(response.data)}`,
-    );
+    throw new Error(`Failed to log in (account step). Reason: ${readErrorMessage(response.data)}`);
   }
   return { accountId: account.id, authTokenValue };
 }
@@ -116,7 +109,7 @@ async function loginWithCredentials(
   const schema = at<string>(response.data, 'step.schema');
   if (schema === 'ShowAccountChooserStep') {
     const groups = at<unknown[]>(response.data, 'step.groups') ?? [];
-    const rawAccounts = groups.flatMap((group) => at<unknown[]>(group, 'accounts') ?? []);
+    const rawAccounts = groups.flatMap(group => at<unknown[]>(group, 'accounts') ?? []);
     const accounts = parseAccounts(rawAccounts);
     const account = selectAccount(accounts, credentials.accountId);
     const authCode = at<string>(response.data, 'step.authToken');
@@ -142,9 +135,7 @@ async function selectProfileStep(
 
   if (response.status !== 'Ok') {
     if (at<string>(response.data, 'result.code') !== '4080') {
-      throw new Error(
-        `Failed to log in (select profile). Reason: ${readErrorMessage(response.data)}`,
-      );
+      throw new Error(`Failed to log in (select profile). Reason: ${readErrorMessage(response.data)}`);
     }
     if (!profilePin || profilePin.length !== 4) {
       throw new Error('Profile PIN is required but is invalid. PIN must have 4 digits.');
@@ -161,9 +152,7 @@ async function selectProfileStep(
 
   const authToken = at<string>(response.data, 'bearerToken');
   if (response.status !== 'Ok' || !authToken) {
-    throw new Error(
-      `Failed to log in (select profile). Reason: ${readErrorMessage(response.data)}`,
-    );
+    throw new Error(`Failed to log in (select profile). Reason: ${readErrorMessage(response.data)}`);
   }
   return authToken;
 }
@@ -226,7 +215,7 @@ export class OneplaySession {
     if (this.pool.isAuthenticated() && Date.now() - this.verifiedAt < PROBE_TTL_MS) return;
     const previous = this.lock;
     let release!: () => void;
-    this.lock = new Promise((resolve) => {
+    this.lock = new Promise(resolve => {
       release = resolve;
     });
     await previous;
@@ -235,11 +224,15 @@ export class OneplaySession {
       if (this.pool.isAuthenticated()) {
         if (Date.now() - this.verifiedAt < PROBE_TTL_MS) return; // verified by the caller that held the lock
         const probe = await this.pool.withConnection(signal, connection =>
-          connection.request('setting.display', { payload: { screen: 'account' } }, signal));
-        if (probe.status === 'Ok') { this.verifiedAt = Date.now(); return; }
+          connection.request('setting.display', { payload: { screen: 'account' } }, signal),
+        );
+        if (probe.status === 'Ok') {
+          this.verifiedAt = Date.now();
+          return;
+        }
         this.pool.authenticate(null);
       }
-      const authData = await this.pool.withConnection(signal, (connection) => login(connection, this.credentials, signal));
+      const authData = await this.pool.withConnection(signal, connection => login(connection, this.credentials, signal));
       this.pool.authenticate(authData.authToken);
       this.verifiedAt = Date.now();
     } finally {

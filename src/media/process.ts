@@ -22,7 +22,11 @@ export class ProcessExitError extends Error {
  * and rejects with the abort reason (never resolves) if `signal` fires before the process exits.
  */
 export async function runProcess(
-  command: string, args: string[], signal: AbortSignal, onStdout?: (chunk: string) => void, env?: NodeJS.ProcessEnv,
+  command: string,
+  args: string[],
+  signal: AbortSignal,
+  onStdout?: (chunk: string) => void,
+  env?: NodeJS.ProcessEnv,
 ): Promise<string> {
   signal.throwIfAborted();
   const { promise, resolve, reject } = Promise.withResolvers<string>();
@@ -33,7 +37,9 @@ export async function runProcess(
   let killer: NodeJS.Timeout | undefined;
   const onAbort = (): void => {
     child.kill('SIGTERM');
-    killer = setNodeTimeout(() => { if (!settled) child.kill('SIGKILL'); }, 3000);
+    killer = setNodeTimeout(() => {
+      if (!settled) child.kill('SIGKILL');
+    }, 3000);
     killer.unref();
   };
   signal.addEventListener('abort', onAbort, { once: true });

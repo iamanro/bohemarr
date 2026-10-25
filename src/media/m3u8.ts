@@ -3,11 +3,33 @@ import type { MediaSegment } from '../types.ts';
 import { normalizeLanguage } from '../providers/common.ts';
 import { fetchResponse } from '../providers/common.ts';
 
-export interface HlsTrack extends ProtectedTrack { kind: 'video' | 'audio'; height?: number; bandwidth?: number; averageBandwidth?: number; language?: string; }
-export interface HlsSelection { live: boolean; video: HlsTrack; audio?: HlsTrack; videoPlaylistUrl: string; audioPlaylistUrl?: string; }
+export interface HlsTrack extends ProtectedTrack {
+  kind: 'video' | 'audio';
+  height?: number;
+  bandwidth?: number;
+  averageBandwidth?: number;
+  language?: string;
+}
+export interface HlsSelection {
+  live: boolean;
+  video: HlsTrack;
+  audio?: HlsTrack;
+  videoPlaylistUrl: string;
+  audioPlaylistUrl?: string;
+}
 
-interface Variant { bandwidth: number; averageBandwidth?: number; height?: number; audioGroupId?: string; url: string; }
-interface AudioGroupEntry { groupId: string; uri?: string; language?: string; }
+interface Variant {
+  bandwidth: number;
+  averageBandwidth?: number;
+  height?: number;
+  audioGroupId?: string;
+  url: string;
+}
+interface AudioGroupEntry {
+  groupId: string;
+  uri?: string;
+  language?: string;
+}
 
 interface ParsedPlaylist {
   isMaster: boolean;
@@ -146,12 +168,18 @@ async function fetchPlaylist(url: string, headers: Record<string, string> | unde
 }
 
 function toTrack(
-  playlist: ParsedPlaylist, kind: 'video' | 'audio',
+  playlist: ParsedPlaylist,
+  kind: 'video' | 'audio',
   extra?: { height?: number; bandwidth?: number; averageBandwidth?: number; language?: string },
 ): HlsTrack {
   return {
-    kind, initSegment: playlist.initSegment, mediaSegments: playlist.mediaSegments, durationSeconds: playlist.durationSeconds,
-    pssh: playlist.pssh ? [playlist.pssh] : [], keyId: playlist.keyId, ...extra,
+    kind,
+    initSegment: playlist.initSegment,
+    mediaSegments: playlist.mediaSegments,
+    durationSeconds: playlist.durationSeconds,
+    pssh: playlist.pssh ? [playlist.pssh] : [],
+    keyId: playlist.keyId,
+    ...extra,
   };
 }
 
@@ -166,8 +194,11 @@ function toTrack(
  * master playlist, never guessed for a plain media playlist.
  */
 export async function resolveHlsTracks(
-  masterUrl: string, headers: Record<string, string> | undefined, targetHeight: number | undefined,
-  targetLanguage: string | undefined, signal: AbortSignal,
+  masterUrl: string,
+  headers: Record<string, string> | undefined,
+  targetHeight: number | undefined,
+  targetLanguage: string | undefined,
+  signal: AbortSignal,
 ): Promise<HlsSelection> {
   const master = await fetchPlaylist(masterUrl, headers, signal);
 
@@ -201,7 +232,8 @@ export async function resolveHlsTracks(
   if (audioGroupId) {
     const candidates = master.audioGroups.filter(g => g.groupId === audioGroupId && g.uri);
     const targetNormalized = targetLanguage ? normalizeLanguage(targetLanguage) : undefined;
-    const group = (targetNormalized ? candidates.find(g => normalizeLanguage(g.language) === targetNormalized) : undefined) ?? candidates[0];
+    const group =
+      (targetNormalized ? candidates.find(g => normalizeLanguage(g.language) === targetNormalized) : undefined) ?? candidates[0];
     if (group?.uri) {
       const audioPlaylist = await fetchPlaylist(group.uri, headers, signal);
       audio = toTrack(audioPlaylist, 'audio', { language: group.language });
@@ -211,7 +243,13 @@ export async function resolveHlsTracks(
 
   return {
     live: videoPlaylist.live,
-    video: toTrack(videoPlaylist, 'video', { height: selectedHeight, bandwidth: selectedBandwidth, averageBandwidth: selectedAverageBandwidth }),
-    audio, videoPlaylistUrl, audioPlaylistUrl,
+    video: toTrack(videoPlaylist, 'video', {
+      height: selectedHeight,
+      bandwidth: selectedBandwidth,
+      averageBandwidth: selectedAverageBandwidth,
+    }),
+    audio,
+    videoPlaylistUrl,
+    audioPlaylistUrl,
   };
 }

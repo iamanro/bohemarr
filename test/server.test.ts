@@ -11,16 +11,30 @@ import type { Config, Provider } from '../src/types.ts';
 import { fakeCatalogue } from './fake-catalogue.ts';
 
 const config: Config = {
-  host: '127.0.0.1', port: 8787, apiKey: 'a'.repeat(64), publicUrl: 'http://localhost:8787',
-  dataDir: '/unused', downloadsDir: '/unused', concurrency: 1, requestRate: 100,
-  ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'https://example.test/wv/',
-  categories: ['tv', 'movies'], providers: {}, arrs: [],
+  host: '127.0.0.1',
+  port: 8787,
+  apiKey: 'a'.repeat(64),
+  publicUrl: 'http://localhost:8787',
+  dataDir: '/unused',
+  downloadsDir: '/unused',
+  concurrency: 1,
+  requestRate: 100,
+  ffmpeg: 'ffmpeg',
+  ffprobe: 'ffprobe',
+  mp4decrypt: 'mp4decrypt',
+  wvApiUrl: 'https://example.test/wv/',
+  categories: ['tv', 'movies'],
+  providers: {},
+  arrs: [],
 };
 
 test('every endpoint but health and login needs the API key or the login cookie', async t => {
   const store = new Store(':memory:');
   const app = await createServer(config, store, new Queue(store, config, new Map(), async () => ''), new Map());
-  t.after(async () => { await app.close(); store.close(); });
+  t.after(async () => {
+    await app.close();
+    store.close();
+  });
 
   for (const [method, url, headers] of [
     ['GET', '/api/v2/torrents/info', {}],
@@ -32,7 +46,6 @@ test('every endpoint but health and login needs the API key or the login cookie'
     ['GET', '/v1/providers', {}],
     ['GET', '/v1/jobs', {}],
     ['GET', '/API/v2/torrents/info', {}],
-    ['GET', '/api/v2/../v1/providers', {}],
   ] as const) {
     const response = await app.inject({ method, url, headers });
     assert.ok([401, 403].includes(response.statusCode), `${method} ${url} ${JSON.stringify(headers)} answered ${response.statusCode}`);
@@ -42,9 +55,19 @@ test('every endpoint but health and login needs the API key or the login cookie'
   assert.equal((await app.inject(`/api?t=caps&apikey=${config.apiKey}`)).statusCode, 200);
   assert.equal((await app.inject({ url: '/api?t=caps', headers: { 'x-api-key': config.apiKey } })).statusCode, 200);
 
-  const rejected = await app.inject({ method: 'POST', url: '/api/v2/auth/login', payload: 'username=x&password=wrong', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+  const rejected = await app.inject({
+    method: 'POST',
+    url: '/api/v2/auth/login',
+    payload: 'username=x&password=wrong',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  });
   assert.equal(rejected.body, 'Fails.');
-  const login = await app.inject({ method: 'POST', url: '/api/v2/auth/login', payload: `username=x&password=${config.apiKey}`, headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/v2/auth/login',
+    payload: `username=x&password=${config.apiKey}`,
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+  });
   const cookie = /SID=[^;]+/.exec(String(login.headers['set-cookie']))?.[0];
   assert.ok(cookie);
   const listed = await app.inject({ url: '/api/v2/torrents/info', headers: { cookie } });
@@ -56,18 +79,23 @@ test('every endpoint but health and login needs the API key or the login cookie'
 test('the settings API needs the API key, hides secrets and saves only settings Bohemarr can start with', async t => {
   await using dir = await mkdtempDisposable(join(tmpdir(), 'bohemarr-settings-'));
   const local = { ...config, dataDir: dir.path, downloadsDir: join(dir.path, 'downloads') };
-  const saved = { DATA_DIR: process.env.DATA_DIR, DOWNLOADS_DIR: process.env.DOWNLOADS_DIR, API_KEY: process.env.API_KEY };
+  // Settings the test saves must not already come from the environment, which wins over the UI.
+  const ambient = ['SONARR_URL', 'SONARR_API_KEY', 'ONEPLAY_USERNAME'].flatMap(name => [name, `${name}_FILE`]);
+  const saved = Object.fromEntries(['DATA_DIR', 'DOWNLOADS_DIR', 'API_KEY', ...ambient].map(name => [name, process.env[name]]));
+  for (const name of ambient) delete process.env[name];
   Object.assign(process.env, { DATA_DIR: local.dataDir, DOWNLOADS_DIR: local.downloadsDir, API_KEY: config.apiKey });
   const store = new Store(':memory:');
   const app = await createServer(local, store, new Queue(store, local, new Map(), async () => ''), new Map());
   t.after(async () => {
-    await app.close(); store.close();
-    for (const [name, value] of Object.entries(saved)) if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    await app.close();
+    store.close();
+    for (const [name, value] of Object.entries(saved))
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
   });
   const headers = { 'x-api-key': config.apiKey };
 
   assert.equal((await app.inject('/v1/settings')).statusCode, 401);
-  assert.equal((await app.inject('/ui/../v1/settings')).statusCode, 401);
   assert.equal((await app.inject({ method: 'POST', url: '/v1/restart' })).statusCode, 401);
   assert.equal((await app.inject({ method: 'PUT', url: '/v1/settings', payload: { ONEPLAY_PASSWORD: 'x' } })).statusCode, 401);
 
@@ -75,7 +103,11 @@ test('the settings API needs the API key, hides secrets and saves only settings 
   assert.match((await save({ FFMPEG: '/bin/sh' })).json().error, /FFMPEG cannot be set here/);
   assert.match((await save({ SONARR_URL: 'http://sonarr:8989' })).json().error, /SONARR_URL and SONARR_API_KEY must be set together/);
   assert.equal((await save({ SONARR_URL: 'http://sonarr:8989', SONARR_API_KEY: 'secret', ONEPLAY_USERNAME: 'me' })).statusCode, 200);
-  assert.deepEqual(JSON.parse(await readFile(join(dir.path, 'settings.json'), 'utf8')), { SONARR_URL: 'http://sonarr:8989', SONARR_API_KEY: 'secret', ONEPLAY_USERNAME: 'me' });
+  assert.deepEqual(JSON.parse(await readFile(join(dir.path, 'settings.json'), 'utf8')), {
+    SONARR_URL: 'http://sonarr:8989',
+    SONARR_API_KEY: 'secret',
+    ONEPLAY_USERNAME: 'me',
+  });
 
   const { settings } = (await app.inject({ url: '/v1/settings', headers })).json();
   assert.deepEqual(settings.SONARR_API_KEY, { set: true, source: 'ui' });
@@ -87,12 +119,19 @@ test('the settings API needs the API key, hides secrets and saves only settings 
 test('the UI searches as Torznab does and downloads a found Release as the Job a grab of it would be', async t => {
   const store = new Store(':memory:');
   const provider: Provider = {
-    id: 'direct', name: 'Direct', resolve: async () => [],
-    catalogue: fakeCatalogue(() => [{ id: 'film', provider: 'direct', title: 'Example film', kind: 'movie', year: 2024, url: 'https://example.test/film.mp4' }]),
+    id: 'direct',
+    name: 'Direct',
+    resolve: async () => [],
+    catalogue: fakeCatalogue(() => [
+      { id: 'film', provider: 'direct', title: 'Example film', kind: 'movie', year: 2024, url: 'https://example.test/film.mp4' },
+    ]),
   };
   const providers = new Map([[provider.id, provider]]);
   const app = await createServer(config, store, new Queue(store, config, providers, async () => ''), providers);
-  t.after(async () => { await app.close(); store.close(); });
+  t.after(async () => {
+    await app.close();
+    store.close();
+  });
   const headers = { 'x-api-key': config.apiKey };
 
   assert.equal((await app.inject('/v1/search?q=example')).statusCode, 401);
@@ -110,4 +149,31 @@ test('the UI searches as Torznab does and downloads a found Release as the Job a
   const added = await download({ release: 'film' });
   assert.equal(added.json().id, infoHash);
   assert.equal(store.job(infoHash)?.category, 'movies');
+});
+
+test('a path that climbs out of /ui/ over a real connection never reaches the API unauthenticated', async t => {
+  const { request } = await import('node:http');
+  const store = new Store(':memory:');
+  const app = await createServer(config, store, new Queue(store, config, new Map(), async () => ''), new Map());
+  t.after(async () => {
+    await app.close();
+    store.close();
+  });
+  await app.listen({ host: '127.0.0.1', port: 0 });
+  const { port } = app.server.address() as { port: number };
+  // app.inject normalizes dot segments; a socket sends the path as written, as an attacker would.
+  for (const path of ['/ui/../v1/settings', '/ui/%2e%2e/v1/settings', '/ui/..%2fv1/settings']) {
+    const { status, body } = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      request({ host: '127.0.0.1', port, path }, response => {
+        let body = '';
+        response.on('data', chunk => {
+          body += chunk;
+        });
+        response.on('end', () => resolve({ status: response.statusCode ?? 0, body }));
+      })
+        .on('error', reject)
+        .end();
+    });
+    assert.ok(!body.includes('publicUrl'), `${path} answered ${status} with the settings`);
+  }
 });

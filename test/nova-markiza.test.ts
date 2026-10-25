@@ -11,13 +11,21 @@ const signal = AbortSignal.timeout(10_000);
 /** tv.nova.cz's selectors (see NOVAPLUS_SITE) pointed at a local server. */
 function site(base: string): NovaArchiveSite {
   return {
-    id: 'novaplus', name: 'TV Nova', host: new URL(base).host, programsUrl: `${base}/porady`,
+    id: 'novaplus',
+    name: 'TV Nova',
+    host: new URL(base).host,
+    programsUrl: `${base}/porady`,
     episodeListUrl: (contentId, offset) => `${base}/api/v1/mixed/more?page=0&offset=${offset}&content=${encodeURIComponent(contentId)}`,
-    selPrograms: ':not(.tab-content) > .c-show-wrapper > .c-show', programTitleSelector: '.title',
-    selEpisodes: ".c-article-wrapper [class^='col-'] .c-article", selEpisodesLoadMore: '.js-article-load-more .c-button',
-    selPlayerIframe: 'iframe[data-video-id]', iframeAttr: 'data-src', selLabelVoyo: '.c-badge',
+    selPrograms: ':not(.tab-content) > .c-show-wrapper > .c-show',
+    programTitleSelector: '.title',
+    selEpisodes: ".c-article-wrapper [class^='col-'] .c-article",
+    selEpisodesLoadMore: '.js-article-load-more .c-button',
+    selPlayerIframe: 'iframe[data-video-id]',
+    iframeAttr: 'data-src',
+    selLabelVoyo: '.c-badge',
     episodeNumberRegex: /(?:(?:\s+[-–—]|\s*:)\s+)?(\d+)\.\s+díl(?:\s+[-–—]\s+)?/iu,
-    episodePaths: ['videa/cele-dily'], contentParamFallback: true,
+    episodePaths: ['videa/cele-dily'],
+    contentParamFallback: true,
   };
 }
 
@@ -32,7 +40,8 @@ test('episodes without a number in the title are numbered by position, walking t
   const offsets: number[] = [];
   await using server = createServer((request, response) => {
     const url = new URL(request.url!, 'http://localhost');
-    if (url.pathname === '/porady') return void response.end('<div class="c-show-wrapper"><a class="c-show" href="/porady/show"><h3 class="title">Show</h3></a></div>');
+    if (url.pathname === '/porady')
+      return void response.end('<div class="c-show-wrapper"><a class="c-show" href="/porady/show"><h3 class="title">Show</h3></a></div>');
     if (url.pathname === '/porady/show/videa/cele-dily') return void response.end(page(all.slice(0, 6), true));
     if (url.pathname === '/api/v1/mixed/more') {
       const offset = Number(url.searchParams.get('offset'));
@@ -48,8 +57,15 @@ test('episodes without a number in the title are numbered by position, walking t
   try {
     const provider = createNovaArchiveProvider(site(base));
     const releases = await searchCatalogue(provider, { q: 'Show', kind: 'tv', limit: 20, offset: 0 }, signal);
-    assert.deepEqual(releases.map(release => release.episode), all, 'newest first, numbered 12 down to 1');
-    assert.deepEqual(releases.map(release => release.url).slice(0, 2), [`${base}/porady/show/epizoda-12`, `${base}/porady/show/epizoda-11`]);
+    assert.deepEqual(
+      releases.map(release => release.episode),
+      all,
+      'newest first, numbered 12 down to 1',
+    );
+    assert.deepEqual(releases.map(release => release.url).slice(0, 2), [
+      `${base}/porady/show/epizoda-12`,
+      `${base}/porady/show/epizoda-11`,
+    ]);
     const walk = offsets.slice(offsets.lastIndexOf(6));
     assert.deepEqual(walk, [6, 0], 'the numbering walk reads the oldest page first and stops at offset 0');
   } finally {

@@ -4,13 +4,13 @@ Written 2026-10-24 after a whole-repo audit; phases 0 to 4 landed in PR #7 on 20
 
 ## What the repo is
 
-| Part | Size | State |
-|------|------|-------|
-| Core (`src/*.ts`: server, queue, store, torrent, indexer, catalogue, bindings, feed, publisher) | ~3 200 lines | Clean, well tested, stable interfaces. Leave alone. |
-| Providers (`src/providers/`) | ~7 000 lines, 19 providers in 35 files | Where all the duplication and most bugs live. |
-| Media pipeline (`src/media/`) | ~1 700 lines | Correct, but no request timeouts and a few untested paths. |
-| Web UI (`web/`) | ~330 lines of app code + shadcn components | Fine. One API error-handling bug. |
-| Tests | 172 tests, ~3.6 s | Core and parsing covered; HTTP resume, Oneplay pool, Nova paging are not. |
+| Part                                                                                            | Size                                       | State                                                                     |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------- |
+| Core (`src/*.ts`: server, queue, store, torrent, indexer, catalogue, bindings, feed, publisher) | ~3 200 lines                               | Clean, well tested, stable interfaces. Leave alone.                       |
+| Providers (`src/providers/`)                                                                    | ~7 000 lines, 19 providers in 35 files     | Where all the duplication and most bugs live.                             |
+| Media pipeline (`src/media/`)                                                                   | ~1 700 lines                               | Correct, but no request timeouts and a few untested paths.                |
+| Web UI (`web/`)                                                                                 | ~330 lines of app code + shadcn components | Fine. One API error-handling bug.                                         |
+| Tests                                                                                           | 172 tests, ~3.6 s                          | Core and parsing covered; HTTP resume, Oneplay pool, Nova paging are not. |
 
 Load: one home instance, Sonarr and Radarr as clients, up to 32 concurrent downloads. Nothing here needs to scale beyond that.
 
@@ -18,17 +18,17 @@ Load: one home instance, Sonarr and Radarr as clients, up to 32 concurrent downl
 
 Every layer below does its job and a swap would cost more than it returns.
 
-| Layer | Now | Verdict |
-|-------|-----|---------|
-| Runtime, package manager, test runner | Bun 1.4, `node:test` + `node:assert` | Keep. One tool, fast tests, `node:sqlite` built in. |
-| Language | TypeScript 7, `strict`, `noUncheckedIndexedAccess`, `erasableSyntaxOnly`, `noEmit` (Bun runs `.ts` directly) | Keep exactly this. No build step for the service. |
-| HTTP server | Fastify 5 + multipart + static | Keep. The API surface is two small protocols (Torznab, qBittorrent v2) and a handful of `/v1` routes. |
-| Storage | SQLite via `node:sqlite`, JSON payload columns, hand-written migrations in `store.ts` | Keep. Four tables of JSON blobs do not need an ORM or a migration tool. |
-| Upstream parsing | `cheerio`, `fast-xml-parser`, `json5`, `at()` dotted getter over `unknown` | Keep. Upstream HTML/JSON is untrusted and changes often; a schema library would only move the breakage. |
-| JS evaluation | `quickjs-emscripten` (required by `youtubei.js` 18, which ships no evaluator) | Keep while YouTube stays a provider. |
-| Media tools | ffmpeg and ffprobe via `spawn` arrays, Bento4 `mp4decrypt`, Widevine via remote CDM | Keep. |
-| Web UI | React 19, Vite 8, Tailwind 4, shadcn/ui, TanStack Query 5 | Keep. 330 lines of app code is not worth a framework change. |
-| CI | `docker build --target test` on a self-hosted runner | Keep. The ffmpeg download should move to a mirror the project controls (see phase 3). |
+| Layer                                 | Now                                                                                                          | Verdict                                                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Runtime, package manager, test runner | Bun 1.4, `node:test` + `node:assert`                                                                         | Keep. One tool, fast tests, `node:sqlite` built in.                                                     |
+| Language                              | TypeScript 7, `strict`, `noUncheckedIndexedAccess`, `erasableSyntaxOnly`, `noEmit` (Bun runs `.ts` directly) | Keep exactly this. No build step for the service.                                                       |
+| HTTP server                           | Fastify 5 + multipart + static                                                                               | Keep. The API surface is two small protocols (Torznab, qBittorrent v2) and a handful of `/v1` routes.   |
+| Storage                               | SQLite via `node:sqlite`, JSON payload columns, hand-written migrations in `store.ts`                        | Keep. Four tables of JSON blobs do not need an ORM or a migration tool.                                 |
+| Upstream parsing                      | `cheerio`, `fast-xml-parser`, `json5`, `at()` dotted getter over `unknown`                                   | Keep. Upstream HTML/JSON is untrusted and changes often; a schema library would only move the breakage. |
+| JS evaluation                         | `quickjs-emscripten` (required by `youtubei.js` 18, which ships no evaluator)                                | Keep while YouTube stays a provider.                                                                    |
+| Media tools                           | ffmpeg and ffprobe via `spawn` arrays, Bento4 `mp4decrypt`, Widevine via remote CDM                          | Keep.                                                                                                   |
+| Web UI                                | React 19, Vite 8, Tailwind 4, shadcn/ui, TanStack Query 5                                                    | Keep. 330 lines of app code is not worth a framework change.                                            |
+| CI                                    | `docker build --target test` on a self-hosted runner                                                         | Keep. The ffmpeg download should move to a mirror the project controls (see phase 3).                   |
 
 Do not do: a NestJS/Hono rewrite, Prisma or Drizzle, Zod on upstream payloads, a monorepo tool, Deno or Node, a plugin system for providers. None of them removes a bug from the list below.
 
@@ -58,12 +58,12 @@ Already fixed in PR #7: MPD timeline bound, 416 resume completion, Oneplay 401 h
 
 ### Phase 0: guardrails (tests only, ~150 lines)
 
-| Test | File | Why first |
-|------|------|-----------|
-| 206 resume honoured, 200 after `Range` restarts without corrupting the file | `test/http-download.test.ts` (extend) | Phase 3 touches the same function. |
-| Pool: aborted waiter leaves the queue, `close()` rejects queued callers, connections are released on error | `test/oneplay-pool.test.ts` (new; make the connection factory a constructor parameter) | Phase 2 changes the auth gate. |
-| Nova `mixed/more` paging with a recorded fixture, including the `offset=-6` boundary | `test/nova-markiza.test.ts` (new) | Pins the episode numbering before `public-sites`-style splitting. |
-| `fetchTextRetry` stops on abort and on 4xx | `test/nova-markiza.test.ts` | Phase 1 replaces the helper. |
+| Test                                                                                                       | File                                                                                   | Why first                                                         |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 206 resume honoured, 200 after `Range` restarts without corrupting the file                                | `test/http-download.test.ts` (extend)                                                  | Phase 3 touches the same function.                                |
+| Pool: aborted waiter leaves the queue, `close()` rejects queued callers, connections are released on error | `test/oneplay-pool.test.ts` (new; make the connection factory a constructor parameter) | Phase 2 changes the auth gate.                                    |
+| Nova `mixed/more` paging with a recorded fixture, including the `offset=-6` boundary                       | `test/nova-markiza.test.ts` (new)                                                      | Pins the episode numbering before `public-sites`-style splitting. |
+| `fetchTextRetry` stops on abort and on 4xx                                                                 | `test/nova-markiza.test.ts`                                                            | Phase 1 replaces the helper.                                      |
 
 ### Phase 1: one helper per job (`src/providers/common.ts`, −~90 lines)
 

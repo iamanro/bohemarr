@@ -15,9 +15,21 @@ const execFileAsync = promisify(execFile);
 
 function baseConfig(directory: string): Config {
   return {
-    host: '127.0.0.1', port: 0, apiKey: 'test', publicUrl: 'http://127.0.0.1', dataDir: directory, downloadsDir: directory,
-    concurrency: 1, requestRate: 100, ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'http://unused.invalid',
-    categories: [], providers: {}, arrs: [],
+    host: '127.0.0.1',
+    port: 0,
+    apiKey: 'test',
+    publicUrl: 'http://127.0.0.1',
+    dataDir: directory,
+    downloadsDir: directory,
+    concurrency: 1,
+    requestRate: 100,
+    ffmpeg: 'ffmpeg',
+    ffprobe: 'ffprobe',
+    mp4decrypt: 'mp4decrypt',
+    wvApiUrl: 'http://unused.invalid',
+    categories: [],
+    providers: {},
+    arrs: [],
   };
 }
 
@@ -34,7 +46,11 @@ function serveFixtures(bodies: Record<string, { body: Buffer; contentType?: stri
   return createServer((request, response) => {
     const path = (request.url ?? '').replace(/^\//, '');
     const entry = bodies[path];
-    if (!entry) { response.writeHead(404); response.end(); return; }
+    if (!entry) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
     if (request.method === 'HEAD') {
       response.writeHead(200, { 'Content-Length': entry.body.length, ...(entry.contentType ? { 'Content-Type': entry.contentType } : {}) });
       response.end();
@@ -54,26 +70,46 @@ function serveFixtures(bodies: Record<string, { body: Buffer; contentType?: stri
   });
 }
 
-interface VideoRep { id: string; height: number; bandwidth: number; }
-interface AudioRep { id: string; bandwidth: number; lang: string; }
+interface VideoRep {
+  id: string;
+  height: number;
+  bandwidth: number;
+}
+interface AudioRep {
+  id: string;
+  bandwidth: number;
+  lang: string;
+}
 
 /** `SegmentTemplate`-based Representations: segments are separately-addressed files with no byte
  * ranges, so `inspectMediaSources` can only estimate their size from bandwidth * duration
  * (`bandwidth="0"` models a manifest that omits the attribute: no usable estimate exists then). */
 function dashManifestEstimated(periods: Array<{ durationSeconds: number; videos: VideoRep[]; audios: AudioRep[] }>): string {
-  const periodXml = periods.map((p, i) => `
+  const periodXml = periods
+    .map(
+      (p, i) => `
   <Period id="p${i}" duration="PT${p.durationSeconds}S">
     <AdaptationSet contentType="video" mimeType="video/mp4">
-      ${p.videos.map(v => `<Representation id="${v.id}" bandwidth="${v.bandwidth}" width="${Math.round(v.height * 16 / 9)}" height="${v.height}" mimeType="video/mp4">
+      ${p.videos
+        .map(
+          v => `<Representation id="${v.id}" bandwidth="${v.bandwidth}" width="${Math.round((v.height * 16) / 9)}" height="${v.height}" mimeType="video/mp4">
         <SegmentTemplate media="${v.id}-$Number$.m4s" duration="1" timescale="1" startNumber="1"/>
-      </Representation>`).join('')}
+      </Representation>`,
+        )
+        .join('')}
     </AdaptationSet>
-    ${p.audios.map(a => `<AdaptationSet contentType="audio" mimeType="audio/mp4" lang="${a.lang}">
+    ${p.audios
+      .map(
+        a => `<AdaptationSet contentType="audio" mimeType="audio/mp4" lang="${a.lang}">
       <Representation id="${a.id}" bandwidth="${a.bandwidth}" mimeType="audio/mp4">
         <SegmentTemplate media="${a.id}-$Number$.m4s" duration="1" timescale="1" startNumber="1"/>
       </Representation>
-    </AdaptationSet>`).join('')}
-  </Period>`).join('');
+    </AdaptationSet>`,
+      )
+      .join('')}
+  </Period>`,
+    )
+    .join('');
   return `<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">${periodXml}</MPD>`;
 }
 
@@ -85,7 +121,7 @@ function dashManifestExact(fileUrl: string, initRange: string, mediaRanges: stri
 <MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static">
   <Period duration="PT1S">
     <AdaptationSet contentType="video" mimeType="video/mp4">
-      <Representation id="v0" bandwidth="${bandwidth}" width="${Math.round(height * 16 / 9)}" height="${height}" mimeType="video/mp4">
+      <Representation id="v0" bandwidth="${bandwidth}" width="${Math.round((height * 16) / 9)}" height="${height}" mimeType="video/mp4">
         <SegmentList timescale="1" duration="1"><Initialization sourceURL="${fileUrl}" range="${initRange}"/>${segments}</SegmentList>
       </Representation>
     </AdaptationSet>
@@ -94,8 +130,9 @@ function dashManifestExact(fileUrl: string, initRange: string, mediaRanges: stri
 }
 
 function dashManifestLive(): string {
+  // A duration lets the parser finish, so it is the live check, not a parse error, that rejects it.
   return `<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="dynamic">
-  <Period><AdaptationSet contentType="video" mimeType="video/mp4">
+  <Period duration="PT10S"><AdaptationSet contentType="video" mimeType="video/mp4">
     <Representation id="v0" bandwidth="1000000" width="1920" height="1080" mimeType="video/mp4">
       <SegmentTemplate media="s-$Number$.m4s" duration="1" timescale="1" startNumber="1"/>
     </Representation>
@@ -119,15 +156,20 @@ high.m3u8
 
 test('DASH: picks the highest actual video height, then bandwidth, and defaults to Czech audio', async t => {
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-meta-'));
-  const manifest = dashManifestEstimated([{
-    durationSeconds: 100,
-    videos: [
-      { id: 'v288', height: 288, bandwidth: 500000 },
-      { id: 'v1080', height: 1080, bandwidth: 3010000 },
-      { id: 'v1080b', height: 1080, bandwidth: 1500000 }, // same height, lower bandwidth: must lose the tie
-    ],
-    audios: [{ id: 'a-en', bandwidth: 192000, lang: 'en' }, { id: 'a-cs', bandwidth: 256000, lang: 'cs' }],
-  }]);
+  const manifest = dashManifestEstimated([
+    {
+      durationSeconds: 100,
+      videos: [
+        { id: 'v288', height: 288, bandwidth: 500000 },
+        { id: 'v1080', height: 1080, bandwidth: 3010000 },
+        { id: 'v1080b', height: 1080, bandwidth: 1500000 }, // same height, lower bandwidth: must lose the tie
+      ],
+      audios: [
+        { id: 'a-en', bandwidth: 192000, lang: 'en' },
+        { id: 'a-cs', bandwidth: 256000, lang: 'cs' },
+      ],
+    },
+  ]);
   const server = serveFixtures({ 'manifest.mpd': { body: Buffer.from(manifest) } });
   const base = await listen(server);
   t.after(() => server.close());
@@ -145,8 +187,16 @@ test('DASH: picks the highest actual video height, then bandwidth, and defaults 
 test('DASH: sums an estimated size per period and takes the max height across periods', async t => {
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-meta-'));
   const manifest = dashManifestEstimated([
-    { durationSeconds: 50, videos: [{ id: 'p0v', height: 1080, bandwidth: 3000000 }], audios: [{ id: 'p0a', bandwidth: 256000, lang: 'cs' }] },
-    { durationSeconds: 50, videos: [{ id: 'p1v', height: 720, bandwidth: 2000000 }], audios: [{ id: 'p1a', bandwidth: 256000, lang: 'cs' }] },
+    {
+      durationSeconds: 50,
+      videos: [{ id: 'p0v', height: 1080, bandwidth: 3000000 }],
+      audios: [{ id: 'p0a', bandwidth: 256000, lang: 'cs' }],
+    },
+    {
+      durationSeconds: 50,
+      videos: [{ id: 'p1v', height: 720, bandwidth: 2000000 }],
+      audios: [{ id: 'p1a', bandwidth: 256000, lang: 'cs' }],
+    },
   ]);
   const server = serveFixtures({ 'manifest.mpd': { body: Buffer.from(manifest) } });
   const base = await listen(server);
@@ -162,11 +212,13 @@ test('DASH: sums an estimated size per period and takes the max height across pe
 
 test('DASH: a Representation with no usable bandwidth leaves the whole selected AV size unknown', async t => {
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-meta-'));
-  const manifest = dashManifestEstimated([{
-    durationSeconds: 100,
-    videos: [{ id: 'v', height: 1080, bandwidth: 0 }], // manifest omits/zeroes the bandwidth attribute
-    audios: [{ id: 'a', bandwidth: 256000, lang: 'cs' }],
-  }]);
+  const manifest = dashManifestEstimated([
+    {
+      durationSeconds: 100,
+      videos: [{ id: 'v', height: 1080, bandwidth: 0 }], // manifest omits/zeroes the bandwidth attribute
+      audios: [{ id: 'a', bandwidth: 256000, lang: 'cs' }],
+    },
+  ]);
   const server = serveFixtures({ 'manifest.mpd': { body: Buffer.from(manifest) } });
   const base = await listen(server);
   t.after(() => server.close());
@@ -226,7 +278,7 @@ test('DASH: a live manifest is rejected', async t => {
   t.after(() => server.close());
 
   const source: MediaSource = { url: `${base}/manifest.mpd`, type: 'dash' };
-  await assert.rejects(inspectMediaSources(baseConfig(directory.path), [source], new AbortController().signal));
+  await assert.rejects(inspectMediaSources(baseConfig(directory.path), [source], new AbortController().signal), /live streams/);
 });
 
 test('HLS: the linked Czech audio group is preferred and BANDWIDTH (already combined AV) is not double-counted', async t => {
@@ -288,12 +340,27 @@ test('a direct file source gets an exact Content-Length size, and a larger unins
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-meta-'));
   const clearVideoPath = join(directory.path, 'clear.mp4');
   await execFileAsync('ffmpeg', [
-    '-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=64x64:rate=5:duration=1',
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', clearVideoPath,
+    '-y',
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc=size=64x64:rate=5:duration=1',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-pix_fmt',
+    'yuv420p',
+    clearVideoPath,
   ]);
   const clearVideoBody = await readFile(clearVideoPath);
 
-  const dashManifest = dashManifestEstimated([{ durationSeconds: 60, videos: [{ id: 'v', height: 1080, bandwidth: 3000000 }], audios: [] }]);
+  const dashManifest = dashManifestEstimated([
+    { durationSeconds: 60, videos: [{ id: 'v', height: 1080, bandwidth: 3000000 }], audios: [] },
+  ]);
   const server = serveFixtures({
     'low.mp4': { body: clearVideoBody, contentType: 'video/mp4' },
     'manifest.mpd': { body: Buffer.from(dashManifest) },
@@ -302,7 +369,8 @@ test('a direct file source gets an exact Content-Length size, and a larger unins
   t.after(() => server.close());
 
   // audioLanguage pinned so the "no avoidable probing" path doesn't re-probe this video-only file for language.
-  const lowFile: MediaSource = { url: `${base}/low.mp4`, type: 'file', height: 480, audioLanguage: 'en' };
+  // A higher bandwidth than the manifest's, so only the height comparison can rank the manifest first.
+  const lowFile: MediaSource = { url: `${base}/low.mp4`, type: 'file', height: 480, audioLanguage: 'en', bandwidth: 50_000_000 };
   const dashSource: MediaSource = { url: `${base}/manifest.mpd`, type: 'dash' };
 
   const fileOnly = await inspectMediaSources(baseConfig(directory.path), [lowFile], new AbortController().signal);
@@ -317,9 +385,11 @@ test('a direct file source gets an exact Content-Length size, and a larger unins
 
 test('a HEAD error response body is never mistaken for the file size', async t => {
   await using directory = await mkdtempDisposable(join(tmpdir(), 'md-meta-'));
+  const methods: string[] = [];
   const server = createServer((request, response) => {
     // A real server returning a 403 error page - its Content-Length describes the error page,
     // not the media - and (since the status isn't 405/501) no Range fallback should be tried.
+    methods.push(request.method ?? '');
     const body = Buffer.from('Forbidden');
     response.writeHead(403, { 'Content-Length': body.length });
     response.end(request.method === 'HEAD' ? undefined : body);
@@ -334,4 +404,5 @@ test('a HEAD error response body is never mistaken for the file size', async t =
   assert.equal(metadata.height, 1080);
   assert.equal(metadata.size, undefined);
   assert.equal(metadata.sizeEstimated, undefined);
+  assert.deepEqual(methods, ['HEAD'], 'no ranged GET after a 403');
 });

@@ -28,13 +28,21 @@ export interface DashManifest {
 }
 
 const ARRAY_TAGS: Record<string, true> = {
-  Period: true, AdaptationSet: true, Representation: true, S: true, SegmentURL: true,
-  ContentProtection: true, BaseURL: true,
+  Period: true,
+  AdaptationSet: true,
+  Representation: true,
+  S: true,
+  SegmentURL: true,
+  ContentProtection: true,
+  BaseURL: true,
 };
 
 const parser = new XMLParser({
-  ignoreAttributes: false, attributeNamePrefix: '@_', removeNSPrefix: true,
-  textNodeName: '#text', trimValues: true,
+  ignoreAttributes: false,
+  attributeNamePrefix: '@_',
+  removeNSPrefix: true,
+  textNodeName: '#text',
+  trimValues: true,
   isArray: name => ARRAY_TAGS[name] === true,
 });
 
@@ -53,7 +61,9 @@ function elementText(node: unknown): string | undefined {
 }
 
 function resolveBaseUrl(parent: URL, node: Record<string, unknown>): URL {
-  const candidates = asArray(node.BaseURL as unknown).map(elementText).filter((value): value is string => Boolean(value));
+  const candidates = asArray(node.BaseURL as unknown)
+    .map(elementText)
+    .filter((value): value is string => Boolean(value));
   return candidates.length ? new URL(candidates[0]!, parent) : parent;
 }
 
@@ -61,7 +71,9 @@ function resolveBaseUrl(parent: URL, node: Record<string, unknown>): URL {
 function parseIsoDuration(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const number = '(\\d+(?:\\.\\d+)?)';
-  const match = new RegExp(`^P(?:${number}Y)?(?:${number}M)?(?:${number}D)?(?:T(?:${number}H)?(?:${number}M)?(?:${number}S)?)?$`).exec(value);
+  const match = new RegExp(`^P(?:${number}Y)?(?:${number}M)?(?:${number}D)?(?:T(?:${number}H)?(?:${number}M)?(?:${number}S)?)?$`).exec(
+    value,
+  );
   if (!match || Number(match[1] ?? 0) || Number(match[2] ?? 0)) return undefined;
   const [days, hours, minutes, seconds] = match.slice(3).map(part => Number(part ?? 0)) as [number, number, number, number];
   return days * 86400 + hours * 3600 + minutes * 60 + seconds;
@@ -83,7 +95,11 @@ function substituteTemplate(template: string, vars: Record<string, string | numb
   });
 }
 
-interface TrackBuild { initSegment?: MediaSegment; mediaSegments: MediaSegment[]; durationSeconds: number; }
+interface TrackBuild {
+  initSegment?: MediaSegment;
+  mediaSegments: MediaSegment[];
+  durationSeconds: number;
+}
 
 /** Reference: ISO-IEC 23009-1, section 5.3.9.2.3 (`@range`/`@mediaRange`: inclusive `first-last` byte offsets). */
 function parseByteRange(value: string | undefined): { start: number; length: number } | undefined {
@@ -100,7 +116,11 @@ function parseByteRange(value: string | undefined): { start: number; length: num
 const MAX_TIMELINE_SEGMENTS = 100_000;
 
 function buildFromSegmentTemplate(
-  template: Record<string, unknown>, representationId: string, bandwidth: number, baseUrl: URL, periodDurationSeconds: number | undefined,
+  template: Record<string, unknown>,
+  representationId: string,
+  bandwidth: number,
+  baseUrl: URL,
+  periodDurationSeconds: number | undefined,
 ): TrackBuild {
   const timescale = Number(template['@_timescale'] ?? 1) || 1;
   const startNumber = Number(template['@_startNumber'] ?? 1);
@@ -128,12 +148,17 @@ function buildFromSegmentTemplate(
         // A negative @r repeats until the next S@t, or else until the end of the Period.
         const nextTime = entries[index + 1]?.['@_t'];
         const presentationTimeOffset = Number(template['@_presentationTimeOffset'] ?? 0);
-        const end = nextTime !== undefined ? Number(nextTime)
-          : periodDurationSeconds ? presentationTimeOffset + periodDurationSeconds * timescale : undefined;
+        const end =
+          nextTime !== undefined
+            ? Number(nextTime)
+            : periodDurationSeconds
+              ? presentationTimeOffset + periodDurationSeconds * timescale
+              : undefined;
         if (end === undefined) throw new Error('SegmentTimeline repeats until the Period ends, but the manifest has no period duration');
         repeat = Math.ceil((end - time) / duration);
       }
-      if (segments.length + repeat > MAX_TIMELINE_SEGMENTS) throw new Error(`SegmentTimeline lists more than ${MAX_TIMELINE_SEGMENTS} segments`);
+      if (segments.length + repeat > MAX_TIMELINE_SEGMENTS)
+        throw new Error(`SegmentTimeline lists more than ${MAX_TIMELINE_SEGMENTS} segments`);
       for (let i = 0; i < repeat; i++) {
         segments.push({ time, duration });
         time += duration;
@@ -141,14 +166,17 @@ function buildFromSegmentTemplate(
     }
     let number = startNumber;
     for (const segment of segments) {
-      mediaSegments.push({ url: new URL(substituteTemplate(mediaTemplate, { ...vars, Number: number, Time: segment.time }), baseUrl).toString() });
+      mediaSegments.push({
+        url: new URL(substituteTemplate(mediaTemplate, { ...vars, Number: number, Time: segment.time }), baseUrl).toString(),
+      });
       totalDurationTicks += segment.duration;
       number++;
     }
   } else {
     const segmentDuration = Number(template['@_duration']);
     if (!segmentDuration) throw new Error('SegmentTemplate has neither a SegmentTimeline nor a duration attribute');
-    if (!periodDurationSeconds) throw new Error('Cannot compute SegmentTemplate segment count: manifest has no period/presentation duration');
+    if (!periodDurationSeconds)
+      throw new Error('Cannot compute SegmentTemplate segment count: manifest has no period/presentation duration');
     const count = Math.ceil((periodDurationSeconds * timescale) / segmentDuration);
     for (let i = 0; i < count; i++) {
       mediaSegments.push({ url: new URL(substituteTemplate(mediaTemplate, { ...vars, Number: startNumber + i }), baseUrl).toString() });
@@ -167,11 +195,10 @@ function buildFromSegmentList(segmentList: Record<string, unknown>, baseUrl: URL
   const initSegment: MediaSegment | undefined = initSourceUrl
     ? { url: new URL(initSourceUrl, baseUrl).toString(), range: parseByteRange(init?.['@_range'] as string | undefined) }
     : undefined;
-  const mediaSegments: MediaSegment[] = asArray(segmentList.SegmentURL as Record<string, unknown>[] | undefined)
-    .map(url => ({
-      url: new URL(url['@_media'] as string, baseUrl).toString(),
-      range: parseByteRange(url['@_mediaRange'] as string | undefined),
-    }));
+  const mediaSegments: MediaSegment[] = asArray(segmentList.SegmentURL as Record<string, unknown>[] | undefined).map(url => ({
+    url: new URL(url['@_media'] as string, baseUrl).toString(),
+    range: parseByteRange(url['@_mediaRange'] as string | undefined),
+  }));
   return { initSegment, mediaSegments, durationSeconds: (segmentDuration * mediaSegments.length) / timescale };
 }
 
@@ -220,7 +247,7 @@ export function parseManifest(xml: string, manifestUrl: string): DashManifest {
   // SegmentTemplate and SegmentList attributes are inherited from Period to AdaptationSet to Representation.
   const inherited = (name: string, ...levels: Record<string, unknown>[]): Record<string, unknown> | undefined => {
     const nodes = levels.map(level => level[name]).filter(node => node && typeof node === 'object');
-    return nodes.length ? Object.assign({}, ...nodes) as Record<string, unknown> : undefined;
+    return nodes.length ? (Object.assign({}, ...nodes) as Record<string, unknown>) : undefined;
   };
 
   let periodStart = 0;
@@ -230,8 +257,13 @@ export function parseManifest(xml: string, manifestUrl: string): DashManifest {
     periodStart = parseIsoDuration(period['@_start'] as string | undefined) ?? periodStart;
     // A Period lasts until the next one starts, or else until the presentation ends.
     const nextStart = parseIsoDuration(rawPeriods[index + 1]?.['@_start'] as string | undefined);
-    const periodDuration = parseIsoDuration(period['@_duration'] as string | undefined)
-      ?? (nextStart !== undefined ? nextStart - periodStart : presentationDuration !== undefined ? presentationDuration - periodStart : undefined);
+    const periodDuration =
+      parseIsoDuration(period['@_duration'] as string | undefined) ??
+      (nextStart !== undefined
+        ? nextStart - periodStart
+        : presentationDuration !== undefined
+          ? presentationDuration - periodStart
+          : undefined);
     if (periodDuration !== undefined) periodStart += periodDuration;
 
     for (const adaptationSet of asArray(period.AdaptationSet as Record<string, unknown>[] | undefined)) {
@@ -256,9 +288,16 @@ export function parseManifest(xml: string, manifestUrl: string): DashManifest {
         else built = { mediaSegments: [{ url: representationBase.toString() }], durationSeconds: periodDuration ?? 0 };
 
         representations.push({
-          id, kind, bandwidth, height, language,
-          initSegment: built.initSegment, mediaSegments: built.mediaSegments, durationSeconds: built.durationSeconds,
-          pssh: protection.pssh, keyId: protection.keyId,
+          id,
+          kind,
+          bandwidth,
+          height,
+          language,
+          initSegment: built.initSegment,
+          mediaSegments: built.mediaSegments,
+          durationSeconds: built.durationSeconds,
+          pssh: protection.pssh,
+          keyId: protection.keyId,
         });
       }
     }
@@ -275,7 +314,9 @@ export function parseManifest(xml: string, manifestUrl: string): DashManifest {
  * so the caller can decrypt and concatenate every period instead of silently dropping all but one.
  */
 export function selectVideoAndAudio(
-  manifest: DashManifest, targetHeight: number | undefined, targetLanguage?: string,
+  manifest: DashManifest,
+  targetHeight: number | undefined,
+  targetLanguage?: string,
 ): Array<{ video: DashRepresentation; audio?: DashRepresentation }> {
   return manifest.periods.map((period, periodIndex) => {
     const videos = period.representations.filter(r => r.kind === 'video');
@@ -292,17 +333,19 @@ export function selectVideoAndAudio(
   });
 }
 
-function selectAudio(
-  representations: DashRepresentation[], targetLanguage: string | undefined,
-): DashRepresentation | undefined {
+function selectAudio(representations: DashRepresentation[], targetLanguage: string | undefined): DashRepresentation | undefined {
   const language = normalizeLanguage(targetLanguage);
   let best: DashRepresentation | undefined;
   let preferred: DashRepresentation | undefined;
   for (const representation of representations) {
     if (representation.kind !== 'audio') continue;
     if (!best || representation.bandwidth > best.bandwidth) best = representation;
-    if (language && normalizeLanguage(representation.language) === language
-      && (!preferred || representation.bandwidth > preferred.bandwidth)) preferred = representation;
+    if (
+      language &&
+      normalizeLanguage(representation.language) === language &&
+      (!preferred || representation.bandwidth > preferred.bandwidth)
+    )
+      preferred = representation;
   }
   return preferred ?? best;
 }
