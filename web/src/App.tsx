@@ -190,6 +190,11 @@ function Dashboard({ data, onSignOut }: { data: Settings; onSignOut: () => void 
               {toggle("ARR_REMOVE_COMPLETED", "Move completed downloads into the library and remove them", "true")}
             </div>
           </Section>
+          <Section title="Vltava" description="Publishing to Vltava is set up in .env; only the API token can be entered here.">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {field("VLTAVA_TOKEN", "API token (Profil > API tokeny)")}
+            </div>
+          </Section>
         </TabsContent>
 
         <TabsContent value="general">

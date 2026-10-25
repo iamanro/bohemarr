@@ -12,7 +12,7 @@ const NESTED_PROVIDER_FIELDS = ['catalog', 'headers'];
 
 /** Settings the web UI may store in `DATA_DIR/settings.json`; never paths or commands, which only the deployment sets. */
 export const EDITABLE_SETTINGS: readonly string[] = [
-  'PROVIDERS', 'CATEGORIES', 'CONCURRENCY', 'REQUEST_RATE', 'ARR_REMOVE_COMPLETED', 'ARR_RENAME',
+  'PROVIDERS', 'CATEGORIES', 'CONCURRENCY', 'REQUEST_RATE', 'ARR_REMOVE_COMPLETED', 'ARR_RENAME', 'VLTAVA_TOKEN',
   ...['SONARR', 'RADARR'].flatMap(app => ['URL', 'API_KEY', 'CATEGORY', 'ROOT_FOLDER'].map(field => `${app}_${field}`)),
   ...PROVIDER_IDS.flatMap(id => PROVIDER_FIELDS.map(field => `${id.toUpperCase()}_${constantCase(field)}`)),
 ];
