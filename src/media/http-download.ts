@@ -3,7 +3,8 @@ import { pipeline } from 'node:stream/promises';
 import { readFile, rename, stat, unlink } from 'node:fs/promises';
 import type { Config, DownloadProgress, MediaSource } from '../types.ts';
 import { validateMediaFile } from './ffprobe.ts';
-import { writeJsonAtomic } from './segment-download.ts';
+import { readChunks, writeJsonAtomic } from './segment-download.ts';
+import { fetchResponse } from '../providers/common.ts';
 
 interface ResumeMeta { url: string; etag?: string; lastModified?: string; }
 
@@ -64,11 +65,12 @@ export async function downloadDirectFile(
   }
   if (resumeFrom > 0) requestHeaders.Range = `bytes=${resumeFrom}-`;
 
-  const response = await fetch(source.url, { headers: requestHeaders, signal });
+  const response = await fetchResponse(source.url, signal, { headers: requestHeaders });
   const validator = requestHeaders['If-Range'];
   if (resumeFrom > 0 && (response.status === 206 || response.status === 416)) {
     const returned = validator?.startsWith('"') ? response.headers.get('etag') : response.headers.get('last-modified');
-    if ((returned && returned !== validator) || (response.status === 416 && returned !== validator)) {
+    // A 416 rarely echoes the validator; its `Content-Range: bytes */total` below proves the match instead.
+    if (returned && returned !== validator) {
       await response.body?.cancel();
       throw new Error('Remote media changed while resuming the download');
     }
@@ -129,30 +131,15 @@ export async function downloadDirectFile(
   writeStream.on('error', () => {});
 
   let bytes = writeOffset;
-  const reader = response.body.getReader();
-  const onAbort = (): void => { reader.cancel(signal.reason).catch(() => {}); };
-  signal.addEventListener('abort', onAbort, { once: true });
+  const body = response.body;
   async function* chunks(): AsyncGenerator<Buffer> {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return;
-      const buffer = Buffer.from(value);
+    for await (const buffer of readChunks(body, signal)) {
       bytes += buffer.length;
       onProgress({ bytes, totalBytes, progress: totalBytes ? Math.min(100, (bytes / totalBytes) * 100) : undefined });
       yield buffer;
     }
   }
-  let failed = false;
-  try {
-    await pipeline(chunks(), writeStream);
-  } catch (error) {
-    failed = true;
-    throw error;
-  } finally {
-    signal.removeEventListener('abort', onAbort);
-    if (failed) await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
+  await pipeline(chunks(), writeStream);
 
   if (totalBytes !== undefined && bytes !== totalBytes) {
     throw new Error(`Incomplete download of ${new URL(source.url).hostname}: got ${bytes} of ${totalBytes} bytes`);

@@ -144,6 +144,8 @@ export function successData(response: OneplayResponse): unknown {
   if (response.status !== 'Ok') {
     const err = resultError(response.data);
     if (err) throw err;
+    // Not an Oneplay error payload either, e.g. the HTTP 401 `request` reports as `Unauthorized`.
+    if (at<string>(response.data, 'result.status') !== 'Error') throw new Error(`Oneplay ${response.command}: ${response.status ?? 'no status'}`);
   }
   return response.data;
 }

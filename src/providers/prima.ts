@@ -20,8 +20,8 @@ import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import type { Catalogue, CatalogueQuery, License, MediaKind, MediaSource, Provider, ProviderConfig, Release, SeriesIdentity, ProgramMetadata } from '../types.ts';
 import { isSeriesCandidate } from '../series-identity.ts';
-import { fetchJson, fetchText, mediaType, releaseId } from './common.ts';
-import { extractPlayIds, get, has, Nuxt, PrimaAuthError, PrimaMessageError, PrimaRpc } from './prima-common.ts';
+import { at, cached, fetchJson, fetchText, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import { extractPlayIds, get, Nuxt, PrimaAuthError, PrimaMessageError, PrimaRpc } from './prima-common.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { PrimaAuthenticator } from './prima-auth.ts';
 import { PrimaIndex, pageTitle } from './prima-index.ts';
@@ -60,10 +60,15 @@ export function createPrimaProviders(configs: Record<string, ProviderConfig>, da
 
   const auth = new PrimaAuthenticator(config);
   const index = new PrimaIndex(database);
+  // Every text search drains the whole list, so the snippet pages are read once per TTL, not per search.
+  const lists: SiteLists = {
+    zoom: cached(PROGRAM_LIST_TTL_MS, signal => Array.fromAsync(zoomPrograms(signal))),
+    cnn: cached(PROGRAM_LIST_TTL_MS, signal => Array.fromAsync(cnnPrograms(signal))),
+  };
 
   const catalogue: Catalogue<PrimaProgram> = {
     concurrency: 4,
-    programs: (_query: CatalogueQuery, signal: AbortSignal) => programs(auth, index, signal),
+    programs: (_query: CatalogueQuery, signal: AbortSignal) => programs(auth, index, lists, signal),
     program: (id: string, signal: AbortSignal) => boundProgram(id, signal),
     releases: (program: PrimaProgram, _query: CatalogueQuery, signal: AbortSignal) => releases(program, auth, signal),
   };
@@ -82,9 +87,12 @@ export function createPrimaProviders(configs: Record<string, ProviderConfig>, da
 // Catalogue
 // ---------------------------------------------------------------------------------------------
 
-async function* programs(auth: PrimaAuthenticator, index: PrimaIndex, signal: AbortSignal): AsyncGenerator<PrimaProgram> {
+/** The cached zoom and CNN programme lists. */
+type SiteLists = Record<'zoom' | 'cnn', (signal: AbortSignal) => Promise<PrimaProgram[]>>;
+
+async function* programs(auth: PrimaAuthenticator, index: PrimaIndex, lists: SiteLists, signal: AbortSignal): AsyncGenerator<PrimaProgram> {
   const sites: Site[] = auth.hasCredentials() ? [...BROWSABLE_SITES] : ['zoom', 'cnn'];
-  for (const site of sites) yield* programsForSite(site, index, signal);
+  for (const site of sites) yield* programsForSite(site, index, lists, signal);
 }
 
 async function boundProgram(id: string, signal: AbortSignal): Promise<PrimaProgram | undefined> {
@@ -131,13 +139,13 @@ function buildRelease(program: PrimaProgram, episode: PrimaEpisode): Release {
 // Program listing — ports `SnippetProgramObtainer` / `StaticProgramObtainer`; Prima+ uses PrimaIndex
 // ---------------------------------------------------------------------------------------------
 
-async function* programsForSite(site: Site, index: PrimaIndex, signal: AbortSignal): AsyncGenerator<PrimaProgram> {
+async function* programsForSite(site: Site, index: PrimaIndex, lists: SiteLists, signal: AbortSignal): AsyncGenerator<PrimaProgram> {
   switch (site) {
     case 'www':
       for await (const program of index.programs(signal)) yield { ...program, id: program.uri, site: 'www' };
       return;
-    case 'zoom': yield* zoomPrograms(signal); return;
-    case 'cnn': yield* cnnPrograms(signal); return;
+    case 'zoom': yield* await lists.zoom(signal); return;
+    case 'cnn': yield* await lists.cnn(signal); return;
     default: return; // fresh/zeny/cool never exposed program listings upstream (Features.MEDIA only)
   }
 }
@@ -150,8 +158,10 @@ async function* zoomPrograms(signal: AbortSignal): AsyncGenerator<PrimaProgram> 
     let html: string;
     try {
       html = await fetchText(url, signal);
-    } catch {
-      break; // Past the end of the list
+    } catch (error) {
+      // Only a missing page means the end of the list; an outage or a block must not pass as an empty catalogue.
+      if (signal.aborted || !(error instanceof Error && /^HTTP 404\b/.test(error.message))) throw error;
+      break;
     }
     if (!html.trim()) break;
 
@@ -234,24 +244,19 @@ async function seriesCandidates(index: PrimaIndex, identity: SeriesIdentity, sig
 async function* primaPlusEpisodes(program: PrimaProgram, auth: PrimaAuthenticator, signal: AbortSignal): AsyncGenerator<PrimaEpisode> {
   if (program.kind === 'movie') { yield { uri: program.uri, title: null }; return; }
 
-  let programId: string;
-  try {
-    programId = await auth.run(async (session, signal) => {
-      const headers = auth.headers(session);
-      const html = await fetchText(program.uri, signal, { headers });
-      const nuxt = Nuxt.extract(html);
-      if (nuxt) {
-        for (const value of Object.values(nuxt.data())) {
-          const id = get<string>(value, 'title.id', '');
-          if (id) return id;
-        }
+  const programId = await auth.run(async (session, signal) => {
+    const headers = auth.headers(session);
+    const html = await fetchText(program.uri, signal, { headers });
+    const nuxt = Nuxt.extract(html);
+    if (nuxt) {
+      for (const value of Object.values(nuxt.data())) {
+        const id = get<string>(value, 'title.id', '');
+        if (id) return id;
       }
-      throw new SessionRejected(`Unable to extract Prima+ program id for ${program.uri}`);
-    }, signal);
-  } catch (error) {
-    if (error instanceof SessionRejected) throw new Error(error.message);
-    throw error;
-  }
+    }
+    // A page without a title id is a redesigned or redirected page, not a refused session: no new login for it.
+    throw new Error(`Unable to extract Prima+ program id for ${program.uri}`);
+  }, signal);
 
   // Each season's episodes already arrive newest-first (requested `ordering: desc`); sorting
   // seasons newest-first too, and fetching lazily, yields the whole Program newest-first without
@@ -305,7 +310,7 @@ async function listEpisodesForSeason(
   const episodes: PrimaEpisode[] = [];
 
   for (const item of get<unknown[]>(result, 'data.episodes', [])) {
-    if (has(item, 'distribution.upsell')) continue; // Not playable at the current account tier
+    if (at(item, 'distribution.upsell') !== undefined) continue; // Not playable at the current account tier
 
     let title: string | null = get<string>(item, 'title', '');
     const webUrl = get<string | null>(item, 'additionals.webUrl', null);
@@ -561,10 +566,10 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
 
       let nuxtData: Record<string, unknown> | null = null;
       for (const value of Object.values(nuxt.data())) {
-        if (has(value, 'playId') || has(value, 'content')) { nuxtData = value as Record<string, unknown>; break; }
+        if (at(value, 'playId') !== undefined || at(value, 'content') !== undefined) { nuxtData = value as Record<string, unknown>; break; }
       }
       if (!nuxtData) throw new Error(`Unable to extract Prima+ media information for ${release.url}`);
-      if (has(nuxtData, 'content')) nuxtData = get(nuxtData, 'content', {} as Record<string, unknown>);
+      if (at(nuxtData, 'content') !== undefined) nuxtData = get(nuxtData, 'content', {} as Record<string, unknown>);
 
       const playId = get<string | null>(nuxtData, 'playId', null);
       if (!playId) throw new Error(`Unable to extract Prima+ play ID for ${release.url}`);
@@ -576,7 +581,12 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
       const errorInfo = Array.isArray(data)
         ? data.map((c) => get(c, 'errorResult', null)).find((e) => e) ?? null
         : get(data, 'errorResult', null);
-      if (errorInfo) throw new SessionRejected(`iPrima playback error: ${get(errorInfo, 'errorCode', 'unknown')}`);
+      if (errorInfo) {
+        const code = get<string>(errorInfo, 'errorCode', 'unknown');
+        // ponytail: the play API's codes are undocumented here; only ones that read as a session problem force a new login.
+        if (/LOGIN|AUTH|SESSION|TOKEN|UNAUTHOR/i.test(code)) throw new SessionRejected(`iPrima playback error: ${code}`);
+        throw new PrimaMessageError(`iPrima playback error: ${code}`);
+      }
 
       return data;
     }, signal);
@@ -605,7 +615,7 @@ async function resolvePrimaPlus(release: Release, signal: AbortSignal, auth: Pri
       const type = get<string>(streamInfo, 'type', '').toLowerCase();
       let drm: License | undefined;
 
-      if (has(streamInfo, 'drmInfo')) {
+      if (at(streamInfo, 'drmInfo') !== undefined) {
         if (type !== 'dash') continue; // Widevine over HLS is not supported, matching upstream
         const modular = get<unknown[]>(streamInfo, 'drmInfo.modularDrmInfos', []);
         const widevine = modular.find((m) => get<string>(m, 'keySystem', '') === 'com.widevine.alpha');

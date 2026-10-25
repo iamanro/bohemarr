@@ -41,3 +41,9 @@ test('SegmentTemplate attributes are inherited from the Period down to the Repre
     'https://cdn.example.test/video/v/0.m4s', 'https://cdn.example.test/video/v/3000.m4s',
   ]);
 });
+
+test('a SegmentTimeline with a zero duration or an absurd repeat is rejected instead of expanded forever', () => {
+  const timeline = (s: string) => mpd('PT60S', `<Period>${videoSet(`<SegmentTemplate timescale="1000" media="$Number$.m4s"><SegmentTimeline>${s}</SegmentTimeline></SegmentTemplate>`)}</Period>`);
+  assert.throws(() => parseManifest(timeline('<S t="0" d="0" r="-1"/>'), URL), /positive duration/);
+  assert.throws(() => parseManifest(timeline('<S t="0" d="1" r="200000000"/>'), URL), /more than/);
+});

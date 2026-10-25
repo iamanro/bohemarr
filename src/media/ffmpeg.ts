@@ -1,5 +1,7 @@
+import { rename, rm } from 'node:fs/promises';
+import { basename, dirname, extname, join } from 'node:path';
 import { runProcess } from './process.ts';
-import { headerArgs } from './ffprobe.ts';
+import { headerArgs, validateMediaFile } from './ffprobe.ts';
 import type { Config, DownloadProgress } from '../types.ts';
 
 export interface MuxInput {
@@ -84,4 +86,25 @@ export async function ffmpegMux(
       if (line) applyProgressLine(accumulator, line, onProgress, durationSeconds);
     }
   });
+}
+
+/**
+ * Muxes `inputs` into a hidden temp file beside `finalPath`, validates it with ffprobe and renames
+ * it into place. A mux or validation failure removes the temp file; nothing resumes from it.
+ */
+export async function muxToFile(
+  config: Config, inputs: MuxInput[], finalPath: string, signal: AbortSignal,
+  onProgress: (progress: DownloadProgress) => void, durationSeconds?: number,
+): Promise<string> {
+  const extension = extname(finalPath);
+  const tempPath = join(dirname(finalPath), `.${basename(finalPath, extension)}.tmp${extension}`);
+  try {
+    await ffmpegMux(config, inputs, tempPath, signal, onProgress, durationSeconds);
+    await validateMediaFile(config, tempPath, signal);
+    await rename(tempPath, finalPath);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => {});
+    throw error;
+  }
+  return finalPath;
 }

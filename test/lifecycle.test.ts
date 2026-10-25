@@ -22,7 +22,7 @@ async function fixture() {
   const dir = await mkdtempDisposable(join(tmpdir(), 'md-lifecycle-'));
   const config: Config = {
     host: '127.0.0.1', port: 8787, apiKey: 'a'.repeat(64), publicUrl: 'http://localhost:8787',
-    dataDir: dir.path, downloadsDir: join(dir.path, 'downloads'), concurrency: 1,
+    dataDir: dir.path, downloadsDir: join(dir.path, 'downloads'), concurrency: 1, requestRate: 100,
     ffmpeg: 'ffmpeg', ffprobe: 'ffprobe', mp4decrypt: 'mp4decrypt', wvApiUrl: 'https://example.test/wv/',
     categories: ['tv', 'movies'], providers: {}, arrs: [],
   };

@@ -18,15 +18,6 @@ export function get<T>(obj: unknown, path: string, fallback: T): T {
   return at<T>(obj, path) ?? fallback;
 }
 
-export function has(obj: unknown, path: string): boolean {
-  let cur: unknown = obj;
-  for (const part of path.split('.')) {
-    if (cur === null || typeof cur !== 'object' || !(part in (cur as Record<string, unknown>))) return false;
-    cur = (cur as Record<string, unknown>)[part];
-  }
-  return cur !== undefined;
-}
-
 /**
  * Ports `PrimaCommon.Nuxt`, i.e. decoding of the `<script id="__NUXT_DATA__">` payload,
  * which uses Nuxt's "devalue" reference-table encoding: a flat JSON array where each
@@ -198,7 +189,7 @@ export class PrimaRpc {
   }
 
   static isError(json: Record<string, unknown>): boolean {
-    return has(json, 'error');
+    return at(json, 'error') !== undefined;
   }
 }
 

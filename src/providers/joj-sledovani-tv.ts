@@ -15,8 +15,9 @@
  * entries (whose `url` must be one of those deep links) are attached centrally as
  * `Provider.entries` and resolved through `resolve()` below.
  */
+import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { License, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { fetchText, mediaType } from './common.ts';
+import { fetchResponse, fetchText, mediaType } from './common.ts';
 import { AccountSession, SessionRejected, type SessionSource } from './account-session.ts';
 
 const API_BASE = 'https://sledovanitv.cz/';
@@ -61,10 +62,9 @@ async function apiRequest(
   const cookies = ['_nss=1'];
   if (sessionId) cookies.push(`PHPSESSID=${sessionId}`);
 
-  const response = await fetch(url, {
+  const response = await fetchResponse(url, signal, {
     headers: { 'User-Agent': USER_AGENT, Cookie: cookies.join('; ') },
     redirect: 'manual',
-    signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
   });
 
   const contentType = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase();
@@ -171,13 +171,35 @@ async function entryData(session: Session, entryId: string, signal: AbortSignal)
  * `createPairing`+`deviceLogin` cycle runs from `config.username`/`config.password`. Unlike the
  * desktop app there is no on-disk credential store to persist a freshly obtained session back
  * into, so re-login happens in-memory for the lifetime of this process. */
-function sledovaniSessionSource(config: ProviderConfig): SessionSource<Session> {
+/** The device a login paired, kept in the service database so a restart reuses it instead of pairing another. */
+class StoredSession {
+  private readonly select: StatementSync;
+  private readonly upsert: StatementSync;
+
+  constructor(db: DatabaseSync) {
+    db.exec('CREATE TABLE IF NOT EXISTS sledovanitv_session (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)');
+    this.select = db.prepare('SELECT payload FROM sledovanitv_session WHERE id = 1');
+    this.upsert = db.prepare('INSERT INTO sledovanitv_session VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload');
+  }
+
+  read(): Session | undefined {
+    const row = this.select.get();
+    return row ? JSON.parse(String(row.payload)) as Session : undefined;
+  }
+
+  write(session: Session): void {
+    this.upsert.run(JSON.stringify(session));
+  }
+}
+
+function sledovaniSessionSource(config: ProviderConfig, stored: StoredSession | undefined): SessionSource<Session> {
   const username = typeof config.username === 'string' ? config.username : undefined;
   const password = typeof config.password === 'string' ? config.password : undefined;
   const deviceId = typeof config.deviceId === 'string' ? config.deviceId : undefined;
   const profileId = typeof config.profile === 'string' ? config.profile : undefined;
   const sessionId = typeof config.cookies === 'string' ? config.cookies : undefined;
-  const seed = deviceId && profileId && sessionId ? { deviceId, profileId, sessionId } : undefined;
+  // A session configured by hand wins over the one a previous run paired.
+  const seed = deviceId && profileId && sessionId ? { deviceId, profileId, sessionId } : stored?.read();
   return {
     label: 'sledovanitv',
     ...(seed ? { seed: { session: seed } } : {}),
@@ -185,6 +207,7 @@ function sledovaniSessionSource(config: ProviderConfig): SessionSource<Session> 
       async login(signal: AbortSignal) {
         const pairing = await createPairing(username, password, signal);
         const session = await deviceLogin(pairing.deviceId, pairing.pairingPassword, signal);
+        stored?.write(session);
         return { session };
       },
     } : {}),
@@ -352,9 +375,10 @@ async function sledovaniResolve(account: AccountSession<Session>, release: Relea
  * are configured — SledovaniTV requires an authenticated device for every stream/license
  * request, so per the shared contract the provider is omitted entirely without credentials.
  */
-export function createSledovaniTvProvider(config: ProviderConfig): Provider | null {
+/** `database` keeps the paired device across restarts; without it (tests) the session lives in memory. */
+export function createSledovaniTvProvider(config: ProviderConfig, database?: DatabaseSync): Provider | null {
   if (!sledovaniHasCredentials(config)) return null;
-  const account = new AccountSession(sledovaniSessionSource(config));
+  const account = new AccountSession(sledovaniSessionSource(config, database && new StoredSession(database)));
   return {
     id: 'sledovanitv',
     name: 'SledovaniTV',

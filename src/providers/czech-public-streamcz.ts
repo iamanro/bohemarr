@@ -45,6 +45,7 @@ class StreamCzCache {
   private readonly insertRow: StatementSync;
   private readonly selectEpisodes: StatementSync;
   private readonly upsertEpisodes: StatementSync;
+  private readonly deleteExpiredEpisodes: StatementSync;
   private readonly db: DatabaseSync;
   private readonly now: () => number;
 
@@ -68,6 +69,8 @@ class StreamCzCache {
     this.selectEpisodes = db.prepare('SELECT refreshed_at, payload FROM stream_episode_cache WHERE program_id=?');
     this.upsertEpisodes = db.prepare(`INSERT INTO stream_episode_cache (program_id, refreshed_at, payload) VALUES (?, ?, ?)
       ON CONFLICT(program_id) DO UPDATE SET refreshed_at=excluded.refreshed_at, payload=excluded.payload`);
+    this.deleteExpiredEpisodes = db.prepare('DELETE FROM stream_episode_cache WHERE refreshed_at < ?');
+    this.deleteExpiredEpisodes.run(this.now() - EPISODE_CACHE_TTL_MS);
   }
 
   episodes(programId: string): CatalogNode[] | undefined {
@@ -77,6 +80,7 @@ class StreamCzCache {
   }
 
   saveEpisodes(programId: string, episodes: readonly CatalogNode[]): void {
+    this.deleteExpiredEpisodes.run(this.now() - EPISODE_CACHE_TTL_MS);
     if (episodes.length) this.upsertEpisodes.run(programId, this.now(), JSON.stringify(episodes));
   }
 
@@ -351,8 +355,9 @@ function collectSubtitleSources(subtitleEntries: Array<{ language: string; srt?:
   return out.length ? out : undefined;
 }
 
-async function resolveStreamCz(release: Release, signal: AbortSignal): Promise<MediaSource[]> {
-  const html = await fetchText(release.url, signal, { headers: { referer: REFERER } });
+/** The sources of a Stream.cz episode page, also when another site embeds it. */
+export async function resolveStreamCz(url: string, signal: AbortSignal): Promise<MediaSource[]> {
+  const html = await fetchText(url, signal, { headers: { referer: REFERER } });
   const state = appServerState(html);
   if (!state) return [];
   const videoData = at(state, 'fetchable.episode.videoDetail.data');
@@ -418,6 +423,6 @@ export function createStreamCzProvider(config: ProviderConfig = {}, database: Da
     id: 'streamcz',
     name: 'Stream.cz',
     catalogue: streamCzCatalogue(new StreamCzCache(database, timing)),
-    async resolve(release, signal) { return resolveStreamCz(release, signal); },
+    async resolve(release, signal) { return resolveStreamCz(release.url, signal); },
   };
 }

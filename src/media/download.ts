@@ -7,8 +7,9 @@ import { inspectMediaSources } from './metadata.ts';
 
 import { sanitizeFilename } from '../providers/common.ts';
 
+/** Sonarr and Radarr import only media extensions; a link ending in `.php` or a version number gets `mp4`. */
 function extensionFromUrl(url: string): string {
-  const match = /\.([a-z0-9]{2,4})(?:$|\?)/i.exec(new URL(url).pathname);
+  const match = /\.(mp4|mkv|avi|mov|webm|ts|m4v)$/i.exec(new URL(url).pathname);
   return match?.[1]?.toLowerCase() ?? 'mp4';
 }
 

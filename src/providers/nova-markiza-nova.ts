@@ -1,10 +1,10 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Element as CheerioElement } from 'domhandler';
 import type { Catalogue, CatalogueQuery, Provider, Release } from '../types.ts';
-import { cached, empty, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import * as cheerio from 'cheerio';
+import { absUrl, cached, empty, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import {
-  absUrl, fetchDocument, fetchTextOrEmpty, fetchTextRetry, joinUrl, loadHtml,
-  playerTracks, queryParams, readInlineObject, select,
+  fetchDocument, fetchTextOrEmpty, fetchTextRetry, joinUrl, playerTracks, queryParams, readInlineObject, select,
 } from './nova-markiza-utils.ts';
 import { tracksToSources } from './nova-markiza-media.ts';
 
@@ -145,7 +145,7 @@ async function walkNumberedByPosition(
 
   while (hi - lo > step) {
     const mid = lo + Math.floor((hi - lo) / 2);
-    const $mid = loadHtml(await fetchTextOrEmpty(site.episodeListUrl(contentId, mid), signal));
+    const $mid = cheerio.load(await fetchTextOrEmpty(site.episodeListUrl(contentId, mid), signal));
     const allVoyo = select($mid, site.selEpisodes).length === select($mid, site.selLabelVoyo).length;
     if (allVoyo) hi = mid; else lo = mid;
   }
@@ -157,8 +157,8 @@ async function walkNumberedByPosition(
   const chunks: Release[][] = [];
   let index = startIndex;
 
-  for (let offset = lo; offset >= -step; offset -= step) {
-    const $page = loadHtml(await fetchTextRetry(site.episodeListUrl(contentId, offset), signal, 5));
+  for (let offset = lo; offset >= 0; offset -= step) {
+    const $page = cheerio.load(await fetchTextRetry(site.episodeListUrl(contentId, offset), signal, 5));
     const { releases: pageReleases, count } = parseEpisodeItems($page, select($page, site.selEpisodes).toArray(), program, index, site);
     chunks.push(pageReleases);
     index += count;
@@ -185,7 +185,7 @@ async function* extractEpisodesForPath(
     return; // Non-200: path probably does not exist for this program, ignore (matches upstream)
   }
 
-  const $ = loadHtml(html);
+  const $ = cheerio.load(html);
   const items = select($, site.selEpisodes).toArray();
   const loadMoreEl = select($, site.selEpisodesLoadMore).first();
   const hasLoadMore = loadMoreEl.length > 0;
@@ -213,7 +213,7 @@ async function* extractEpisodesForPath(
   // Each subsequent load-more page is strictly older than the last, and is itself newest-first
   // internally, so paginating forward and yielding per page stays globally newest-first.
   for (let offset = 0; ; offset += pageSize) {
-    const $page = loadHtml(await fetchTextRetry(site.episodeListUrl(contentId, offset), signal, 5));
+    const $page = cheerio.load(await fetchTextRetry(site.episodeListUrl(contentId, offset), signal, 5));
     const { releases: pageReleases, count } = parseEpisodeItems($page, select($page, site.selEpisodes).toArray(), program, 0, site, false);
     yield* pageReleases;
     if (count === 0) break;

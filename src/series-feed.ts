@@ -1,4 +1,5 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
+import { untilAborted } from './providers/common.ts';
 import type { SeriesBindings } from './series-binding.ts';
 import type { Provider, Release, SeriesIdentity } from './types.ts';
 
@@ -6,6 +7,8 @@ import type { Provider, Release, SeriesIdentity } from './types.ts';
 const RELEASES_PER_SERIES = 5;
 /** Below Sonarr's 15-minute default RSS interval: each sync gets a fresh listing, and its page requests share it. */
 const SNAPSHOT_TTL_MS = 10 * 60 * 1000;
+/** A Release not listed for this long gets a fresh `publishedAt` when it returns; matches the Store's release retention. */
+const FIRST_SEEN_RETENTION_MS = 90 * 24 * 60 * 60_000;
 /** Below the server's 120-second Torznab deadline, so a slow listing returns what it has instead of being cut off. */
 const BUILD_TIMEOUT_MS = 110_000;
 
@@ -56,6 +59,7 @@ export class SeriesFeed {
         SELECT tvdb_id, payload -> '$.identity' FROM series_mappings
         WHERE tvdb_id IN (SELECT tvdb_id FROM series_release_cache) ORDER BY provider`);
     }
+    db.prepare('DELETE FROM release_first_seen WHERE first_seen_at < ?').run(this.now() - FIRST_SEEN_RETENTION_MS);
     this.upsertWatched = db.prepare('INSERT INTO series_watch VALUES (?, ?) ON CONFLICT(tvdb_id) DO UPDATE SET payload=excluded.payload');
     this.selectWatched = db.prepare('SELECT payload FROM series_watch ORDER BY tvdb_id');
     this.insertFirstSeen = db.prepare('INSERT OR IGNORE INTO release_first_seen VALUES (?, ?)');
@@ -78,14 +82,7 @@ export class SeriesFeed {
         return releases;
       })
       .finally(() => { this.building = undefined; });
-    const { promise: aborted, reject } = Promise.withResolvers<never>();
-    const onAbort = (): void => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-    try {
-      return await Promise.race([this.building, aborted]);
-    } finally {
-      signal.removeEventListener('abort', onAbort);
-    }
+    return untilAborted(this.building, signal);
   }
 
   private async build(signal: AbortSignal): Promise<Release[]> {

@@ -96,6 +96,9 @@ function parseByteRange(value: string | undefined): { start: number; length: num
   return { start, length: end - start + 1 };
 }
 
+/** A day of one-second segments; a timeline past it is a broken manifest, not a long film. */
+const MAX_TIMELINE_SEGMENTS = 100_000;
+
 function buildFromSegmentTemplate(
   template: Record<string, unknown>, representationId: string, bandwidth: number, baseUrl: URL, periodDurationSeconds: number | undefined,
 ): TrackBuild {
@@ -119,6 +122,7 @@ function buildFromSegmentTemplate(
     for (const [index, s] of entries.entries()) {
       if (s['@_t'] !== undefined) time = Number(s['@_t']);
       const duration = Number(s['@_d']);
+      if (!(duration > 0)) throw new Error('SegmentTimeline S@d must be a positive duration');
       let repeat = 1 + Number(s['@_r'] ?? 0);
       if (repeat < 1) {
         // A negative @r repeats until the next S@t, or else until the end of the Period.
@@ -129,6 +133,7 @@ function buildFromSegmentTemplate(
         if (end === undefined) throw new Error('SegmentTimeline repeats until the Period ends, but the manifest has no period duration');
         repeat = Math.ceil((end - time) / duration);
       }
+      if (segments.length + repeat > MAX_TIMELINE_SEGMENTS) throw new Error(`SegmentTimeline lists more than ${MAX_TIMELINE_SEGMENTS} segments`);
       for (let i = 0; i < repeat; i++) {
         segments.push({ time, duration });
         time += duration;

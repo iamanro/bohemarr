@@ -14,7 +14,7 @@
  * calls, only over the supported REST transport instead of the undocumented channel framing.
  */
 import type { CatalogueQuery, MediaSource, Program, Provider, Release } from '../types.ts';
-import { cached, each, fetchJson, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import { cached, each, fetchJson, fetchResponse, mediaType, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
 import { AccountSession, SessionRejected, type SessionSource } from './account-session.ts';
 
 const APP_KEY = 'AIzaSyB02udgMkNLADkLJ_w5YNBMR2VR1WHfusI';
@@ -272,11 +272,13 @@ function jojSessionSource(username: string, password: string): SessionSource<str
     label: 'jojplay',
     async login(signal) {
       const body = JSON.stringify({ tenantId: TENANT_ID, email: username, password, returnSecureToken: true });
-      const json = await fetchJson<{ idToken?: string; expiresIn?: string; error?: { message?: string } }>(URI_LOGIN, signal, {
+      // Firebase answers a wrong password with HTTP 400 and the reason in the body, so the status is not the verdict.
+      const response = await fetchResponse(URI_LOGIN, signal, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Referer: 'https://play.joj.sk/' },
         body,
       });
+      const json = await response.json().catch(() => ({})) as { idToken?: string; expiresIn?: string; error?: { message?: string } };
       if (!json.idToken) {
         throw new Error(`jojplay: login failed${json.error?.message ? ` (${json.error.message})` : ''}`);
       }
@@ -293,11 +295,10 @@ async function requestSourceUrl(videoId: string, idToken: string | undefined, si
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Referer: 'https://play.joj.sk/' };
   if (idToken) headers.Authorization = `Bearer ${idToken}`;
 
-  const response = await fetch(URI_SOURCES, {
+  const response = await fetchResponse(URI_SOURCES, signal, {
     method: 'POST',
     headers,
     body: sourceUrlRequestBody(videoId),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(URI_SOURCES).hostname}`);
 

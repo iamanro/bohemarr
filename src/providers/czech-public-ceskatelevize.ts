@@ -428,8 +428,12 @@ async function discoverSourceInfos(pageUrl: string, signal: AbortSignal): Promis
     const showCodeMatch = /^https?:\/\/decko\.ceskatelevize\.cz\/([^/]+)\/?$/i.exec(pageUrl);
     if (!showCodeMatch) return [];
     const showCode = showCodeMatch[1] as string;
-    const found = await searchShows(showCode, 0, 100, signal);
-    const show = found.items.find(item => item.code === showCode);
+    let show: CtShow | undefined;
+    for (let offset = 0, total = Infinity; !show && offset < total; offset += MAX_ITEMS_PER_PAGE) {
+      const found = await searchShows(showCode, offset, MAX_ITEMS_PER_PAGE, signal);
+      total = found.items.length ? found.totalCount : 0;
+      show = found.items.find(item => item.code === showCode);
+    }
     if (!show) return [];
     const pUrl = programUrl(show.slug);
     const meta = await fetchShowMetadata(pUrl, signal);

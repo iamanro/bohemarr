@@ -1,4 +1,5 @@
 import { ClientType, Innertube, Platform } from 'youtubei.js';
+import { fetchResponse } from './common.ts';
 import { evaluatePlayerScript } from './javascript.ts';
 import type { MediaSource, ProviderConfig } from '../types.ts';
 
@@ -41,9 +42,7 @@ export async function resolveYouTube(url: string, signal: AbortSignal, config: P
     visitor_data: typeof config.visitorData === 'string' ? config.visitorData : undefined,
     player_id: typeof config.playerId === 'string' ? config.playerId : undefined,
     enable_session_cache: false,
-    fetch: (input, init) => fetch(input, {
-      ...init, signal: AbortSignal.any([signal, ...(init?.signal ? [init.signal] : []), AbortSignal.timeout(45_000)]),
-    }),
+    fetch: (input, init) => fetchResponse(input, init?.signal ? AbortSignal.any([signal, init.signal]) : signal, init ?? {}),
   });
   const info = await youtube.getBasicInfo(id, { client: requested });
   if (info.playability_status?.status !== 'OK') {

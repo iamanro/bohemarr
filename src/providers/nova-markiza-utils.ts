@@ -1,7 +1,7 @@
 import JSON5 from 'json5';
 import * as cheerio from 'cheerio';
 import type { Element as CheerioElement } from 'domhandler';
-import { bracketSubstring, fetchText } from './common.ts';
+import { bracketSubstring, fetchResponse, fetchText } from './common.ts';
 
 /**
  * `CheerioAPI`'s call signature only resolves to `Cheerio<Element>` when the
@@ -14,26 +14,8 @@ export function select($: cheerio.CheerioAPI, selector: string): cheerio.Cheerio
   return $<CheerioElement, string>(selector);
 }
 
-/**
- * Resolves an (possibly relative) href/src attribute against a base URL,
- * mirroring jsoup's `Element#absUrl`.
- */
-export function absUrl(base: string, href: string | undefined): string | undefined {
-  if (!href) return undefined;
-  try {
-    return new URL(href, base).toString();
-  } catch {
-    return undefined;
-  }
-}
-
-/** Loads an HTML document with cheerio, matching `HTML.parse`/`HTML.from`. */
-export function loadHtml(html: string): cheerio.CheerioAPI {
-  return cheerio.load(html);
-}
-
 export async function fetchDocument(url: string | URL, signal: AbortSignal, init: RequestInit = {}): Promise<cheerio.CheerioAPI> {
-  return loadHtml(await fetchText(url, signal, init));
+  return cheerio.load(await fetchText(url, signal, init));
 }
 
 /** Parse source data as literals only; never execute scripts supplied by a media site. */
@@ -81,6 +63,8 @@ export async function fetchTextRetry(url: string | URL, signal: AbortSignal, ret
     try {
       return await fetchText(url, signal);
     } catch (error) {
+      // Retrying cannot help an aborted caller or a page the server says does not exist.
+      if (signal.aborted || (error instanceof Error && /^HTTP 4\d\d\b/.test(error.message))) throw error;
       lastError = error;
     }
   }
@@ -109,7 +93,7 @@ export function joinUrl(base: string, path: string): string {
 
 /** A missing pagination page ends the catalog; authentication and network failures do not. */
 export async function fetchTextOrEmpty(url: string | URL, signal: AbortSignal): Promise<string> {
-  const response = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) });
+  const response = await fetchResponse(url, signal);
   if (response.status === 404) return '';
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(url).hostname}`);
   return response.text();

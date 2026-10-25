@@ -1,8 +1,37 @@
 import { hash } from 'node:crypto';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { MediaSource, Release } from '../types.ts';
 
+/** Every upstream request gives up after this long, whatever the caller's own deadline. */
+export const REQUEST_TIMEOUT_MS = 45_000;
+
+/** Upstream requests per second and host; see `setRequestRate`. */
+let minSpacingMs = 0; // no limit until main.ts applies REQUEST_RATE; tests run unthrottled
+/** When the next request to each host may start (epoch ms). */
+const nextSlot = new Map<string, number>();
+
+/** At most `perSecond` requests go to one host per second; the rest wait their turn. Set from REQUEST_RATE. */
+export function setRequestRate(perSecond: number): void {
+  minSpacingMs = 1000 / perSecond;
+}
+
+async function waitForSlot(host: string, signal: AbortSignal): Promise<void> {
+  const now = Date.now();
+  for (const [other, at] of nextSlot) if (at <= now) nextSlot.delete(other);
+  const at = Math.max(now, nextSlot.get(host) ?? 0);
+  nextSlot.set(host, at + minSpacingMs);
+  // A caller aborted while waiting gets its own reason, not the timer's AbortError.
+  if (at > now) await sleep(at - now, undefined, { signal }).catch(() => signal.throwIfAborted());
+}
+
+/** `fetch` with the request deadline and the per-host rate limit; the status is the caller's to judge. */
+export async function fetchResponse(url: string | URL | Request, signal: AbortSignal, init: RequestInit = {}): Promise<Response> {
+  await waitForSlot(new URL(url instanceof Request ? url.url : url).hostname, signal);
+  return fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
+}
+
 export async function fetchText(url: string | URL, signal: AbortSignal, init: RequestInit = {}): Promise<string> {
-  const response = await fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) });
+  const response = await fetchResponse(url, signal, init);
   if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(url).hostname}`);
   return response.text();
 }
@@ -51,15 +80,21 @@ export function cached<T>(ttlMs: number, load: (signal: AbortSignal) => Promise<
       entry = current;
       current.value.catch(() => { if (entry === current) entry = undefined; });
     }
-    const { promise: aborted, reject } = Promise.withResolvers<never>();
-    const onAbort = (): void => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, { once: true });
-    try {
-      return await Promise.race([entry.value, aborted]);
-    } finally {
-      signal.removeEventListener('abort', onAbort);
-    }
+    return untilAborted(entry.value, signal);
   };
+}
+
+/** `promise`'s result, unless `signal` aborts first; the work behind `promise` goes on for other callers. */
+export async function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  const { promise: aborted, reject } = Promise.withResolvers<never>();
+  const onAbort = (): void => reject(signal.reason);
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
 }
 
 /** The items of a list still being loaded, as the async iterable a Catalogue hands out. */
@@ -102,6 +137,16 @@ export function bracketSubstring(text: string, fromIndex: number, open = '{', cl
   }
 
   return '';
+}
+
+/** `href` resolved against `base`, as jsoup's `absUrl`: `undefined` for a missing or malformed value. */
+export function absUrl(base: string, href: string | undefined): string | undefined {
+  if (!href) return undefined;
+  try {
+    return new URL(href, base).toString();
+  } catch {
+    return undefined;
+  }
 }
 
 export function releaseId(provider: string, url: string): string {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { WebSocket, type RawData } from 'ws';
-import { at } from './common.ts';
+import { at, fetchResponse } from './common.ts';
 import {
   ASYNC_RESPONSE_TIMEOUT_MS,
   HTTP_BASE,
@@ -207,11 +207,10 @@ export class OneplayConnection {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.authToken) headers.Authorization = `Bearer ${this.authToken.value}`;
 
-    const response = await fetch(new URL(path, HTTP_BASE), {
+    const response = await fetchResponse(new URL(path, HTTP_BASE), signal, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
     });
     if (response.status === 401) {
       await response.body?.cancel();

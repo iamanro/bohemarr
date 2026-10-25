@@ -1,7 +1,8 @@
 import type { CheerioAPI } from 'cheerio';
 import type { Catalogue, CatalogueQuery, MediaKind, MediaSource, Provider, ProviderConfig, Release } from '../types.ts';
-import { bracketSubstring, cached, each, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
-import { absUrl, parseJsObject, fetchDocument, loadHtml, playerTracks, readInlineObject } from './nova-markiza-utils.ts';
+import { absUrl, bracketSubstring, cached, each, fetchResponse, fetchText, PROGRAM_LIST_TTL_MS, releaseId } from './common.ts';
+import * as cheerio from 'cheerio';
+import { parseJsObject, fetchDocument, playerTracks, readInlineObject } from './nova-markiza-utils.ts';
 import { tracksToSources } from './nova-markiza-media.ts';
 import { AccountSession, SessionRejected, type SessionSource } from './account-session.ts';
 
@@ -45,12 +46,11 @@ async function loginVoyo(username: string, password: string, signal: AbortSignal
   if (!argDo) throw new Error('markizavoyo: login form token (_do) not found on login page');
 
   const body = new URLSearchParams({ email: username, password, login: 'Prihlásiť', _do: argDo });
-  const response = await fetch(LOGIN_URL, {
+  const response = await fetchResponse(LOGIN_URL, signal, {
     method: 'POST',
     redirect: 'manual',
     headers: { Referer: LOGIN_URL, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
   });
 
   const location = response.headers.get('location');
@@ -78,11 +78,10 @@ async function bypassAgeRestriction(token: string, signal: AbortSignal): Promise
   const body = new URLSearchParams({
     birth_day: '1', birth_month: '1', birth_year: '2000', save: 'Uložiť', _do: 'content232-userAgeForm-form-submit',
   });
-  const response = await fetch(AGE_RESTRICTION_URL, {
+  const response = await fetchResponse(AGE_RESTRICTION_URL, signal, {
     method: 'POST',
     headers: { Cookie: `votoken=${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
   });
   return response.status === 200;
 }
@@ -108,7 +107,7 @@ function checkForError($: CheerioAPI): VoyoError {
 /** Ported from `API#getMedia`'s auth/retry/age-bypass loop around the embed document fetch. */
 async function fetchEmbedDocument(embedUri: string, session: AccountSession<string>, signal: AbortSignal): Promise<CheerioAPI> {
   return session.run(async (token, signal) => {
-    const $ = loadHtml(await fetchText(embedUri, signal, { headers: { Cookie: `votoken=${token}` } }));
+    const $ = cheerio.load(await fetchText(embedUri, signal, { headers: { Cookie: `votoken=${token}` } }));
     const error = checkForError($);
     if (error.success) return $;
 
@@ -118,7 +117,7 @@ async function fetchEmbedDocument(embedUri: string, session: AccountSession<stri
 
     if (error.type === 'player_parental_profile_age_required') {
       if (await bypassAgeRestriction(token, signal)) {
-        const retryDoc = loadHtml(await fetchText(embedUri, signal, { headers: { Cookie: `votoken=${token}` } }));
+        const retryDoc = cheerio.load(await fetchText(embedUri, signal, { headers: { Cookie: `votoken=${token}` } }));
         if (checkForError(retryDoc).success) return retryDoc;
       }
       throw new Error(`markizavoyo: playback denied (${error.type})`);
@@ -144,7 +143,7 @@ async function listProgramsPage(
     category: category.categoryId, pageId: category.pageId, sort: 'title__asc', limit: ITEMS_PER_PAGE, page,
   }, signal);
 
-  const $ = loadHtml(html);
+  const $ = cheerio.load(html);
   const programs: VoyoProgram[] = [];
 
   $('.row > .i').each((_, el) => {
@@ -184,7 +183,7 @@ async function programDetail(program: VoyoProgram, signal: AbortSignal): Promise
   const json = JSON.parse(raw) as { data?: { redirect?: { url?: string }; content?: Record<string, string> } };
   const redirectUrl = json.data?.redirect?.url;
   if (redirectUrl) return fetchDocument(redirectUrl, signal);
-  return loadHtml(json.data?.content?.['40-10'] ?? '');
+  return cheerio.load(json.data?.content?.['40-10'] ?? '');
 }
 
 /** Ported from `getSeasons`. */
@@ -221,7 +220,7 @@ async function* listEpisodesInSeason(program: VoyoProgram, season: VoyoSeason, s
     }, signal);
     if (!html.trim()) break;
 
-    const $ = loadHtml(html);
+    const $ = cheerio.load(html);
     const items = $('article').toArray();
     let counter = offset + 1;
     const pageReleases: Release[] = [];
