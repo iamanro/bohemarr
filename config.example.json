@@ -1,0 +1,14 @@
+{
+  "providers": {
+    "direct": {
+      "catalog": [
+        { "title": "Example film", "kind": "movie", "year": 2024, "url": "https://example.com/film.mp4" },
+        { "title": "Pilot", "series": "Example series", "kind": "tv", "season": 1, "episode": 1, "url": "https://example.com/s01e01.mp4" }
+      ],
+      "headers": { "Referer": "https://example.com/" }
+    },
+    "html5": {
+      "headers": { "User-Agent": "Mozilla/5.0" }
+    }
+  }
+}

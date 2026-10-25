@@ -1,0 +1,46 @@
+{
+  "name": "bohemarr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Czech and Slovak TV archives for Sonarr and Radarr: a Torznab indexer and qBittorrent-compatible download client",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iamanro/bohemarr.git"
+  },
+  "type": "module",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "bun run --cwd web build",
+    "start": "bun src/main.ts",
+    "dev": "bun --watch src/main.ts",
+    "dev:web": "bun run --cwd web dev",
+    "check": "tsc",
+    "test": "bun --no-env-file test --isolate --timeout 60000 ./test",
+    "lint": "oxlint --deny-warnings src test web/src"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^10.1.2",
+    "@fastify/static": "^10.1.6",
+    "cheerio": "^1.2.0",
+    "fast-xml-parser": "^5.11.2",
+    "fastify": "^5.12.5",
+    "i18n-iso-countries": "^7.14.0",
+    "json5": "^2.2.3",
+    "quickjs-emscripten": "^0.32.0",
+    "ws": "^8.22.0",
+    "youtubei.js": "^18.1.0"
+  },
+  "overrides": {
+    "undici": "^8.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.2",
+    "domhandler": "5.0.3",
+    "oxlint": "1.89.0",
+    "typescript": "^7.0.2"
+  }
+}

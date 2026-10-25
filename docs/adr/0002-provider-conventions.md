@@ -1,0 +1,7 @@
+# Provider conventions
+
+Every provider lists its Programs through `cached(PROGRAM_LIST_TTL_MS, …)` from `providers/common.ts`, or through its own persistent index (Prima+, Stream.cz). `searchCatalogue` drains the whole Program list on every text search, so an uncached list costs one upstream fetch per Sonarr search instead of one per ten minutes. TV-only archives return nothing for a movie query before fetching anything. Stream.cz keeps its lazy, never-partial discovery instead of a shared in-flight walk: a caller that stops early must not cache a half-built scope, and the tests pin that.
+
+`SessionRejected` means exactly one thing: the upstream refused the Account session, so `AccountSession` may discard it and log in once more. A redesigned page, a geo-blocked title, a timeout or a missing file is an ordinary `Error` (or the provider's own message error), because a new login costs a registered device at Prima and SledovaniTV and a token at Webshare. Where the upstream's error codes are undocumented, only codes that read as a session problem map to `SessionRejected`, and a `ponytail:` comment names that limit.
+
+A session that upstream counts against a device limit is persisted in the service database and seeded from there on the next start (SledovaniTV's paired device), never re-created per process. Oneplay, outside the shared session module (ADR 0001), remembers when its token was last verified and probes at most once a minute instead of once per call.

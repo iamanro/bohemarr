@@ -1,0 +1,60 @@
+# CI for Bohemarr, on this machine's self-hosted runner: hosted minutes are unavailable on this account.
+#
+# Everything runs through `docker build`, so the checks run in the production image's environment
+# (Debian trixie, Bun, ffmpeg, mp4decrypt) and the runner host needs nothing but Docker.
+#
+# The repository is public and the runner is a workstation, so a pull request from a fork never
+# runs here: the job is limited to pushes and to pull requests from branches of this repository.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, linux, bohemarr]
+    timeout-minutes: 30
+    env:
+      IMAGE: bohemarr:ci-${{ github.run_id }}
+      CONTAINER: bohemarr-ci-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Typecheck and test
+        run: docker build --target test .
+
+      - name: Build the image
+        run: docker build -t "$IMAGE" .
+
+      - name: Smoke test the image
+        run: |
+          key=$(openssl rand -hex 32)
+          docker run -d --name "$CONTAINER" -p 127.0.0.1::8787 -e API_KEY="$key" -e PROVIDERS=ceskatelevize "$IMAGE"
+          for _ in $(seq 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER")" = healthy ] && break
+            sleep 1
+          done
+          docker inspect -f '{{.State.Health.Status}}' "$CONTAINER" | grep -qx healthy || { docker logs "$CONTAINER"; exit 1; }
+          url="http://$(docker port "$CONTAINER" 8787/tcp | head -1)"
+          expect() { code=$(curl -s -o /dev/null -w '%{http_code}' "${@:2}"); [ "$code" = "$1" ] || { echo "${*:2}: HTTP $code, expected $1"; exit 1; }; }
+          expect 200 "$url/health"
+          expect 200 "$url/ui/"
+          expect 401 "$url/v1/settings"
+          expect 200 -H "x-api-key: $key" "$url/v1/settings"
+
+      - name: Clean up
+        if: always()
+        run: |
+          docker rm -f "$CONTAINER" 2>/dev/null || true
+          docker rmi "$IMAGE" 2>/dev/null || true

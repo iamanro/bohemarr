@@ -1,0 +1,6 @@
+{
+  "singleQuote": true,
+  "printWidth": 140,
+  "arrowParens": "avoid",
+  "overrides": [{ "files": ["*.md", "*.json", "*.yaml", "*.yml"], "options": { "singleQuote": false } }]
+}

@@ -1,0 +1,25 @@
+# Dependencies; the service and the web UI each install their own
+node_modules/
+
+# Build output
+/web/dist/
+*.tsbuildinfo
+
+# Local runtime state: the API key, the database, downloads
+/data/
+/downloads/
+
+# Local deployment settings, which may hold passwords, API keys or host paths (see README)
+.env
+.env.*
+!/.env.example
+/compose.override.yaml
+/config.json
+/secrets/
+
+# Logs, editors, operating systems
+*.log
+*.swp
+.idea/
+.vscode/
+.DS_Store
