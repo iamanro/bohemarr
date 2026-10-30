@@ -103,3 +103,11 @@ test('Sonarr and Radarr are configured only with both URL and API key, in a know
   await assert.rejects(load({ RADARR_URL: 'http://radarr:7878' }), /RADARR_URL and RADARR_API_KEY must be set together/);
   await assert.rejects(load({ SONARR_URL: 'http://sonarr:8989', SONARR_API_KEY: 's', SONARR_CATEGORY: 'series' }), /SONARR_CATEGORY/);
 });
+
+test('Scryer is configured only with both URL and API key, and needs the tv and movies categories', async () => {
+  assert.equal((await load({})).scryer, undefined);
+  const config = await load({ SCRYER_URL: 'http://scryer:8080/', SCRYER_API_KEY: 'ska_x', ARR_REMOVE_COMPLETED: 'false' });
+  assert.deepEqual(config.scryer, { url: 'http://scryer:8080', apiKey: 'ska_x', removeCompleted: false });
+  await assert.rejects(load({ SCRYER_URL: 'http://scryer:8080' }), /SCRYER_URL and SCRYER_API_KEY must be set together/);
+  await assert.rejects(load({ SCRYER_URL: 'http://scryer:8080', SCRYER_API_KEY: 'k', CATEGORIES: 'tv' }), /tv and movies/);
+});

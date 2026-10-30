@@ -127,6 +127,17 @@ These settings are reapplied at every start, so change them in `.env`, not in So
 - `true`: Sonarr and Radarr move the file into the library and remove the download from Bohemarr.
 - `false`: they copy the file, or hardlink it when **Use Hardlinks instead of Copy** is on, and the download stays until you remove it.
 
+### Scryer
+
+[Scryer](https://github.com/scryer-media/scryer) is configured through its GraphQL API. Create an API key in Scryer (**Settings → API keys**), install its qBittorrent plugin, and set:
+
+```dotenv
+SCRYER_URL=http://scryer:8080
+SCRYER_API_KEY=ska_...
+```
+
+At every start, Bohemarr creates or updates a qBittorrent download client and a Torznab indexer named Bohemarr, which sends its grabs to that client, and routes the client's series and anime downloads to category `tv` and movies to `movies`; both must be in `CATEGORIES`. Without that routing Scryer sends its scope name (`series`) as the category, which Bohemarr refuses, so no grab reaches it. Routing entries of other clients are kept. `ARR_REMOVE_COMPLETED` sets the client's **Remove completed**. Scryer finds its downloads by the tags it adds, which Bohemarr keeps, and imports them like any other torrent. The Vltava Webhook is not created in Scryer.
+
 ### By hand
 
 Leave `SONARR_URL` and `RADARR_URL` empty. Read the API key with `docker compose exec bohemarr cat /config/api-key`, then add Bohemarr to each application twice, both pointing at the host and port of `PUBLIC_URL`:

@@ -96,9 +96,26 @@ export class QBittorrent {
         // Parse every upload before queueing any, so a rejected file adds nothing.
         const tasks = torrents.map(content => this.indexer.parseTaskDescriptor(content));
         for (const { release, infoHash } of tasks) {
-          this.queue.add(infoHash, release, params.category || (release.kind === 'movie' ? 'movies' : 'tv'), paused);
+          const job = this.queue.add(infoHash, release, params.category || (release.kind === 'movie' ? 'movies' : 'tv'), paused);
+          // Scryer finds its downloads by the tags it set when adding them.
+          this.tag([job], tagList(params.tags), true);
         }
         return { body: 'Ok.' };
+      }
+      case 'torrents/tags':
+        return { body: [...new Set(store.jobs().flatMap(job => job.tags ?? []))] };
+      case 'torrents/createTags':
+        // A tag exists while a Job carries it.
+        return { body: '' };
+      case 'torrents/addTags':
+      case 'torrents/removeTags':
+        this.tag(this.select(params.hashes), tagList(params.tags), endpoint === 'torrents/addTags');
+        return { body: '' };
+      case 'torrents/setCategory': {
+        // A Job's files stay in its category's folder, so it can only be "moved" to the category it has.
+        const moved = this.select(params.hashes).filter(job => job.category !== params.category);
+        if (moved.length) return { code: 409, body: 'Bohemarr keeps a download in the category it was added to' };
+        return { body: '' };
       }
       case 'torrents/delete':
         for (const job of this.select(params.hashes)) await this.queue.remove(job.id, params.deleteFiles === 'true');
@@ -132,6 +149,15 @@ export class QBittorrent {
     return this.queue.store.jobs().filter(job => !hashes || hashes.has(job.id));
   }
 
+  /** Adds `tags` to `jobs` or removes them; removing no tags clears every tag, as qBittorrent does. */
+  private tag(jobs: Job[], tags: string[], add: boolean): void {
+    for (const job of jobs) {
+      const current = job.tags ?? [];
+      const next = add ? [...new Set([...current, ...tags])] : tags.length ? current.filter(tag => !tags.includes(tag)) : [];
+      if (next.length !== current.length) this.queue.store.updateJob(job.id, { tags: next });
+    }
+  }
+
   private torrent(job: Job): object {
     const completed = job.status === 'Completed';
     const size = completed ? job.bytes : job.totalBytes;
@@ -140,6 +166,7 @@ export class QBittorrent {
       hash: job.id,
       name: releaseTitle(job.release),
       category: job.category,
+      tags: (job.tags ?? []).join(', '),
       state: { Queued: 'queuedDL', Downloading: 'downloading', Paused: 'pausedDL', Completed: 'pausedUP', Failed: 'error' }[job.status],
       size,
       total_size: size,
@@ -163,6 +190,14 @@ export class QBittorrent {
       last_activity: seconds(job.updatedAt),
     };
   }
+}
+
+/** A comma-separated qBittorrent `tags` parameter. */
+function tagList(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map(tag => tag.trim())
+    .filter(Boolean);
 }
 
 function seconds(epochMs: number): number {
