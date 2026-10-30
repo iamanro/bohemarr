@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-labelledby="title desc">
+  <title id="title">Bohemarr</title>
+  <desc id="desc">Czech and Slovak TV archives for Sonarr, Radarr and Scryer</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1f27"/>
+      <stop offset="1" stop-color="#11141a"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b7bd6"/>
+      <stop offset="1" stop-color="#2459a8"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="320" rx="24" fill="url(#bg)"/>
+  <rect width="1280" height="320" rx="24" fill="url(#grid)"/>
+
+  <!-- Mark: a broadcast signal turning into a download -->
+  <g transform="translate(120 72)">
+    <rect width="176" height="176" rx="40" fill="url(#mark)"/>
+    <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="10">
+      <path d="M58 70a42 42 0 0 1 60 0" stroke-opacity="0.55"/>
+      <path d="M38 50a70 70 0 0 1 100 0" stroke-opacity="0.3"/>
+    </g>
+    <path d="M88 82v54m-24-22 24 24 24-24" fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="12"/>
+    <circle cx="148" cy="148" r="12" fill="#2fb36b" stroke="#2459a8" stroke-width="5"/>
+  </g>
+
+  <g font-family="Geist, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">
+    <text x="344" y="150" fill="#ffffff" font-size="76" font-weight="700" letter-spacing="-2">Bohemarr</text>
+    <text x="347" y="196" fill="#aab3c2" font-size="26">Czech &amp; Slovak TV archives for your *arr stack</text>
+    <g font-size="17" font-weight="600">
+      <rect x="347" y="222" width="94" height="34" rx="17" fill="#2459a8" fill-opacity="0.35" stroke="#3b7bd6"/>
+      <text x="394" y="244" fill="#cfe0fa" text-anchor="middle">Sonarr</text>
+      <rect x="453" y="222" width="94" height="34" rx="17" fill="#2459a8" fill-opacity="0.35" stroke="#3b7bd6"/>
+      <text x="500" y="244" fill="#cfe0fa" text-anchor="middle">Radarr</text>
+      <rect x="559" y="222" width="94" height="34" rx="17" fill="#1f7a49" fill-opacity="0.35" stroke="#2fb36b"/>
+      <text x="606" y="244" fill="#c9f2da" text-anchor="middle">Scryer</text>
+      <rect x="665" y="222" width="104" height="34" rx="17" fill="none" stroke="#3a4250"/>
+      <text x="717" y="244" fill="#aab3c2" text-anchor="middle">Torznab</text>
+      <rect x="781" y="222" width="130" height="34" rx="17" fill="none" stroke="#3a4250"/>
+      <text x="846" y="244" fill="#aab3c2" text-anchor="middle">qBittorrent API</text>
+    </g>
+  </g>
+
+  <!-- Providers ribbon -->
+  <g font-family="Geist, 'Segoe UI', Inter, Helvetica, Arial, sans-serif" font-size="15" fill="#6b7586" text-anchor="end">
+    <text x="1180" y="104">Česká televize</text>
+    <text x="1180" y="132">iPrima · Oneplay</text>
+    <text x="1180" y="160">Nova · VOYO · Markíza</text>
+    <text x="1180" y="188">JOJ · STVR · Stream.cz</text>
+    <text x="1180" y="216">+ 10 more</text>
+  </g>
+</svg>
