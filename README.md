@@ -1,17 +1,67 @@
-# Bohemarr
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="Bohemarr: Czech and Slovak TV archives for Sonarr, Radarr and Scryer" width="100%">
+</p>
 
-[![CI](https://github.com/iamanro/bohemarr/actions/workflows/ci.yml/badge.svg)](https://github.com/iamanro/bohemarr/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/iamanro/bohemarr?sort=semver)](https://github.com/iamanro/bohemarr/releases/latest)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+<p align="center">
+  <a href="https://github.com/iamanro/bohemarr/actions/workflows/ci.yml"><img src="https://github.com/iamanro/bohemarr/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/iamanro/bohemarr/releases/latest"><img src="https://img.shields.io/github/v/release/iamanro/bohemarr?sort=semver" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0"></a>
+  <img src="https://img.shields.io/badge/runtime-Bun%201.4-f9f1e1?logo=bun&amp;logoColor=black" alt="Bun 1.4">
+  <img src="https://img.shields.io/badge/docker-compose-2496ed?logo=docker&amp;logoColor=white" alt="Docker Compose">
+  <br>
+  <img src="https://img.shields.io/badge/Sonarr-REST-35c5f4" alt="Sonarr">
+  <img src="https://img.shields.io/badge/Radarr-REST-ffc230" alt="Radarr">
+  <img src="https://img.shields.io/badge/Scryer-GraphQL-e10098?logo=graphql&amp;logoColor=white" alt="Scryer GraphQL">
+  <img src="https://img.shields.io/badge/providers-19-2fb36b" alt="19 providers">
+</p>
 
-**Czech and Slovak TV archives in Sonarr and Radarr.** Bohemarr presents streaming services such as Česká televize, iPrima, Oneplay, Nova, Markíza and JOJ to Sonarr and Radarr as a Torznab indexer and a qBittorrent-compatible download client, then downloads the original media from the broadcasters' own archives into a shared downloads directory. Nothing new to learn: Sonarr and Radarr search, grab and import as with any other indexer.
+<p align="center">
+  <b>Czech and Slovak TV archives in Sonarr, Radarr and Scryer.</b><br>
+  <a href="#start-with-docker">Quick start</a> ·
+  <a href="#connect-sonarr-radarr-and-scryer">Connect your *arr</a> ·
+  <a href="#configure-providers">Providers</a> ·
+  <a href="#web-ui">Web UI</a> ·
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
 
-- **Speaks \*arr.** A Torznab indexer with RSS, automatic and interactive search, and a qBittorrent API download client, configured in Sonarr and Radarr automatically at every start.
-- **Finds the right show.** Matches series by their TVDB identity (title, aliases, year, country) and movies by TMDB ID, and keeps an RSS feed of new episodes for every series Sonarr follows.
+Bohemarr presents streaming services such as Česká televize, iPrima, Oneplay, Nova, Markíza and JOJ to Sonarr, Radarr and Scryer as a Torznab indexer and a qBittorrent-compatible download client, then downloads the original media from the broadcasters' own archives into a shared downloads directory. Nothing new to learn: your media manager searches, grabs and imports as with any other indexer.
+
+- **Speaks \*arr.** A Torznab indexer with RSS, automatic and interactive search, and a qBittorrent API download client.
+- **Sets itself up.** Configures Sonarr and Radarr through their REST APIs and [Scryer](https://github.com/scryer-media/scryer) through its **GraphQL API** at every start: indexer, download client, category routing and delay profile, nothing to click.
+- **Finds the right show.** Matches series by their TVDB identity (title, aliases, year, country) and movies by TMDB ID, and keeps an RSS feed of new episodes for every series it is asked about.
 - **Downloads the original.** HLS and DASH streams remuxed with ffmpeg, direct files, and Widevine-protected streams decrypted with your own account.
 - **19 providers**, public and account-based, each enabled or disabled on its own.
 - **Web UI** for Jobs, manual search and download, provider accounts, the Sonarr and Radarr connections and download settings.
 - **Self-hosted in one container:** Docker Compose, settings in `.env` or the UI, secrets from files, per-service rate limiting, optional publishing to the Vltava tracker.
+
+```mermaid
+flowchart LR
+  subgraph arr["Your media manager"]
+    S[Sonarr]
+    R[Radarr]
+    Y[Scryer]
+  end
+  subgraph B["Bohemarr"]
+    T["Torznab indexer<br/>/api"]
+    Q["qBittorrent API<br/>/api/v2"]
+    J[(Jobs)]
+  end
+  P["Česká televize · iPrima · Oneplay<br/>Nova · Markíza · JOJ · …"]
+  D[/"Shared downloads<br/>directory"/]
+  L[/Library/]
+
+  B -. "REST / GraphQL setup<br/>at every start" .-> arr
+  arr -- "search, RSS" --> T
+  arr -- "grab .torrent, poll" --> Q
+  T -- "catalogue & metadata" --> P
+  Q --> J -- "HLS · DASH · DRM" --> P
+  J -- "remuxed file" --> D
+  D -- "import" --> arr --> L
+```
+
+<p align="center">
+  <img src="docs/assets/web-ui.png" alt="Bohemarr web UI searching every enabled provider" width="90%">
+</p>
 
 | Public                                                                                                                                                                  | Need an account                                            |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -20,8 +70,8 @@
 ## What you need
 
 - Docker with the Compose plugin, or [Bun](https://bun.sh) 1.4+ for a local build.
-- Sonarr and/or Radarr.
-- A directory mounted into Bohemarr and the *arr applications, at the same path, for completed downloads.
+- Sonarr, Radarr and/or Scryer.
+- A directory mounted into Bohemarr and the media managers, at the same path, for completed downloads.
 
 ## Start with Docker
 
@@ -93,11 +143,19 @@ docker compose exec --user root bohemarr sh -c 'chown 1000:1000 /config/config.j
 docker compose restart bohemarr
 ```
 
-## Connect Sonarr and Radarr
+## Connect Sonarr, Radarr and Scryer
 
-Put Sonarr, Radarr and Bohemarr on the same Docker network, or otherwise make `PUBLIC_URL` reachable from both applications and their URLs reachable from Bohemarr.
+Put Sonarr, Radarr, Scryer and Bohemarr on the same Docker network, or otherwise make `PUBLIC_URL` reachable from each application and their URLs reachable from Bohemarr.
 
-### Automatically
+| Application | How Bohemarr configures it | Settings                                             |
+| ----------- | -------------------------- | ---------------------------------------------------- |
+| Sonarr      | REST API (`/api/v3`)       | `SONARR_URL`, `SONARR_API_KEY`, `SONARR_CATEGORY`, … |
+| Radarr      | REST API (`/api/v3`)       | `RADARR_URL`, `RADARR_API_KEY`, `RADARR_CATEGORY`, … |
+| Scryer      | GraphQL API (`/graphql`)   | `SCRYER_URL`, `SCRYER_API_KEY`                       |
+
+`docker compose logs bohemarr` shows whether each application was configured; failures are retried with backoff until the application answers.
+
+### Sonarr and Radarr
 
 Set the URL and API key (Settings → General) of each application in `.env`:
 
@@ -127,7 +185,7 @@ These settings are reapplied at every start, so change them in `.env`, not in So
 - `true`: Sonarr and Radarr move the file into the library and remove the download from Bohemarr.
 - `false`: they copy the file, or hardlink it when **Use Hardlinks instead of Copy** is on, and the download stays until you remove it.
 
-### Scryer
+### Scryer (GraphQL)
 
 [Scryer](https://github.com/scryer-media/scryer) is configured through its GraphQL API. Create an API key in Scryer (**Settings → API keys**), install its qBittorrent plugin, and set:
 
@@ -136,7 +194,18 @@ SCRYER_URL=http://scryer:8080
 SCRYER_API_KEY=ska_...
 ```
 
-At every start, Bohemarr creates or updates a qBittorrent download client and a Torznab indexer named Bohemarr, which sends its grabs to that client, and routes the client's series and anime downloads to category `tv` and movies to `movies`; both must be in `CATEGORIES`. Without that routing Scryer sends its scope name (`series`) as the category, which Bohemarr refuses, so no grab reaches it. Routing entries of other clients are kept. `ARR_REMOVE_COMPLETED` sets the client's **Remove completed**. Scryer finds its downloads by the tags it adds, which Bohemarr keeps, and imports them like any other torrent. The Vltava Webhook is not created in Scryer.
+At every start, Bohemarr sends these GraphQL operations with the key as a bearer token:
+
+| Scryer object                       | Operation                                                   | Value                                                   |
+| ----------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------- |
+| Download client `Bohemarr`          | `createDownloadClientConfig` / `updateDownloadClientConfig` | qBittorrent plugin, `PUBLIC_URL`, Bohemarr's API key    |
+| Indexer `Bohemarr`                  | `createIndexerConfig` / `updateIndexerConfig`               | Torznab, `PUBLIC_URL` + `/api`, grabs go to that client |
+| Routing for SERIES, ANIME and MOVIE | `updateDownloadClientRouting`                               | category `tv`, `tv` and `movies`; other clients kept    |
+
+- `tv` and `movies` must be in `CATEGORIES`. Without the routing, Scryer sends its scope name (`series`) as the category, which Bohemarr refuses, so no grab reaches it.
+- `ARR_REMOVE_COMPLETED` sets the client's **Remove completed**.
+- Scryer finds its downloads by the tags it adds (`scryer-origin`, `scryer-title-…`), which Bohemarr keeps, and marks imports with the `scryer-imported` tag; it imports them like any other torrent.
+- The Vltava Webhook is not created in Scryer.
 
 ### By hand
 
@@ -145,6 +214,7 @@ Leave `SONARR_URL` and `RADARR_URL` empty. Read the API key with `docker compose
 - **Indexer: Torznab.** URL `PUBLIC_URL`, API Path `/api`, API Key the generated key. Use category 5000 (TV) in Sonarr and 2000 (Movies) in Radarr. Enable RSS and Automatic Search.
 - **Download client: qBittorrent.** Any username, the API key as password. Category `tv` in Sonarr and `movies` in Radarr. Bohemarr does not create categories; they must be listed in `CATEGORIES`. **Remove Completed** has the effect described for `ARR_REMOVE_COMPLETED`.
 - **Delay Profile:** Sonarr treats Bohemarr releases as torrents, and a Delay Profile's Torrent delay holds every RSS grab for that long. Give a tag such as `bohemarr` a Delay Profile with a Torrent delay of `0`, and add the tag to every series you download from Bohemarr.
+- **Scryer:** leave `SCRYER_URL` empty, add the qBittorrent client with the API key in **API Key** and the Torznab indexer as above, map the indexer to that client, and set the client's routing category to `tv` for Series and Anime and `movies` for Movies.
 
 ### Automatic downloads
 
