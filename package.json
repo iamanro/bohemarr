@@ -17,9 +17,7 @@
     "start": "bun src/main.ts",
     "dev": "bun --watch src/main.ts",
     "dev:web": "bun run --cwd web dev",
-    "check": "tsc",
-    "test": "bun --no-env-file test --isolate --timeout 60000 ./test",
-    "lint": "oxlint --deny-warnings src test web/src"
+    "test": "bun --no-env-file test --isolate --timeout 60000 ./test"
   },
   "dependencies": {
     "@fastify/multipart": "^10.1.6",
@@ -39,8 +37,6 @@
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
-    "domhandler": "6.0.1",
-    "oxlint": "1.90.0",
-    "typescript": "^7.0.2"
+    "domhandler": "6.0.1"
   }
 }

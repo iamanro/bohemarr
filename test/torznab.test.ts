@@ -226,7 +226,7 @@ test('RSS lists the newest Releases of series Sonarr searched by TVDB ID, dated 
       parser.parse(
         await torznab.search({ t: 'tvsearch', cat: '5000', extended: '1', offset: String(offset) }, new AbortController().signal),
       ).rss.channel.item ?? []
-    ).map((item: Record<string, any>) => ({
+    ).map((item: { title: string; pubDate: string; 'torznab:attr': Array<Record<string, string>> }) => ({
       title: item.title,
       pubDate: item.pubDate,
       tvdbId: item['torznab:attr'].find((attr: Record<string, string>) => attr['@_name'] === 'tvdbid')?.['@_value'],
@@ -333,7 +333,7 @@ test('a provider that runs out of time fails alone, and the others still answer'
     name: 'Nova',
     resolve: async () => [],
     catalogue: {
-      // oxlint-disable-next-line require-yield -- a catalogue that never lists anything: it hangs until the search aborts
+      // eslint-disable-next-line require-yield -- a catalogue that never lists anything: it hangs until the search aborts
       async *programs(_query, signal) {
         await new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
       },

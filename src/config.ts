@@ -82,7 +82,7 @@ export function env(name: string): string | undefined {
     try {
       return readFileSync(file, 'utf8').replace(/\r?\n$/, '') || undefined;
     } catch (error) {
-      throw new Error(`${name}_FILE: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`${name}_FILE: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
   return process.env[name] || saved[name] || undefined;

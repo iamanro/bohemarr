@@ -254,7 +254,7 @@ export function releaseTitle(release: Release): string {
 
 export function sanitizeFilename(title: string): string {
   const cleaned = title
-    // oxlint-disable-next-line no-control-regex -- control characters are exactly what a file name must not contain
+    // eslint-disable-next-line no-control-regex -- control characters are exactly what a file name must not contain
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
     .replace(/\s+/g, ' ')
     .trim();
