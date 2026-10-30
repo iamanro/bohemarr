@@ -158,6 +158,8 @@ export interface Config {
   providers: Record<string, ProviderConfig>;
   /** Sonarr and Radarr instances Bohemarr configures at startup. */
   arrs: ArrConfig[];
+  /** The Scryer instance Bohemarr configures at startup through its GraphQL API; undefined when unset. */
+  scryer?: ScryerConfig;
   /** Publishing imported Releases to the Vltava tracker; undefined when disabled. */
   vltava?: VltavaConfig;
 }
@@ -192,11 +194,21 @@ export interface ArrConfig {
   rename: boolean;
 }
 
+export interface ScryerConfig {
+  url: string;
+  /** A Scryer API key (Settings > API keys), sent as a bearer token. */
+  apiKey: string;
+  /** Scryer's "Remove completed" routing setting for the Bohemarr download client. */
+  removeCompleted: boolean;
+}
+
 export type JobStatus = 'Queued' | 'Downloading' | 'Paused' | 'Completed' | 'Failed';
 export interface Job {
   id: string;
   release: Release;
   category: string;
+  /** qBittorrent tags a client set; absent in Jobs stored before tags were kept. */
+  tags?: string[];
   status: JobStatus;
   bytes: number;
   totalBytes: number;

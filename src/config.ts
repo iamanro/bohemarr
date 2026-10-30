@@ -265,6 +265,15 @@ async function readConfig(dataDir: string): Promise<Config> {
       { app, url, apiKey: key, category, rootFolder: env(`${prefix}_ROOT_FOLDER`), removeCompleted, rename: boolean('ARR_RENAME', false) },
     ];
   });
+  const scryerUrl = env('SCRYER_URL')?.replace(/\/+$/, '');
+  const scryerKey = env('SCRYER_API_KEY');
+  if (Boolean(scryerUrl) !== Boolean(scryerKey)) throw new Error('SCRYER_URL and SCRYER_API_KEY must be set together');
+  if (scryerUrl && !/^https?:\/\//.test(scryerUrl)) throw new Error('SCRYER_URL must be an HTTP(S) URL');
+  // Scryer sends its series and anime downloads to category tv and its movies to movies.
+  if (scryerUrl && !['tv', 'movies'].every(category => categories.includes(category))) {
+    throw new Error('SCRYER_URL needs the categories tv and movies in CATEGORIES');
+  }
+  const scryer = scryerUrl && scryerKey ? { url: scryerUrl, apiKey: scryerKey, removeCompleted } : undefined;
   const vltava = vltavaConfig();
   await Promise.all(categories.map(category => mkdir(resolve(downloadsDir, category), { recursive: true })));
   return {
@@ -283,6 +292,7 @@ async function readConfig(dataDir: string): Promise<Config> {
     categories,
     providers,
     arrs,
+    scryer,
     vltava,
   };
 }

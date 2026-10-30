@@ -255,6 +255,40 @@ test('re-adding a task torrent keeps its info hash as download ID and requeues i
   assert.match(f.store.job(infoHash)?.status ?? '', /^(Queued|Downloading)$/);
 });
 
+test('Scryer finds its torrents by the tags it adds and marks imports with a tag, without moving files', async () => {
+  const f = await fixture();
+  await using dir = f.dir;
+  using store = f.store;
+  await using queue = new Queue(f.store, f.config, f.providers, async () => {
+    throw new Error('must remain paused');
+  });
+  f.store.saveReleases([release]);
+  const indexer = new Indexer(f.config, f.store, f.providers, new SeriesBindings(f.store.database));
+  const qbittorrent = new QBittorrent(f.config, queue, indexer);
+  const { content, infoHash } = indexer.taskDescriptor(release.id);
+  const tagsOf = async () => ((await qbittorrent.handle('torrents/info', { hashes: infoHash })).body as Array<{ tags: string }>)[0]!.tags;
+  await qbittorrent.handle('torrents/add', { category: 'tv', paused: 'true', tags: 'scryer-origin, scryer:routing-category:tv' }, [
+    content,
+  ]);
+  assert.equal(await tagsOf(), 'scryer-origin, scryer:routing-category:tv');
+
+  await qbittorrent.handle('torrents/addTags', { hashes: infoHash, tags: 'scryer-imported,scryer-origin' });
+  assert.equal(await tagsOf(), 'scryer-origin, scryer:routing-category:tv, scryer-imported');
+  assert.deepEqual((await qbittorrent.handle('torrents/tags', {})).body, [
+    'scryer-origin',
+    'scryer:routing-category:tv',
+    'scryer-imported',
+  ]);
+  await qbittorrent.handle('torrents/removeTags', { hashes: infoHash, tags: 'scryer-origin' });
+  assert.equal(await tagsOf(), 'scryer:routing-category:tv, scryer-imported');
+  await qbittorrent.handle('torrents/removeTags', { hashes: infoHash });
+  assert.equal(await tagsOf(), '');
+
+  assert.equal((await qbittorrent.handle('torrents/setCategory', { hashes: infoHash, category: 'tv' })).code, undefined);
+  assert.equal((await qbittorrent.handle('torrents/setCategory', { hashes: infoHash, category: 'movies' })).code, 409);
+  assert.equal(f.store.job(infoHash)?.category, 'tv');
+});
+
 test('a completed job is a finished torrent whose seeding goal is reached, in a folder below its save path', async () => {
   const f = await fixture();
   await using dir = f.dir;
