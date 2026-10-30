@@ -22,25 +22,25 @@
     "lint": "oxlint --deny-warnings src test web/src"
   },
   "dependencies": {
-    "@fastify/multipart": "^10.1.2",
-    "@fastify/static": "^10.1.6",
+    "@fastify/multipart": "^10.1.6",
+    "@fastify/static": "^10.1.8",
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.11.2",
-    "fastify": "^5.12.5",
+    "fastify": "^5.12.7",
     "i18n-iso-countries": "^7.14.0",
     "json5": "^2.2.3",
     "quickjs-emscripten": "^0.32.0",
     "ws": "^8.22.0",
-    "youtubei.js": "^18.1.0"
+    "youtubei.js": "^18.3.0"
   },
   "overrides": {
     "undici": "^8.11.2"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
-    "domhandler": "5.0.3",
-    "oxlint": "1.89.0",
+    "domhandler": "6.0.1",
+    "oxlint": "1.90.0",
     "typescript": "^7.0.2"
   }
 }
