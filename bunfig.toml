@@ -1,0 +1,6 @@
+# bun lint: its defaults (ESLint and typescript-eslint recommended, React hooks, bun:test rules).
+[lint]
+ignorePatterns = ["web/src/components/ui/"]
+
+[lint.rules]
+"no-unused-vars" = ["warn", { ignoreUsingDeclarations = true, varsIgnorePattern = "^_", argsIgnorePattern = "^_", caughtErrorsIgnorePattern = "^_" }]

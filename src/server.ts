@@ -190,7 +190,8 @@ export async function createServer(config: Config, store: Store, queue: Queue, p
               try {
                 torrents.push(await part.toBuffer());
               } catch (error) {
-                if (error instanceof app.multipartErrors.RequestFileTooLargeError) throw new Error('Torrent file too large');
+                if (error instanceof app.multipartErrors.RequestFileTooLargeError)
+                  throw new Error('Torrent file too large', { cause: error });
                 throw error;
               }
             } else if (typeof part.value === 'string') params[part.fieldname] = part.value;

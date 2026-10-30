@@ -59,18 +59,30 @@ RUN bun install --frozen-lockfile --cwd web
 COPY web/ ./web/
 RUN bun run build
 
+# `bun lint` ships only in canary Bun so far; everything else checks and runs on the release.
+# ponytail: move this stage to oven/bun:1.4-slim once a Bun release includes `bun lint`.
+FROM oven/bun:canary-slim AS lint
+WORKDIR /app
+COPY package.json bunfig.toml ./
+COPY web/package.json ./web/
+COPY web/src/ ./web/src/
+COPY src/ ./src/
+COPY test/ ./test/
+RUN bun lint --max-warnings 0 src test web/src && touch /linted
+
 FROM oven/bun:1.4-slim AS test
 WORKDIR /app
 COPY --from=ffmpeg /out/bin/ /usr/local/bin/
 COPY --from=bento4 /bento4/build/mp4decrypt /usr/local/bin/mp4decrypt
+COPY --from=lint /linted /tmp/linted
 COPY package.json bun.lock tsconfig.json ./
 RUN bun install --frozen-lockfile
-COPY .prettierrc.json .oxlintrc.json ./
+COPY .prettierrc.json ./
 COPY web/.prettierrc.json ./web/
 COPY web/src/ ./web/src/
 COPY src/ ./src/
 COPY test/ ./test/
-RUN bun run check && bun fmt --check . && bun run lint && bun run test
+RUN bun check && bun fmt --check . && bun run test
 
 FROM oven/bun:1.4-slim
 LABEL org.opencontainers.image.title="Bohemarr" \

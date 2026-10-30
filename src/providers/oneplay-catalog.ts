@@ -58,7 +58,7 @@ function stripEpisodeLabel(title: string, episodeNumber: number): string {
 function getMediaInfo(trackingData: unknown): MediaInfo {
   let title = at<string>(trackingData, 'title') ?? null;
   const type = at<string>(trackingData, 'type');
-  let programName: string | null = null;
+  let programName: string | null;
   let season = 0;
   let episodeNumber = 0;
 

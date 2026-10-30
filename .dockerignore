@@ -5,7 +5,7 @@
 !bun.lock
 !tsconfig.json
 !.prettierrc.json
-!.oxlintrc.json
+!bunfig.toml
 !LICENSE
 !LICENSES
 !src

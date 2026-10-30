@@ -267,9 +267,9 @@ VLTAVA_SEEDER_USERPASS=bohemarr:...   # rqbit's HTTP API login
 ```sh
 bun install
 bun install --cwd web
-bun run check
-bun fmt --check
-bun run lint
+bun check       # type check, no TypeScript package needed
+bun fmt --check # format check (.prettierrc.json)
+bun lint        # lint (bunfig.toml); needs canary Bun: bun upgrade --canary
 bun run test
 bun run build   # the web UI
 bun start

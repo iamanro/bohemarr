@@ -102,7 +102,7 @@ export async function downloadDirectFile(
   }
   if (!response.body) throw new Error('Download response has no body');
 
-  let writeOffset = 0;
+  let writeOffset: number;
   let totalBytes: number | undefined;
   if (response.status === 206) {
     const range = parseContentRange(response.headers.get('content-range'));
