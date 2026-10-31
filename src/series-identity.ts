@@ -93,6 +93,16 @@ function extractBaseNames(identity: SeriesIdentity): string[][] {
   return [...bases.values()];
 }
 
+/** The identity's distinct names, title first: the search texts a provider is asked for. */
+export function seriesNames(identity: SeriesIdentity): string[] {
+  const names = new Map<string, string>();
+  for (const name of [identity.title, ...identity.aliases]) {
+    const key = normalizeForTokens(name).join(' ');
+    if (key && !names.has(key)) names.set(key, name.trim());
+  }
+  return [...names.values()];
+}
+
 /**
  * Loose discovery filter: does `title` plausibly refer to `identity`? Used to
  * widen upstream searches, never to store a Series binding. Matching is

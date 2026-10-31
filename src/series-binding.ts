@@ -1,6 +1,6 @@
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import { searchCatalogue } from './catalogue.ts';
-import { isSeriesCandidate, loadSeriesIdentity, selectProgram, type SelectionFailure } from './series-identity.ts';
+import { isSeriesCandidate, loadSeriesIdentity, selectProgram, seriesNames, type SelectionFailure } from './series-identity.ts';
 import type { Provider, Release, SearchQuery, SeriesBinding, SeriesIdentity } from './types.ts';
 
 /** Why a provider returns no Releases for a Series identity. */
@@ -161,12 +161,16 @@ export class SeriesBindings {
 
     // A search by a known series expands only Programs whose name is that series', not every title containing its words.
     const isCandidate = identity && ((title: string) => isSeriesCandidate(title, identity));
-    const releases = (await searchCatalogue(provider, identity ? { ...query, q: identity.title } : query, signal, isCandidate)).map(
-      release => {
-        const binding = release.kind === 'tv' && release.programId ? this.byProgram(provider.id, release.programId) : undefined;
-        return binding ? stamp(release, binding.identity) : release;
-      },
-    );
+    // Providers search upstream by the text, and a Czech series is listed under its Czech name, not its TVDB one: every name is tried.
+    const found = new Map<string, Release>();
+    for (const q of identity ? seriesNames(identity) : [query.q]) {
+      for (const release of await searchCatalogue(provider, { ...query, q }, signal, isCandidate)) found.set(release.id, release);
+      if (found.size >= query.limit) break;
+    }
+    const releases = [...found.values()].slice(0, query.limit).map(release => {
+      const binding = release.kind === 'tv' && release.programId ? this.byProgram(provider.id, release.programId) : undefined;
+      return binding ? stamp(release, binding.identity) : release;
+    });
     return {
       releases: identity ? releases.filter(release => release.tvdbId === undefined || release.tvdbId === identity.tvdbId) : releases,
     };

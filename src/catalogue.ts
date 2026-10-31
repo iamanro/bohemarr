@@ -84,7 +84,7 @@ export async function searchCatalogue(
   const expand = async (program: Program, expansionSignal: AbortSignal): Promise<Release[]> => {
     const found: Release[] = [];
     for await (const release of catalogue.releases(program, hint, expansionSignal)) {
-      if (!matches(release, hint, year)) continue;
+      if (!matches(release, isCandidate ? { ...hint, q: '' } : hint, year)) continue;
       found.push(release);
       if (browsing || found.length >= page.needed) break;
     }
