@@ -271,8 +271,8 @@ test('Prima binds a TVDB series by programme year and Czech origin, then expands
   const bindings = new SeriesBindings(store.database);
   const costaRica = await bindings.search(provider, query, { ...identity, tvdbId: identity.tvdbId + 1, country: 'CRI' }, signal);
   assert.deepEqual(costaRica, { releases: [], unbound: 'country-mismatch' }, 'ČR is not ISO CR (Costa Rica)');
-  const otherYear = await bindings.search(provider, query, { ...identity, tvdbId: identity.tvdbId + 2, year: 2010 }, signal);
-  assert.deepEqual(otherYear, { releases: [], unbound: 'year-mismatch' }, 'the same name from another year does not bind');
+  const otherYear = await bindings.search(provider, query, { ...identity, tvdbId: identity.tvdbId + 2, year: 2011 }, signal);
+  assert.deepEqual(otherYear, { releases: [], unbound: 'year-mismatch' }, 'the same name two years apart does not bind');
 
   const { releases, unbound } = await bindings.search(provider, query, identity, signal);
   assert.equal(unbound, undefined);

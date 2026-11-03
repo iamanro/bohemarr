@@ -254,6 +254,51 @@ test('a provider without metadata is searched by the identity title and never la
   });
 });
 
+test('a provider without metadata is asked for every name of the series, and its episodes need not repeat the TVDB title', async () => {
+  await withStore(async store => {
+    const bindings = new SeriesBindings(store.database);
+    const traitors: SeriesIdentity = {
+      tvdbId: 454555,
+      title: 'The Traitors (CZ)',
+      aliases: ['Zrádci', 'Zrádci Česko'],
+      year: 2024,
+      country: 'cze',
+    };
+    const asked: string[] = [];
+    const czech: Provider = {
+      id: 'ceskatelevize',
+      name: 'ČT',
+      resolve: async () => [],
+      catalogue: {
+        // Upstream text search: only the Czech name finds the Czech programme.
+        async *programs(query) {
+          asked.push(query.q);
+          if (query.q === 'Zrádci') yield { id: 'zradci', title: 'Zrádci' };
+        },
+        async *releases(program) {
+          yield {
+            id: `${program.id}-5`,
+            provider: 'ceskatelevize',
+            title: '5. díl',
+            series: 'Zrádci',
+            kind: 'tv',
+            season: 3,
+            episode: 5,
+            url: 'https://ct.test/5',
+            programId: program.id,
+          };
+        },
+      },
+    };
+    const { releases } = await bindings.search(czech, query, traitors, signal);
+    assert.deepEqual(asked, ['The Traitors (CZ)', 'Zrádci', 'Zrádci Česko']);
+    assert.deepEqual(
+      releases.map(r => r.id),
+      ['zradci-5'],
+    );
+  });
+});
+
 test('a search by series expands only Programs named as the series, not every title containing its words', async () => {
   await withStore(async store => {
     const most: SeriesIdentity = { tvdbId: 357409, title: 'MOST!', aliases: [], year: 2019, country: 'cze' };

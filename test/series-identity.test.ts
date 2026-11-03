@@ -149,6 +149,15 @@ test('selectProgram resolves a real UK national-variant country synonym not in t
   assert.equal(outcome(selectProgram(identity, candidates)), 'gb');
 });
 
+test('selectProgram accepts a Program dated one year off the identity (iPrima dates Zrádci 2023, TVDB 2024)', () => {
+  const identity: SeriesIdentity = { tvdbId: 454555, title: 'The Traitors (CZ)', aliases: ['Zrádci'], year: 2024, country: 'cze' };
+  const offByOne: ProgramMetadata = { id: 'zradci', title: 'Zrádci', aliases: [], year: 2023, countries: ['ČR'] };
+  const exact: ProgramMetadata = { id: 'zradci-2024', title: 'Zrádci', aliases: [], year: 2024, countries: ['ČR'] };
+  assert.equal(outcome(selectProgram(identity, [offByOne])), 'zradci');
+  assert.equal(outcome(selectProgram(identity, [offByOne, exact])), 'zradci-2024');
+  assert.equal(outcome(selectProgram(identity, [offByOne, { ...offByOne, id: 'zradci-2025', year: 2025 }])), 'ambiguous');
+});
+
 test('selectProgram leaves an unresolved year conflict (season-specific UK metadata) unbound', () => {
   const identity: SeriesIdentity = { tvdbId: 1, title: 'Love Island', aliases: [], year: 2019, country: 'cze' };
   assert.equal(outcome(selectProgram(identity, [czechLoveIsland()])), 'year-mismatch');

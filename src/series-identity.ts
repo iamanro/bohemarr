@@ -93,6 +93,16 @@ function extractBaseNames(identity: SeriesIdentity): string[][] {
   return [...bases.values()];
 }
 
+/** The identity's distinct names, title first: the search texts a provider is asked for. */
+export function seriesNames(identity: SeriesIdentity): string[] {
+  const names = new Map<string, string>();
+  for (const name of [identity.title, ...identity.aliases]) {
+    const key = normalizeForTokens(name).join(' ');
+    if (key && !names.has(key)) names.set(key, name.trim());
+  }
+  return [...names.values()];
+}
+
 /**
  * Loose discovery filter: does `title` plausibly refer to `identity`? Used to
  * widen upstream searches, never to store a Series binding. Matching is
@@ -138,8 +148,8 @@ export type ProgramSelection = { program: ProgramMetadata } | { reason: Selectio
 
 /**
  * Deterministic, conservative choice of the one Program a Series identity may bind to: its name
- * must be equivalent (only recognized geographic qualifiers may differ), its year must equal the
- * identity's, and its countries must include the identity's. Missing identity evidence,
+ * must be equivalent (only recognized geographic qualifiers may differ), its year must be within one
+ * of the identity's (an exact year wins over a neighbouring one), and its countries must include the identity's. Missing identity evidence,
  * conflicting duplicate records for one Program, or more than one eligible Program selects nothing.
  */
 export function selectProgram(identity: SeriesIdentity, candidates: ProgramMetadata[]): ProgramSelection {
@@ -160,7 +170,10 @@ export function selectProgram(identity: SeriesIdentity, candidates: ProgramMetad
   const baseNames = extractBaseNames(identity);
   const named = [...byId.values()].filter(candidate => isEquivalentTitle(candidate.title, baseNames));
   if (!named.length) return { reason: 'no-candidate' };
-  const dated = named.filter(candidate => candidate.year === identity.year);
+  const year = identity.year;
+  const exact = named.filter(candidate => candidate.year === year);
+  // Providers date a series by its production or licence year, TVDB by its first airing; one year apart is still the same series.
+  const dated = exact.length ? exact : named.filter(candidate => candidate.year !== undefined && Math.abs(candidate.year - year) <= 1);
   if (!dated.length) return { reason: 'year-mismatch' };
   const located = dated.filter(candidate => candidate.countries.map(normalizeCountryToAlpha2).includes(identityCountry));
   if (!located.length) return { reason: 'country-mismatch' };
